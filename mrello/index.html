@@ -1554,7 +1554,7 @@ function formatDate(d, withTime=false) {
   if (isNaN(dt)) return "";
   const opts = { year:"numeric", month:"2-digit", day:"2-digit" };
   if (withTime) { opts.hour = "2-digit"; opts.minute = "2-digit"; }
-  return dt.toLocaleString(LANG === "cs" ? "cs-CZ" : "en-GB", opts);
+  return dt.toLocaleString("cs-CZ", opts);
 }
 function dateOnly(d) {
   if (!d) return null;
@@ -3395,37 +3395,84 @@ function openCardDetail(cardId) {
   statusRow.append(completeBtn, inListInfo);
   left.appendChild(statusRow);
 
-  // Popis
+  // Popis — s rozumnějším workflow:
+  //   Preview je fokusovatelný (tabindex 0), Enter/Mezerník v něm přepne do editace.
+  //   V textarea: Ctrl+Enter = uložit a zobrazit náhled, Esc = zahodit změny, blur = uložit (zůstane v edit módu).
   const descSection = el("section", { "aria-label": T("description") });
   descSection.appendChild(el("h3", {}, T("description")));
-  const descPreview = el("div", { class:"md-rendered", role:"region", tabindex:"0" });
+  const descPreview = el("div", { class:"md-rendered", role:"region", tabindex:"0",
+    "aria-label": T("description") + ". Stiskni Enter pro úpravu."
+  });
   const descTextarea = el("textarea", { class:"md-edit", rows:"6", "aria-label": T("description") });
+  const descHint = el("div", { class:"muted small" }, "Markdown. Ctrl+Enter = uložit a zobrazit náhled, Esc = zahodit, opuštění = uložit koncept.");
   const descToggleBtn = el("button", { class:"ghost" }, "Upravit");
   let editingDesc = false;
+
   function refreshDesc() {
     if (editingDesc) {
       descPreview.style.display = "none";
       descTextarea.style.display = "";
+      descHint.style.display = "";
       descTextarea.value = real.description || "";
       descToggleBtn.textContent = "Náhled / uložit";
     } else {
       descPreview.style.display = "";
       descTextarea.style.display = "none";
-      descPreview.innerHTML = real.description ? mdRender(real.description) : "<p class='muted'>(prázdné)</p>";
+      descHint.style.display = "none";
+      descPreview.innerHTML = real.description ? mdRender(real.description) : "<p class='muted'>(prázdné — Enter pro úpravu)</p>";
       descToggleBtn.textContent = real.description ? "Upravit" : "Přidat popis";
     }
   }
-  descToggleBtn.addEventListener("click", () => {
-    if (editingDesc) {
-      const old = real.description || "";
+  function saveDesc({ switchToPreview = true } = {}) {
+    const old = real.description || "";
+    if (old !== descTextarea.value) {
       setCardField(real.id, "description", descTextarea.value);
-      if (old !== descTextarea.value) logActivity(real, T("activityDescChanged"));
+      logActivity(real, T("activityDescChanged"));
       saveState();
     }
-    editingDesc = !editingDesc;
+    if (switchToPreview) {
+      editingDesc = false;
+      refreshDesc();
+      announce("Popis uložen a vyrenderován.");
+    }
+  }
+  function enterDescEdit() {
+    editingDesc = true;
     refreshDesc();
+    setTimeout(() => descTextarea.focus(), 10);
+  }
+
+  // Toggle button — uloží pokud je v editaci, jinak vstoupí do editace
+  descToggleBtn.addEventListener("click", () => {
+    if (editingDesc) saveDesc({ switchToPreview: true });
+    else enterDescEdit();
   });
-  descSection.append(descPreview, descTextarea, descToggleBtn);
+
+  // Preview: Enter/mezerník vstoupí do editace (focus + kurzor na konec)
+  descPreview.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); enterDescEdit(); }
+  });
+  descPreview.addEventListener("click", () => { if (!editingDesc) enterDescEdit(); });
+
+  // Textarea: Ctrl+Enter uloží a přepne, Esc zahodí a přepne, blur uloží koncept
+  descTextarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      saveDesc({ switchToPreview: true });
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      // zahodíme změny a vrátíme se do preview (neuložíme)
+      editingDesc = false;
+      refreshDesc();
+      announce("Změny popisu zrušeny.");
+    }
+  });
+  descTextarea.addEventListener("blur", () => {
+    // uložíme koncept, ale zůstáváme v edit módu — uživatel se může vrátit
+    if (editingDesc) saveDesc({ switchToPreview: false });
+  });
+
+  descSection.append(descPreview, descTextarea, descHint, descToggleBtn);
   left.appendChild(descSection);
   refreshDesc();
 
@@ -3542,7 +3589,7 @@ function openCardDetail(cardId) {
     left.appendChild(cfSection);
   }
 
-  // Komentáře
+  // Komentáře — Ctrl+Enter přidá, markdown se v každém komentáři renderuje přes mdRender().
   const cmSection = el("section", { "aria-label": T("comments") });
   cmSection.appendChild(el("h3", {}, T("comments")));
   const cmList = el("ul", { class:"comments" });
@@ -3551,7 +3598,7 @@ function openCardDetail(cardId) {
     (real.comments || []).slice().reverse().forEach(c => {
       const li = el("li");
       const meta = el("div", { class:"comment-meta muted" }, formatDate(c.createdAt, true));
-      const text = el("div", { class:"comment-text", html: mdRender(c.text) });
+      const text = el("div", { class:"comment-text md-rendered", html: mdRender(c.text) });
       li.append(meta, text);
       cmList.appendChild(li);
     });
@@ -3559,14 +3606,20 @@ function openCardDetail(cardId) {
   refreshComments();
   cmSection.appendChild(cmList);
   const cmInput = el("textarea", { rows:"2", placeholder: T("addComment"), "aria-label": T("addComment") });
-  const cmBtn = el("button", { class:"primary", onclick: () => {
+  const cmHint = el("div", { class:"muted small" }, "Markdown. Ctrl+Enter odešle komentář.");
+  const cmSubmit = () => {
     if (!cmInput.value.trim()) return;
     addComment(real.id, cmInput.value.trim());
     cmInput.value = "";
     refreshComments();
     sound.add();
-  } }, T("addComment"));
-  cmSection.append(cmInput, cmBtn);
+    announce("Komentář přidán.");
+  };
+  cmInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); cmSubmit(); }
+  });
+  const cmBtn = el("button", { class:"primary", onclick: cmSubmit }, T("addComment"));
+  cmSection.append(cmInput, cmHint, cmBtn);
   left.appendChild(cmSection);
 
   // Aktivita
@@ -3831,10 +3884,8 @@ function openCardDetail(cardId) {
     size: "large",
     onClose: () => {
       if (editingDesc) {
-        const old = real.description || "";
-        setCardField(real.id, "description", descTextarea.value);
-        if (old !== descTextarea.value) logActivity(real, T("activityDescChanged"));
-        saveState();
+        // zavírání modalu = uložení konceptu (stejné jako při blur)
+        saveDesc({ switchToPreview: false });
       }
       renderAll();
     }
@@ -4073,8 +4124,7 @@ function renderCalendarView(container, board) {
   const cur = state.ui.calCursor ? new Date(state.ui.calCursor) : new Date();
   cur.setDate(1);
   const monthNames = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
-  const monthNamesEn = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const mn = LANG === "cs" ? monthNames : monthNamesEn;
+  const mn = monthNames;
   const headBar = el("div", { class:"cal-head" });
   const prev = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() - 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "‹");
   const next = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() + 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "›");
@@ -4083,7 +4133,7 @@ function renderCalendarView(container, board) {
   wrap.appendChild(headBar);
 
   const grid = el("div", { class:"cal-grid", role:"grid" });
-  const dow = LANG === "cs" ? ["Po","Út","St","Čt","Pá","So","Ne"] : ["Mo","Tu","We","Th","Fr","Sa","Su"];
+  const dow = ["Po","Út","St","Čt","Pá","So","Ne"];
   dow.forEach(d => grid.appendChild(el("div", { class:"cal-dow", role:"columnheader" }, d)));
 
   const start = startOfWeek(new Date(cur));
@@ -4837,7 +4887,6 @@ async function init() {
   }
   if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
   if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
-  LANG = state.settings.language || "cs";
   applyTheme();
   applyI18n();
   renderAll();
