@@ -3673,6 +3673,13 @@ function renderCard(card, list, position) {
   if (meta.children.length) node.appendChild(meta);
   // indicators
   const ind = el("div", { class:"indicator-row" });
+  // Pokud je tato karta sama podkartou, zobrazí se indikátor s odkazem na rodiče
+  if (eff.parentCardId) {
+    const parent = getCard(eff.parentCardId);
+    if (parent) {
+      ind.appendChild(el("span", { class:"subcards-badge", title:"Podkarta karty „" + parent.title + "“" }, "↪ " + parent.title));
+    }
+  }
   const subs = getSubcards(eff.id);
   if (subs.length) {
     const done = subs.filter(s => s.completed).length;
@@ -3721,6 +3728,15 @@ function cardAriaLabel(card, eff) {
     if (openBlocking > 0) parts.push("blokována " + openBlocking + " otevřenými kartami");
     else if ((eff.dependencies.blockedBy || []).length > 0) parts.push("všechny blokující karty jsou hotové, připraveno");
     if ((eff.dependencies.blocks || []).length > 0) parts.push("blokuje " + eff.dependencies.blocks.length + " dalších karet");
+  }
+  if (eff.parentCardId) {
+    const p = getCard(eff.parentCardId);
+    if (p) parts.push("podkarta karty " + p.title);
+  }
+  const subs = getSubcards(eff.id);
+  if (subs.length) {
+    const done = subs.filter(s => s.completed).length;
+    parts.push("má " + subs.length + " podkaret, " + done + " hotových");
   }
   return parts.join(", ");
 }
@@ -4203,10 +4219,18 @@ function openCardDetail(cardId) {
   const actList = el("ul", { class:"activity-list" });
   function refreshActivity() {
     clear(actList);
-    (real.activity || []).slice().reverse().slice(0, 50).forEach(a => {
+    const acts = (real.activity || []).slice(0, 50);
+    if (!acts.length) {
+      actList.appendChild(el("li", { class:"muted" }, "(zatím žádná aktivita)"));
+      return;
+    }
+    acts.forEach(a => {
+      // Zpětná kompatibilita: nová pole jsou `timestamp` + `action`, stará byla `at` + `msg`
+      const ts = a.timestamp || a.at;
+      const msg = a.action || a.msg || "";
       actList.appendChild(el("li", {},
-        el("span", { class:"muted" }, formatDate(a.at, true) + ": "),
-        el("span", {}, a.msg)));
+        el("span", { class:"muted" }, formatDate(ts, true) + ": "),
+        el("span", {}, msg)));
     });
   }
   refreshActivity();
@@ -4481,6 +4505,128 @@ function openCardDetail(cardId) {
   refreshDeps();
   depSec.appendChild(depBox);
   right.appendChild(depSec);
+
+  // Podkarty — plnohodnotné karty s `parentCardId` odkazujícím na rodiče.
+  // Zobrazují se v nástěnce normálně (jsou to běžné karty), ale zde máme přehled a rychlé akce.
+  const subSec = el("section", { "aria-label": T("subcards") });
+  subSec.appendChild(el("h4", {}, T("subcards")));
+  // Pokud tato karta sama má rodiče, zobrazíme odkaz na něj nahoře
+  if (real.parentCardId) {
+    const parent = getCard(real.parentCardId);
+    if (parent) {
+      const parentRow = el("div", { class:"muted small" });
+      parentRow.append("Rodič: ");
+      parentRow.appendChild(el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(parent.id); } }, parent.title));
+      parentRow.append(" ");
+      parentRow.appendChild(el("button", {
+        class:"ghost small", "aria-label":"Odebrat vazbu na rodiče",
+        onclick: () => {
+          setCardField(real.id, "parentCardId", null);
+          logActivity(real, "Odebrána vazba na rodiče „" + parent.title + "“");
+          saveState();
+          refreshSubcards();
+          announce("Vazba na rodiče odebrána.");
+        }
+      }, "Odebrat rodiče"));
+      subSec.appendChild(parentRow);
+    }
+  }
+  const subList = el("ul", { class:"subcards-list" });
+  subSec.appendChild(subList);
+  function refreshSubcards() {
+    clear(subList);
+    const subs = getSubcards(real.id);
+    if (!subs.length) {
+      subList.appendChild(el("li", { class:"muted small" }, "(žádné podkarty)"));
+    } else {
+      const done = subs.filter(s => s.completed).length;
+      subSec.querySelector("h4").textContent = T("subcards") + " (" + done + "/" + subs.length + ")";
+      subs.forEach(s => {
+        const l = getList(s.listId);
+        const b = getBoard(s.boardId);
+        const li = el("li", { class: s.completed ? "done" : "" });
+        // Checkbox pro rychlé označení hotové
+        const cb = el("input", { type:"checkbox", checked: !!s.completed, "aria-label": "Označit hotovou podkartu „" + s.title + "“",
+          onclick: (e) => {
+            e.stopPropagation();
+            toggleCardComplete(s.id);
+            refreshSubcards();
+          }
+        });
+        const link = el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(s.id); } },
+          s.title + (b && b.id !== real.boardId ? " (" + b.name + ")" : (l ? " — " + l.name : "")));
+        const rm = el("button", {
+          class:"ghost small", "aria-label":"Odebrat podkartu z rodiče (karta zůstane, jen ztratí vazbu)",
+          onclick: () => {
+            setCardField(s.id, "parentCardId", null);
+            logActivity(s, "Odebrána z rodiče „" + real.title + "“");
+            saveState();
+            refreshSubcards();
+          }
+        }, "×");
+        li.append(cb, " ", link, " ", rm);
+        subList.appendChild(li);
+      });
+    }
+  }
+  refreshSubcards();
+  // Tlačítko pro vytvoření nové podkarty
+  const addSubBtn = el("button", { class:"ghost", onclick: async () => {
+    const titleInp = el("input", { type:"text", placeholder:"Název podkarty", "aria-label":"Název podkarty" });
+    const listSel = el("select", { "aria-label":"Seznam" });
+    // Default: stejný seznam jako rodič, ale uživatel může zvolit jiný (i na jiné nástěnce)
+    state.boards.filter(b => !b.archived).forEach(b => {
+      const og = el("optgroup", { label: b.name });
+      (state.lists.filter(ll => ll.boardId === b.id && !ll.archived) || []).forEach(ll =>
+        og.appendChild(el("option", { value: ll.id }, ll.name)));
+      listSel.appendChild(og);
+    });
+    listSel.value = real.listId;  // default
+    // Volitelně: přidat k nové kartě sadu štítků/členů z rodiče
+    const inheritCb = el("input", { type:"checkbox", id:"subInherit", checked: true });
+    const m = openModal({
+      title: "Nová podkarta",
+      body: el("div", {},
+        el("div", { class:"field-row" }, el("label", {}, "Název"), titleInp),
+        el("div", { class:"field-row" }, el("label", {}, "Seznam"), listSel),
+        el("div", { class:"field-row" }, el("label", { for:"subInherit" }, inheritCb, " Zdědit štítky a členy z rodiče")),
+      ),
+      footer: [
+        el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+        el("button", { class:"primary", onclick: () => {
+          const t = titleInp.value.trim();
+          if (!t) return;
+          const sub = newCard(listSel.value, t, { parentCardId: real.id });
+          if (inheritCb.checked) {
+            sub.labels = (real.labels || []).slice();
+            sub.members = (real.members || []).slice();
+            // Pokud je podkarta na jiné nástěnce, štítky odtud nebudou existovat — zkopírujeme labely podle jména
+            if (sub.boardId !== real.boardId) {
+              const parentLabels = (real.labels || []).map(id => getLabel(real.boardId, id)).filter(Boolean);
+              sub.labels = [];
+              parentLabels.forEach(lbl => {
+                const targetBoard = getBoard(sub.boardId);
+                let target = (targetBoard.labels || []).find(l => l.name === lbl.name);
+                if (!target) target = addLabel(sub.boardId, lbl.name, lbl.color);
+                if (!sub.labels.includes(target.id)) sub.labels.push(target.id);
+              });
+            }
+          }
+          logActivity(sub, "Vytvořena jako podkarta „" + real.title + "“");
+          logActivity(real, "Přidána podkarta „" + t + "“");
+          saveState();
+          m.close();
+          refreshSubcards();
+          sound.add();
+          announce("Podkarta „" + t + "“ vytvořena.");
+        } }, T("save")),
+      ],
+      size:"small",
+    });
+    setTimeout(() => titleInp.focus(), 50);
+  } }, "+ Přidat podkartu");
+  subSec.appendChild(addSubBtn);
+  right.appendChild(subSec);
 
   // Akce
   const actBox = el("section", { class:"card-actions", "aria-label": T("actions") });
