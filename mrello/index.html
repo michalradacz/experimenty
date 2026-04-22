@@ -4040,7 +4040,37 @@ function openCardDetail(cardId) {
     if (editingDesc) saveDesc({ switchToPreview: false });
   });
 
-  descSection.append(descPreview, descTextarea, descHint, descToggleBtn);
+  // Tlačítko pro zkopírování popisu do schránky — vedle tlačítka Upravit
+  const descCopyBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Zkopírovat popis do schránky",
+    title: "Zkopírovat popis do schránky",
+    onclick: async () => {
+      const text = real.description || "";
+      if (!text) { toast("Popis je prázdný, není co kopírovat.", "warning"); return; }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback pro starší prohlížeče / nepovolený kontext
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        toast("Popis zkopírován do schránky.", "success");
+        announce("Popis zkopírován do schránky.");
+        sound.click();
+      } catch (e) {
+        toast("Nepodařilo se zkopírovat: " + e.message, "error");
+      }
+    },
+  }, "📋 Kopírovat");
+
+  descSection.append(descPreview, descTextarea, descHint, el("div", { class:"row", style:{ display:"flex", gap:"4px", marginTop:"4px" } }, descToggleBtn, descCopyBtn));
   left.appendChild(descSection);
   refreshDesc();
 
@@ -4296,6 +4326,35 @@ function openCardDetail(cardId) {
   // Termíny
   const dSec = el("section", { "aria-label": T("dueDate") });
   dSec.appendChild(el("h4", {}, T("dueDate")));
+  // Helper: řádek s inputem + tlačítkem „Vymazat“ (zobrazí se jen když je datum nastavené)
+  function dateRow(label, field, inp) {
+    const row = el("div", { class:"field-row date-row" });
+    const labEl = el("label", {}, label + ": ", inp);
+    row.appendChild(labEl);
+    const clrBtn = el("button", {
+      class: "ghost small",
+      "aria-label": "Vymazat " + label.toLowerCase(),
+      title: "Vymazat " + label.toLowerCase(),
+      onclick: () => {
+        const old = real[field];
+        if (!old) return;
+        setCardField(real.id, field, null);
+        inp.value = "";
+        if (field === "dueDate") logActivity(real, T("activityDueRemoved"));
+        else logActivity(real, label + " vymazáno");
+        saveState();
+        refreshActivity();
+        clrBtn.hidden = true;
+        announce(label + " vymazáno.");
+        sound.click();
+      },
+    }, "× Vymazat");
+    clrBtn.hidden = !real[field];  // skryté, pokud datum není nastavené
+    row.appendChild(clrBtn);
+    // Při změně inputu zobraz/skryj tlačítko vymazat
+    inp.addEventListener("change", () => { clrBtn.hidden = !inp.value; });
+    return row;
+  }
   const startInp = el("input", { type:"date", value: real.startDate || "", "aria-label": T("startDate") });
   startInp.addEventListener("change", () => { setCardField(real.id, "startDate", startInp.value || null); saveState(); });
   const dueInp = el("input", { type:"date", value: real.dueDate || "", "aria-label": T("dueDate") });
@@ -4310,9 +4369,9 @@ function openCardDetail(cardId) {
   const snoozeInp = el("input", { type:"date", value: real.snoozeUntil || "", "aria-label": T("snoozeUntil") });
   snoozeInp.addEventListener("change", () => { setCardField(real.id, "snoozeUntil", snoozeInp.value || null); saveState(); });
   dSec.append(
-    el("label", {}, T("startDate") + ": ", startInp),
-    el("label", {}, T("dueDate") + ": ", dueInp),
-    el("label", {}, T("snoozeUntil") + ": ", snoozeInp),
+    dateRow(T("startDate"), "startDate", startInp),
+    dateRow(T("dueDate"), "dueDate", dueInp),
+    dateRow(T("snoozeUntil"), "snoozeUntil", snoozeInp),
   );
   right.appendChild(dSec);
 
@@ -4830,9 +4889,13 @@ function pickCard() {
       const cs = state.cards.filter(c => !c.archived && (!q || c.title.toLowerCase().includes(q))).slice(0, 50);
       cs.forEach(c => {
         const b = getBoard(c.boardId);
+        const l = getList(c.listId);
+        const parts = [];
+        if (b) parts.push(b.name);
+        if (l) parts.push(l.name);
         const li = el("li");
         const btn = el("button", { class:"picker-row", onclick: () => { m.close(); resolve(c.id); } },
-          c.title, " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+          c.title, " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
         li.appendChild(btn);
         ul.appendChild(li);
       });
@@ -5242,8 +5305,12 @@ function renderPlannerView(container) {
     cards.forEach(c => {
       const li = el("li");
       const b = getBoard(c.boardId);
+      const l = getList(c.listId);
+      const parts = [];
+      if (b) parts.push(b.name);
+      if (l) parts.push(l.name);
       li.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
-      li.append(" ", el("span", { class:"muted" }, "(" + (b ? b.name : "") + ")"));
+      li.append(" ", el("span", { class:"muted" }, "(" + parts.join(", ") + ")"));
       ul.appendChild(li);
     });
     sec.appendChild(ul);
@@ -5345,8 +5412,12 @@ function renderFilterView(container, filterId) {
   const ul = el("ul", { class:"smart-list" });
   cards.forEach(c => {
     const b = getBoard(c.boardId);
+    const l = getList(c.listId);
+    const parts = [];
+    if (b) parts.push(b.name);
+    if (l) parts.push(l.name);
     const li = el("li");
-    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
     ul.appendChild(li);
   });
   wrap.appendChild(ul);
@@ -5376,8 +5447,12 @@ function renderSearchView(container, query) {
   const ul = el("ul", { class:"smart-list" });
   cards.forEach(c => {
     const b = getBoard(c.boardId);
+    const l = getList(c.listId);
+    const parts = [];
+    if (b) parts.push(b.name);
+    if (l) parts.push(l.name);
     const li = el("li");
-    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
     ul.appendChild(li);
   });
   wrap.appendChild(ul);
