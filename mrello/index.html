@@ -1,0 +1,4962 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>mrello</title>
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22mrello%22%2C%22short_name%22%3A%22mrello%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%7D">
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f4f5f7;
+  --bg-card: #ffffff;
+  --bg-list: #ebecf0;
+  --bg-modal: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #e9ecef;
+  --bg-active: #dfe1e6;
+  --bg-badge: #e0e2e6;
+  --fg: #172b4d;
+  --fg-muted: #5e6c84;
+  --fg-subtle: #7a869a;
+  --border: #dfe1e6;
+  --border-strong: #b3bac5;
+  --accent: #0052cc;
+  --accent-hover: #0747a6;
+  --accent-fg: #ffffff;
+  --danger: #de350b;
+  --danger-bg: #ffebe6;
+  --warning: #ff8b00;
+  --warning-bg: #fff7e6;
+  --success: #00875a;
+  --success-bg: #e3fcef;
+  --info: #0065ff;
+  --info-bg: #deebff;
+  --focus: #4c9aff;
+  --shadow: 0 1px 2px rgba(9,30,66,.08), 0 0 1px rgba(9,30,66,.16);
+  --shadow-lg: 0 8px 24px rgba(9,30,66,.18);
+  --radius: 6px;
+  --radius-sm: 3px;
+  --gap: 8px;
+  --header-h: 48px;
+  --sidebar-w: 260px;
+  --label-c1: #61bd4f; --label-c2: #f2d600; --label-c3: #ff9f1a;
+  --label-c4: #eb5a46; --label-c5: #c377e0; --label-c6: #0079bf;
+  --label-c7: #00c2e0; --label-c8: #51e898; --label-c9: #ff78cb;
+  --label-c10: #344563;
+  --member-c1: #0052cc; --member-c2: #00875a; --member-c3: #de350b;
+  --member-c4: #ff8b00; --member-c5: #6554c0; --member-c6: #00b8d9;
+  --member-c7: #ff5630; --member-c8: #36b37e; --member-c9: #5243aa;
+  --member-c10: #008da6;
+}
+[data-theme="dark"] {
+  --bg: #1d2125;
+  --bg-alt: #161a1d;
+  --bg-card: #22272b;
+  --bg-list: #101204;
+  --bg-list: #161a1d;
+  --bg-modal: #282e33;
+  --bg-input: #22272b;
+  --bg-hover: #2c333a;
+  --bg-active: #38414a;
+  --bg-badge: #38414a;
+  --fg: #b6c2cf;
+  --fg-muted: #9fadbc;
+  --fg-subtle: #8c9bab;
+  --border: #38414a;
+  --border-strong: #5e6f81;
+  --accent: #579dff;
+  --accent-hover: #85b8ff;
+  --accent-fg: #1d2125;
+  --danger: #f87168;
+  --danger-bg: #42221f;
+  --warning: #f5cd47;
+  --warning-bg: #432913;
+  --success: #7ee2b8;
+  --success-bg: #164b35;
+  --info: #579dff;
+  --info-bg: #09326c;
+  --focus: #85b8ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 0 1px rgba(0,0,0,.4);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.6);
+}
+[data-contrast="high"] {
+  --border: #000;
+  --border-strong: #000;
+  --fg-muted: var(--fg);
+  --fg-subtle: var(--fg);
+}
+[data-contrast="high"][data-theme="dark"] {
+  --border: #fff;
+  --border-strong: #fff;
+}
+[data-fontsize="small"] { font-size: 13px; }
+[data-fontsize="normal"] { font-size: 15px; }
+[data-fontsize="large"] { font-size: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.45;
+  overflow: hidden;
+}
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  color: var(--fg);
+}
+button:hover:not(:disabled) { background: var(--bg-hover); }
+button:active:not(:disabled) { background: var(--bg-active); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+button.ghost { border: 1px solid var(--border); }
+button.icon-btn {
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+}
+input[type="text"], input[type="search"], input[type="email"], input[type="url"],
+input[type="number"], input[type="date"], input[type="time"], input[type="datetime-local"],
+input[type="password"], select, textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  width: 100%;
+  max-width: 100%;
+}
+input[type="checkbox"], input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+}
+textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+select { padding-right: 24px; }
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
+
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: 8px 12px;
+  z-index: 9999;
+  text-decoration: none;
+}
+.skip-link:focus { left: 8px; top: 8px; }
+
+/* Header */
+header.app-header {
+  height: var(--header-h);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  position: relative;
+  z-index: 10;
+}
+header.app-header h1 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.header-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.header-search {
+  width: 220px;
+}
+.header-title {
+  font-weight: 600;
+  font-size: 18px;
+  margin-left: 4px;
+}
+.view-tabs {
+  display: flex;
+  gap: 2px;
+}
+.view-tabs button {
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.view-tabs button[aria-pressed="true"] {
+  background: var(--bg-active);
+  font-weight: 600;
+}
+
+/* Layout */
+.app-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: calc(100vh - var(--header-h));
+}
+.app-layout.no-sidebar { grid-template-columns: 0 1fr; }
+.sidebar {
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+.sidebar.hidden { display: none; }
+.sidebar h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--fg-muted);
+  margin: 16px 8px 4px;
+  font-weight: 700;
+}
+.sidebar h2:first-of-type { margin-top: 0; }
+.sidebar-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  border: none;
+  font-size: 14px;
+  color: var(--fg);
+}
+.sidebar-item:hover { background: var(--bg-hover); }
+.sidebar-item.active { background: var(--bg-active); font-weight: 600; }
+.sidebar-item .badge {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--bg-badge);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+main.app-main {
+  overflow: auto;
+  position: relative;
+  background: var(--bg);
+}
+
+/* Board view */
+.board-bar {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-wrap: wrap;
+}
+.board-bar h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.lists-container {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  align-items: flex-start;
+  min-height: calc(100vh - var(--header-h) - 90px);
+}
+.list {
+  background: var(--bg-list);
+  border-radius: var(--radius);
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--header-h) - 110px);
+}
+.list-header {
+  padding: 10px 12px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.list-name {
+  font-weight: 600;
+  flex: 1;
+  font-size: 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  margin: 0;
+}
+.list-name:focus, .list-name:hover { background: var(--bg); border-color: var(--border); }
+.list-count {
+  font-size: 11px;
+  color: var(--fg-muted);
+  padding: 2px 6px;
+  background: var(--bg-badge);
+  border-radius: 10px;
+}
+.list-count.over-wip {
+  background: var(--danger);
+  color: #fff;
+}
+.list-cards {
+  padding: 4px 8px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 20px;
+}
+.list-add {
+  padding: 6px 8px 8px;
+}
+.list-add button {
+  width: 100%;
+  text-align: left;
+  color: var(--fg-muted);
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: var(--radius);
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  border: 2px solid transparent;
+  font-size: 14px;
+  position: relative;
+}
+.card:hover { background: var(--bg-hover); }
+.card.dragging { opacity: .5; }
+.card.kbd-grabbed { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.card.kbd-target { background: var(--bg-active); }
+.card.selected { border-color: var(--accent); }
+.card.dim { opacity: .35; }
+.card.complete .card-title { text-decoration: line-through; color: var(--fg-muted); }
+.card.overdue { border-left: 3px solid var(--danger); }
+.card.due-soon { border-left: 3px solid var(--warning); }
+.card-cover {
+  margin: -8px -10px 8px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  height: 40px;
+}
+.card-cover.full {
+  margin: -8px -10px;
+  height: auto;
+  min-height: 60px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 10px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.label-chip {
+  height: 8px;
+  min-width: 32px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.label-chip.named {
+  height: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.card-title {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  align-items: center;
+}
+.card-meta .meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-badge);
+}
+.card-meta .meta-chip.due {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.card-meta .meta-chip.overdue {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.card-meta .meta-chip.done {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.card-members {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.member-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--bg-card);
+}
+.member-avatar.lg { width: 32px; height: 32px; font-size: 13px; }
+.member-avatar.sm { width: 20px; height: 20px; font-size: 10px; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(9,30,66,.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  z-index: 100;
+  overflow-y: auto;
+}
+.modal {
+  background: var(--bg-modal);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 760px;
+  border: 1px solid var(--border);
+}
+.modal.small { max-width: 480px; }
+.modal.large { max-width: 980px; }
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1;
+}
+.modal-body { padding: 16px 20px; }
+.modal-body.no-pad { padding: 0; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Card detail */
+.card-detail {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 24px;
+  padding: 16px 20px;
+}
+@media (max-width: 720px) {
+  .card-detail { grid-template-columns: 1fr; }
+}
+.card-detail-section { margin-bottom: 20px; }
+.card-detail-section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--fg-muted);
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+.card-detail-title {
+  font-size: 22px;
+  font-weight: 600;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.card-detail-title:focus, .card-detail-title:hover { background: var(--bg-input); border-color: var(--border); }
+.card-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card-sidebar-actions button {
+  text-align: left;
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.checklist {
+  margin-bottom: 16px;
+}
+.checklist-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.checklist-name {
+  font-weight: 600;
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+}
+.checklist-name:focus { background: var(--bg-input); border-color: var(--border); }
+.checklist-progress {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.checklist-bar {
+  height: 6px;
+  background: var(--bg-badge);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.checklist-bar-fill {
+  height: 100%;
+  background: var(--success);
+  transition: width .15s;
+}
+.checklist-items { list-style: none; padding: 0; margin: 0 0 6px; }
+.checklist-item {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0;
+  align-items: flex-start;
+}
+.checklist-item input[type="text"] {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 4px;
+  flex: 1;
+}
+.checklist-item input[type="text"]:focus { background: var(--bg-input); border-color: var(--border); }
+.checklist-item.done input[type="text"] { text-decoration: line-through; color: var(--fg-muted); }
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.activity-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-time {
+  color: var(--fg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.comment {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.comment-header {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+/* Table view */
+.table-view {
+  padding: 12px;
+  overflow: auto;
+}
+table.cards-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+table.cards-table th, table.cards-table td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+table.cards-table th {
+  background: var(--bg-alt);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  cursor: pointer;
+}
+table.cards-table tr:hover td { background: var(--bg-hover); }
+table.cards-table tr.row-overdue td { border-left: 3px solid var(--danger); }
+table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: line-through; }
+
+/* Calendar view */
+.calendar {
+  padding: 12px;
+}
+.calendar-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.calendar-head {
+  background: var(--bg-alt);
+  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 12px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.calendar-cell {
+  min-height: 100px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 4px;
+  background: var(--bg);
+  font-size: 12px;
+}
+.calendar-cell.other-month { background: var(--bg-alt); color: var(--fg-muted); }
+.calendar-cell.today { background: var(--info-bg); }
+.cal-day { font-weight: 600; }
+.cal-event {
+  display: block;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  margin: 2px 0;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+.cal-event.overdue { background: var(--danger); }
+.cal-event.done { background: var(--success); text-decoration: line-through; }
+
+/* Timeline / Gantt */
+.timeline {
+  padding: 12px;
+  overflow: auto;
+}
+.timeline-grid {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.timeline-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  height: 32px;
+  align-items: center;
+}
+.timeline-label {
+  width: 200px;
+  padding: 0 8px;
+  border-right: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--bg-alt);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.timeline-track {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+.timeline-bar {
+  position: absolute;
+  top: 6px;
+  height: 20px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.timeline-bar.overdue { background: var(--danger); }
+.timeline-bar.done { background: var(--success); }
+.timeline-axis {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+.timeline-axis-cell {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11px;
+  border-right: 1px solid var(--border);
+  text-align: center;
+  min-width: 30px;
+}
+.timeline-axis-spacer { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); }
+
+/* Dashboard */
+.dashboard {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.dash-tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.dash-tile h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dash-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.dash-bar-label { width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-bar-bar {
+  flex: 1;
+  height: 14px;
+  background: var(--bg-badge);
+  border-radius: 7px;
+  position: relative;
+  overflow: hidden;
+}
+.dash-bar-fill { height: 100%; background: var(--accent); }
+.dash-bar-num { width: 32px; text-align: right; }
+.dash-stat {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Eisenhower */
+.eisenhower {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  height: calc(100vh - var(--header-h) - 40px);
+}
+.eisenhower-cell {
+  background: var(--bg-list);
+  border-radius: var(--radius);
+  padding: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.eisenhower-cell h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.eisenhower-cell .card { margin-bottom: 6px; }
+
+/* Inbox & Planner */
+.inbox-view { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; height: calc(100vh - var(--header-h) - 40px); }
+@media (max-width: 800px) { .inbox-view { grid-template-columns: 1fr; height: auto; } }
+.inbox-pane, .planner-pane {
+  background: var(--bg-list);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.inbox-pane h2, .planner-pane h2 { margin: 0 0 8px; font-size: 16px; }
+.inbox-add { display: flex; gap: 6px; margin-bottom: 8px; }
+.inbox-add input { flex: 1; }
+.planner-day { margin-bottom: 12px; }
+.planner-day h3 { margin: 0 0 6px; font-size: 13px; }
+.planner-block {
+  background: var(--bg-card);
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+}
+
+/* Sticky notes */
+.sticky-board {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - var(--header-h) - 40px);
+  overflow: auto;
+  background: var(--bg-alt);
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.sticky {
+  position: absolute;
+  width: 200px;
+  min-height: 120px;
+  padding: 10px;
+  background: #fff8b3;
+  color: #1a1a1a;
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+  font-family: 'Marker Felt', 'Comic Sans MS', cursive;
+  font-size: 14px;
+}
+.sticky textarea {
+  background: transparent;
+  border: none;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  font: inherit;
+  color: inherit;
+  outline: none;
+}
+.sticky-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+
+/* Settings */
+.settings-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.settings-section h3 { margin: 0 0 10px; font-size: 14px; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.settings-row label { flex: 1; }
+.settings-row label.full { display: block; flex: none; width: 100%; }
+.settings-row .hint { font-size: 12px; color: var(--fg-muted); margin-top: 2px; }
+
+/* Pomodoro pill */
+.pomo-pill {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pomo-pill.break { background: var(--success); }
+
+/* Members */
+.member-list { list-style: none; padding: 0; margin: 0; }
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.member-edit-form { display: grid; grid-template-columns: 1fr 100px 80px auto; gap: 6px; align-items: center; }
+
+/* Templates */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.template-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.template-card:hover { background: var(--bg-hover); }
+.template-card h4 { margin: 0 0 4px; font-size: 14px; }
+.template-card p { margin: 0; font-size: 12px; color: var(--fg-muted); }
+
+/* Search results */
+.search-results { max-height: 60vh; overflow-y: auto; }
+.search-result {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-left: none; border-right: none; border-top: none;
+  font-size: 13px;
+}
+.search-result:hover { background: var(--bg-hover); }
+.search-result-meta { color: var(--fg-muted); font-size: 11px; }
+
+/* Sticker */
+.sticker {
+  position: absolute;
+  font-size: 24px;
+  pointer-events: none;
+}
+
+/* Github status */
+.gh-status {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--bg-badge);
+}
+.gh-status.synced { background: var(--success-bg); color: var(--success); }
+.gh-status.dirty { background: var(--warning-bg); color: var(--warning); }
+.gh-status.error { background: var(--danger-bg); color: var(--danger); }
+
+/* Toast */
+#toasts {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 200;
+}
+.toast {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  box-shadow: var(--shadow-lg);
+  max-width: 360px;
+  font-size: 13px;
+}
+.toast.error { border-left-color: var(--danger); }
+.toast.success { border-left-color: var(--success); }
+.toast.warning { border-left-color: var(--warning); }
+
+/* Bulk action bar */
+.bulk-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 6px 14px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  font-size: 13px;
+}
+
+/* Picker */
+.picker-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.picker-list li button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+}
+.picker-list li button:hover { background: var(--bg-hover); }
+
+/* Habit indicator */
+.habit-streak {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Drag and drop helpers */
+.drop-target { background: var(--bg-active); outline: 2px dashed var(--accent); outline-offset: -2px; }
+.drop-placeholder {
+  height: 36px;
+  background: var(--bg-active);
+  border-radius: var(--radius);
+  border: 2px dashed var(--accent);
+  margin: 2px 0;
+}
+
+/* Workspace selector */
+.ws-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Color preview */
+.color-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* Markdown rendering */
+.md-rendered { font-size: 14px; }
+.md-rendered h1, .md-rendered h2, .md-rendered h3 { margin: 12px 0 6px; }
+.md-rendered h1 { font-size: 18px; }
+.md-rendered h2 { font-size: 16px; }
+.md-rendered h3 { font-size: 14px; }
+.md-rendered p { margin: 6px 0; }
+.md-rendered ul, .md-rendered ol { padding-left: 24px; margin: 6px 0; }
+.md-rendered code {
+  background: var(--bg-alt);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .9em;
+}
+.md-rendered pre {
+  background: var(--bg-alt);
+  padding: 8px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.md-rendered pre code { background: transparent; padding: 0; }
+.md-rendered blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 8px;
+  color: var(--fg-muted);
+  margin: 6px 0;
+}
+.md-rendered a { color: var(--accent); }
+.md-rendered hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* Conditional formatting indicators inside cards */
+.indicator-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+.dep-badge {
+  background: var(--info-bg);
+  color: var(--info);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-weight: 600;
+}
+.subcards-badge {
+  background: var(--bg-badge);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.mirror-badge {
+  background: var(--info-bg);
+  color: var(--info);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-weight: 600;
+}
+
+/* Focus mode */
+.focus-mode {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  padding: 32px;
+  overflow: auto;
+}
+.focus-mode .focus-content {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+.focus-mode h2 { font-size: 28px; margin: 0 0 16px; }
+
+/* Form field row */
+.field-row { margin-bottom: 12px; }
+.field-row label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 13px; }
+
+.help-key {
+  font-family: ui-monospace, monospace;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+</style>
+</head>
+<body>
+<a href="#main" class="skip-link">Přeskočit na obsah</a>
+<header class="app-header" role="banner">
+  <h1>mrello</h1>
+  <div class="header-divider"></div>
+  <div class="ws-switcher">
+    <label for="wsSelect" class="sr-only" data-i18n="workspace">Pracovní prostor</label>
+    <select id="wsSelect" aria-label="Pracovní prostor"></select>
+    <button class="icon-btn" id="wsManage" data-i18n-title="manageWorkspaces" title="Spravovat prostory">···</button>
+  </div>
+  <div class="header-divider"></div>
+  <span class="header-title" id="viewTitle"></span>
+  <div class="header-divider"></div>
+  <div class="view-tabs" id="viewTabs" role="tablist" aria-label="Pohledy"></div>
+  <div class="header-actions">
+    <span id="pomoIndicator" aria-live="polite"></span>
+    <span id="ghStatus" class="gh-status" hidden></span>
+    <input type="search" id="globalSearch" class="header-search" placeholder="Hledat (/)" data-i18n-placeholder="searchPlaceholder" aria-label="Globální hledání">
+    <button class="icon-btn" id="quickCaptureBtn" title="Nová karta / rychlý zápis (N)" data-i18n-title="quickCapture">+</button>
+    <button class="icon-btn" id="inboxBtn" title="Inbox (I)" data-i18n-title="inbox">In</button>
+    <button class="icon-btn" id="plannerBtn" title="Plánovač (P)" data-i18n-title="planner">Pl</button>
+    <button class="icon-btn" id="stickyBtn" title="Poznámky (M vytvoří novou)" data-i18n-title="stickies">Lp</button>
+    <button class="icon-btn" id="membersBtn" title="Členové" data-i18n-title="members">Čl</button>
+    <button class="icon-btn" id="themeBtn" title="Přepnout téma (T)" data-i18n-title="theme">Té</button>
+    <button class="icon-btn" id="helpBtn" title="Nápověda (?)" data-i18n-title="help">?</button>
+    <button class="icon-btn" id="settingsBtn" title="Nastavení" data-i18n-title="settings">Na</button>
+  </div>
+</header>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar" role="complementary" aria-label="Postranní panel">
+    <h2 data-i18n="smartViews">Rychlé pohledy</h2>
+    <ul class="sidebar-list" id="smartViewsList"></ul>
+    <h2 data-i18n="boards">Nástěnky</h2>
+    <ul class="sidebar-list" id="boardsList"></ul>
+    <button class="sidebar-item" id="newBoardBtn" data-i18n="newBoard">+ Nová nástěnka</button>
+    <h2 data-i18n="filters">Uložené filtry</h2>
+    <ul class="sidebar-list" id="savedFiltersList"></ul>
+  </aside>
+  <main class="app-main" id="main" role="main" aria-label="Hlavní obsah" tabindex="-1">
+    <div id="viewContainer"></div>
+  </main>
+</div>
+<div id="modals"></div>
+<div id="toasts" aria-live="polite" aria-atomic="false"></div>
+<div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+<div id="urgentAnnouncer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+<script>
+"use strict";
+//#region ============= I18N =============
+// Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
+const I18N_CS = {
+  workspace: "Pracovní prostor",
+  manageWorkspaces: "Spravovat pracovní prostory",
+  boards: "Nástěnky",
+  smartViews: "Rychlé pohledy",
+  filters: "Uložené filtry",
+  newBoard: "+ Nová nástěnka",
+  searchPlaceholder: "Hledat (/)",
+  quickCapture: "Nová karta (N)",
+  inbox: "Inbox (I)",
+  planner: "Plánovač (P)",
+  stickies: "Poznámky",
+  newSticky: "Nová poznámka (M)",
+  members: "Členové",
+  theme: "Přepnout téma (T)",
+  help: "Nápověda (?)",
+  settings: "Nastavení",
+  today: "Dnes",
+  thisWeek: "Tento týden",
+  overdue: "Po termínu",
+  noDate: "Bez termínu",
+  completed: "Hotové",
+  archive: "Archiv",
+  trash: "Koš",
+  addList: "+ Přidat seznam",
+  addCard: "+ Přidat kartu",
+  addCardTitle: "Zadej název karty…",
+  save: "Uložit",
+  cancel: "Zrušit",
+  close: "Zavřít",
+  delete: "Smazat",
+  archiveAction: "Archivovat",
+  unarchive: "Obnovit",
+  edit: "Upravit",
+  rename: "Přejmenovat",
+  description: "Popis",
+  labels: "Štítky",
+  dueDate: "Termín",
+  startDate: "Začátek",
+  cover: "Záhlaví",
+  checklists: "Checklisty",
+  customFields: "Vlastní pole",
+  attachments: "Přílohy",
+  activity: "Aktivita",
+  comments: "Komentáře",
+  addComment: "Přidat komentář…",
+  addChecklist: "Přidat checklist",
+  addItem: "Přidat položku",
+  estimate: "Odhad",
+  timeTracking: "Sledování času",
+  subcards: "Podkarty",
+  dependencies: "Závislosti",
+  blocks: "Blokuje",
+  blockedBy: "Je blokována",
+  related: "Souvisí",
+  mirror: "Zrcadlit do…",
+  mirroredFrom: "Zrcadlená kopie",
+  template: "Šablona",
+  saveAsTemplate: "Uložit jako šablonu",
+  createFromTemplate: "Vytvořit ze šablony",
+  boardTemplates: "Šablony nástěnek",
+  cardTemplates: "Šablony karet",
+  pomodoro: "Pomodoro",
+  startPomodoro: "Spustit Pomodoro",
+  stopPomodoro: "Zastavit Pomodoro",
+  focusMode: "Soustředění",
+  snooze: "Odložit",
+  reminder: "Připomenutí",
+  addReminder: "Přidat připomenutí",
+  confirmDelete: "Opravdu smazat?",
+  untitled: "Bez názvu",
+  boardName: "Název nástěnky",
+  listName: "Název seznamu",
+  cardName: "Název karty",
+  memberName: "Jméno",
+  memberInitials: "Iniciály",
+  memberColor: "Barva",
+  memberEmail: "E-mail",
+  memberNotes: "Poznámky",
+  addMember: "Přidat člena",
+  noMembers: "Žádní členové. Přidej virtuální členy a přiřazuj je ke kartám.",
+  githubSync: "GitHub synchronizace",
+  githubToken: "Personal access token",
+  githubOwner: "Vlastník (uživatel/org)",
+  githubRepo: "Repozitář",
+  githubBranch: "Větev",
+  githubPath: "Cesta v repu",
+  saveToGithub: "Uložit do GitHubu (S)",
+  loadFromGithub: "Načíst z GitHubu",
+  encryption: "Šifrování",
+  setPassphrase: "Nastavit heslo",
+  language: "Jazyk",
+  sound: "Zvukové signály",
+  fontSize: "Velikost písma",
+  contrast: "Vysoký kontrast",
+  pomodoroWork: "Délka pracovního bloku (min)",
+  pomodoroBreak: "Délka přestávky (min)",
+  spellCheck: "Korektor (ÚFAL)",
+  export: "Export",
+  import: "Import",
+  exportJson: "Exportovat JSON",
+  exportMarkdown: "Exportovat Markdown",
+  exportCsv: "Exportovat CSV",
+  exportIcs: "Exportovat iCalendar (.ics)",
+  importJson: "Importovat JSON",
+  importTrello: "Importovat Trello JSON",
+  settingsTitle: "Nastavení",
+  boardView: "Nástěnka",
+  tableView: "Tabulka",
+  calendarView: "Kalendář",
+  timelineView: "Časová osa",
+  dashboardView: "Přehled",
+  eisenhowerView: "Matice priorit",
+  keyboardShortcuts: "Klávesové zkratky",
+  moveCardKbd: "Přesunout kartu klávesnicí",
+  bulkSelected: (n) => `Vybráno ${n}`,
+  confirmDeleteBoard: "Opravdu smazat tuto nástěnku se vším obsahem? Půjde do koše.",
+  confirmDeleteCard: "Opravdu smazat tuto kartu? Půjde do koše.",
+  confirmDeleteList: "Opravdu smazat tento seznam se všemi kartami? Půjde do koše.",
+  restored: "Obnoveno z koše.",
+  sentToTrash: "Přesunuto do koše.",
+  saved: "Uloženo.",
+  syncOk: "Synchronizováno s GitHubem.",
+  syncErr: "Chyba synchronizace.",
+  notSet: "Nenastaveno",
+  backgroundColor: "Barva pozadí",
+  wipLimit: "WIP limit",
+  none: "(žádný)",
+  open: "Otevřít",
+  sticky: "Poznámka",
+  addSticky: "Přidat poznámku",
+  pickColor: "Vybrat barvu",
+  addLabel: "Přidat štítek",
+  labelName: "Název štítku",
+  addCustomField: "Přidat vlastní pole",
+  fieldName: "Název pole",
+  fieldType: "Typ pole",
+  fieldOptions: "Možnosti (oddělené čárkami)",
+  text: "Text",
+  number: "Číslo",
+  date: "Datum",
+  checkbox: "Zaškrtávátko",
+  select: "Výběr",
+  url: "URL",
+  addAttachment: "Přidat přílohu",
+  attachmentUrl: "Adresa URL",
+  attachmentName: "Název",
+  cardType: "Typ karty",
+  normal: "Běžná",
+  habit: "Návyk",
+  note: "Poznámka",
+  habitFrequency: "Frekvence",
+  daily: "Denně",
+  weekly: "Týdně",
+  custom: "Vlastní",
+  streak: "Série dní",
+  completeToday: "Hotovo dnes",
+  snoozeUntil: "Odložit do",
+  activityCreated: "Vytvořeno",
+  activityMoved: (from, to) => `Přesunuto z „${from}“ do „${to}“`,
+  activityRenamed: (from, to) => `Přejmenováno z „${from}“ na „${to}“`,
+  activityDescChanged: "Změněn popis",
+  activityLabelAdded: (l) => `Přidán štítek „${l}“`,
+  activityLabelRemoved: (l) => `Odebrán štítek „${l}“`,
+  activityMemberAdded: (m) => `Přiřazen člen „${m}“`,
+  activityMemberRemoved: (m) => `Odebrán člen „${m}“`,
+  activityDueSet: (d) => `Nastaven termín ${d}`,
+  activityDueRemoved: "Odebrán termín",
+  activityCompleted: "Označeno jako hotové",
+  activityUncompleted: "Obnoveno z hotového",
+  activityArchived: "Archivováno",
+  activityUnarchived: "Obnoveno z archivu",
+  activityCommented: "Přidán komentář",
+  activityChecklistDone: (t) => `Splněno: „${t}“`,
+  activityChecklistTodo: (t) => `Vráceno: „${t}“`,
+  helpTitle: "Klávesové zkratky",
+  selectBoardOrSmart: "Vyber nástěnku nebo rychlý pohled v levém panelu.",
+  noTasks: "Nic k zobrazení.",
+  addInbox: "Přidat do Inboxu…",
+  moveToBoard: "Přesunout na nástěnku…",
+  chooseList: "Vyber seznam",
+  deleted: "Smazáno.",
+  pomoStarted: (m) => `Pomodoro spuštěno (${m} min).`,
+  pomoBreak: "Přestávka.",
+  pomoDone: "Pomodoro dokončeno.",
+  wipExceeded: (n) => `WIP limit překročen (${n}).`,
+  bulkDelete: "Smazat vybrané",
+  bulkArchive: "Archivovat vybrané",
+  bulkMove: "Přesunout vybrané…",
+  bulkLabel: "Přidat štítek vybraným…",
+  deselect: "Zrušit výběr",
+  everywhere: "Kdekoli",
+  inThisBoard: "Na této nástěnce",
+  saveFilter: "Uložit filtr",
+  filterName: "Název filtru",
+  nothingHere: "Nic tady není.",
+  welcome: "Vítej v mrello",
+  welcomeText: "Začni vytvořením první nástěnky vlevo nebo si nech vytvořit ukázkovou nástěnku.",
+  createSample: "Vytvořit ukázkovou nástěnku",
+  yes: "Ano",
+  no: "Ne",
+  pickLabels: "Vybrat štítky",
+  pickMembers: "Přiřadit členy",
+  pickList: "Vybrat seznam",
+  pickBoard: "Vybrat nástěnku",
+  pickCard: "Vybrat kartu",
+  chooseTemplate: "Zvolit šablonu",
+  name: "Název",
+  color: "Barva",
+  actions: "Akce",
+  moveCard: "Přesunout kartu (R)",
+  nextCard: "Další karta (.)",
+  prevCard: "Předchozí karta (,)",
+  nextBoard: "Další nástěnka (B)",
+  pickBoardGoto: "Skok na nástěnku (G)",
+  addCommentShort: "Komentář (C)",
+  pickLabelsShort: "Štítky (L)",
+  pickMembersShort: "Členové (A)",
+  setDueShort: "Termín (D)",
+  grabCard: "Uchopit kartu pro přesun (U)",
+};
+function T(key, ...args) {
+  const v = I18N_CS[key];
+  if (typeof v === "function") return v(...args);
+  if (v == null) return key;
+  return v;
+}
+function applyI18n() {
+  document.documentElement.lang = "cs";
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = T(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    el.placeholder = T(el.getAttribute("data-i18n-placeholder"));
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach(el => {
+    el.title = T(el.getAttribute("data-i18n-title"));
+  });
+}
+//#endregion
+
+//#region ============= UTIL =============
+const uid = (p="") => p + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const $ = (sel, ctx=document) => ctx.querySelector(sel);
+const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
+function el(tag, attrs={}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k === "style" && typeof v === "object") Object.assign(e.style, v);
+    else if (k.startsWith("on") && typeof v === "function") e.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === "html") e.innerHTML = v;
+    else if (k === "dataset") for (const [dk,dv] of Object.entries(v)) e.dataset[dk] = dv;
+    else if (k in e && typeof e[k] !== "object") {
+      try { e[k] = v; } catch { e.setAttribute(k, v); }
+    }
+    else e.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    e.appendChild(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function debounce(fn, ms) {
+  let t;
+  return function(...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+function formatDate(d, withTime=false) {
+  if (!d) return "";
+  const dt = d instanceof Date ? d : new Date(d);
+  if (isNaN(dt)) return "";
+  const opts = { year:"numeric", month:"2-digit", day:"2-digit" };
+  if (withTime) { opts.hour = "2-digit"; opts.minute = "2-digit"; }
+  return dt.toLocaleString(LANG === "cs" ? "cs-CZ" : "en-GB", opts);
+}
+function dateOnly(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+function isToday(d) {
+  if (!d) return false;
+  const a = dateOnly(d), b = dateOnly(new Date());
+  return a && b && a.getTime() === b.getTime();
+}
+function daysFromNow(d) {
+  if (!d) return null;
+  const a = dateOnly(d), b = dateOnly(new Date());
+  return Math.round((a - b) / 86400000);
+}
+function isoLocalDate(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,"0");
+  const day = String(dt.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function startOfWeek(d=new Date()) {
+  const dt = new Date(d);
+  const day = (dt.getDay() + 6) % 7;
+  dt.setHours(0,0,0,0);
+  dt.setDate(dt.getDate() - day);
+  return dt;
+}
+function addDays(d, n) {
+  const dt = new Date(d);
+  dt.setDate(dt.getDate() + n);
+  return dt;
+}
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+function memberInitials(name) {
+  return String(name||"").trim().split(/\s+/).slice(0,2).map(s => s[0]||"").join("").toUpperCase() || "?";
+}
+function downloadBlob(content, filename, mime="application/octet-stream") {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url, download: filename, style: { display:"none" } });
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200);
+}
+function pickFile(accept=".json") {
+  return new Promise(resolve => {
+    const inp = el("input", { type:"file", accept, style:{ display:"none" } });
+    inp.addEventListener("change", () => resolve(inp.files[0] || null));
+    document.body.appendChild(inp);
+    inp.click();
+    setTimeout(() => inp.remove(), 0);
+  });
+}
+async function readFileAsText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsText(file);
+  });
+}
+const labelColors = ["--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8","--label-c9","--label-c10"];
+const memberColors = ["--member-c1","--member-c2","--member-c3","--member-c4","--member-c5","--member-c6","--member-c7","--member-c8","--member-c9","--member-c10"];
+// České názvy pro CSS proměnné barev (sdílené pro štítky i členy — oba používají stejnou paletu tónů)
+const COLOR_NAMES = {
+  "--label-c1":  "zelená",
+  "--label-c2":  "žlutá",
+  "--label-c3":  "oranžová",
+  "--label-c4":  "červená",
+  "--label-c5":  "fialová",
+  "--label-c6":  "modrá",
+  "--label-c7":  "tyrkysová",
+  "--label-c8":  "světle zelená",
+  "--label-c9":  "růžová",
+  "--label-c10": "tmavě modrá",
+  "--member-c1": "modrá",
+  "--member-c2": "zelená",
+  "--member-c3": "červená",
+  "--member-c4": "oranžová",
+  "--member-c5": "fialová",
+  "--member-c6": "tyrkysová",
+  "--member-c7": "rumělková",
+  "--member-c8": "mátová",
+  "--member-c9": "indigová",
+  "--member-c10":"ocelová",
+};
+function colorName(cssVar) { return COLOR_NAMES[cssVar] || cssVar; }
+function colorVar(v) { return v && v.startsWith("--") ? `var(${v})` : (v || "var(--accent)"); }
+//#endregion
+
+//#region ============= AUDIO =============
+let audioCtx = null;
+function audioOn() { return state.settings.soundEnabled !== false; }
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur=0.08, type="sine", vol=0.06) {
+  if (!audioOn()) return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g); g.connect(ctx.destination);
+  const t0 = ctx.currentTime;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.start(t0); o.stop(t0 + dur + 0.01);
+}
+function arpeggio(freqs, gap=0.05) {
+  freqs.forEach((f,i) => setTimeout(() => tone(f, 0.09, "sine", 0.06), i*gap*1000));
+}
+const sound = {
+  click: () => tone(880, 0.04, "sine", 0.03),
+  add:   () => arpeggio([523, 659, 784]),
+  done:  () => arpeggio([784, 988, 1175]),
+  remove:() => arpeggio([784, 523, 392]),
+  err:   () => arpeggio([392, 261]),
+  warn:  () => arpeggio([523, 415]),
+  pomoStart: () => arpeggio([523, 659, 784, 1047]),
+  pomoEnd:   () => arpeggio([1047, 784, 659, 523]),
+  pickup: () => tone(660, 0.06, "sine", 0.05),
+  drop:   () => tone(440, 0.08, "sine", 0.05),
+  sync:  () => arpeggio([392, 523, 659]),
+};
+//#endregion
+
+//#region ============= ANNOUNCER, TOAST =============
+let _annTimer;
+function announce(msg, urgent=false) {
+  const node = $(urgent ? "#urgentAnnouncer" : "#announcer");
+  if (!node) return;
+  node.textContent = "";
+  clearTimeout(_annTimer);
+  _annTimer = setTimeout(() => { node.textContent = msg; }, 60);
+}
+function toast(msg, kind="info", ms=3500) {
+  const t = el("div", { class:"toast " + kind, role:"status" }, msg);
+  $("#toasts").appendChild(t);
+  setTimeout(() => { t.style.opacity = "0"; t.style.transition = "opacity .3s"; setTimeout(() => t.remove(), 300); }, ms);
+}
+//#endregion
+
+//#region ============= MODAL =============
+function openModal({ title, body, footer, size="", onClose, escClose=true }={}) {
+  const overlay = el("div", { class:"modal-overlay", role:"dialog", "aria-modal":"true", "aria-label": title || "" });
+  const modal = el("div", { class:"modal " + size });
+  const headerEl = el("div", { class:"modal-header" },
+    el("h2", {}, title || ""),
+    el("button", { class:"icon-btn", "aria-label": T("close"), onclick: () => close() }, "✕")
+  );
+  const bodyEl = el("div", { class:"modal-body" });
+  if (body) {
+    if (typeof body === "string") bodyEl.innerHTML = body;
+    else if (body.nodeType) bodyEl.appendChild(body);
+    else if (Array.isArray(body)) body.forEach(b => bodyEl.appendChild(b));
+  }
+  modal.appendChild(headerEl);
+  modal.appendChild(bodyEl);
+  if (footer) {
+    const f = el("div", { class:"modal-footer" });
+    (Array.isArray(footer) ? footer : [footer]).forEach(b => f.appendChild(b));
+    modal.appendChild(f);
+  }
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", keyHandler);
+  function keyHandler(e) {
+    if (e.key === "Escape" && escClose) { e.stopPropagation(); close(); }
+  }
+  function close() {
+    document.removeEventListener("keydown", keyHandler);
+    overlay.remove();
+    if (onClose) onClose();
+    if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  }
+  const lastFocus = document.activeElement;
+  $("#modals").appendChild(overlay);
+  // focus first focusable
+  setTimeout(() => {
+    const f = modal.querySelector("input, textarea, select, button:not([aria-label='" + T("close") + "'])");
+    if (f) f.focus();
+    else modal.tabIndex = -1, modal.focus();
+  }, 30);
+  return { overlay, modal, body: bodyEl, close };
+}
+function confirm2(msg, { okLabel, danger=false }={}) {
+  return new Promise(resolve => {
+    let resolved = false;
+    const ok = el("button", { class: danger ? "danger" : "primary", onclick: () => { resolved = true; m.close(); resolve(true); } }, okLabel || T("yes"));
+    const cancel = el("button", { class:"ghost", onclick: () => { resolved = true; m.close(); resolve(false); } }, T("cancel"));
+    const m = openModal({ title: T("confirmDelete"), body: el("p", {}, msg), footer: [cancel, ok], size:"small", onClose: () => { if (!resolved) resolve(false); } });
+  });
+}
+//#endregion
+
+//#region ============= STATE =============
+const STORAGE_KEY = "kanban_state_v1";
+const DB_NAME = "kanban_db";
+const DB_STORE = "state";
+const initialState = {
+  version: 1,
+  settings: {
+    language: "cs",
+    theme: "auto",
+    soundEnabled: true,
+    fontSize: "normal",
+    highContrast: false,
+    pomodoroWork: 25,
+    pomodoroBreak: 5,
+    spellCheckEnabled: false,
+  },
+  github: {
+    enabled: false,
+    token: "",
+    owner: "",
+    repo: "",
+    branch: "main",
+    path: "kanban.json",
+    sha: null,
+    lastSync: null,
+  },
+  workspaces: [],
+  boards: [],
+  lists: [],
+  cards: [],
+  members: [],
+  inbox: [],
+  planner: [],
+  stickyNotes: [],
+  trash: [],
+  savedFilters: [],
+  ui: {
+    currentWorkspace: null,
+    currentView: { type:"welcome" },
+    sidebarCollapsed: false,
+  },
+  pomodoro: { active:false, cardId:null, startedAt:null, type:"work", completed:0 },
+};
+let state = deepClone(initialState);
+let _saveTimer = null;
+function saveState() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      await idbSave(state);
+    } catch (e) {
+      console.error(e);
+      // fallback
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    }
+    if (state.github.enabled && state.github.autoSync) {
+      // auto github upload could be done here; we keep manual to avoid token use
+    }
+  }, 200);
+}
+function setGhStatus(kind, text) {
+  const e = $("#ghStatus");
+  if (!e) return;
+  e.hidden = !state.github.enabled;
+  e.className = "gh-status " + (kind || "");
+  e.textContent = text || (state.github.enabled ? "GitHub" : "");
+}
+//#endregion
+
+//#region ============= IndexedDB =============
+function idb() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function idbSave(data) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).put(data, "main");
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbLoad() {
+  try {
+    const db = await idb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const r = tx.objectStore(DB_STORE).get("main");
+      r.onsuccess = () => res(r.result || null);
+      r.onerror = () => rej(r.error);
+    });
+  } catch (e) {
+    // fallback
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? JSON.parse(s) : null;
+  }
+}
+//#endregion
+
+//#region ============= ENCRYPTION (token storage) =============
+async function deriveKey(passphrase, salt) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name:"PBKDF2", salt, iterations:120000, hash:"SHA-256" },
+    baseKey,
+    { name:"AES-GCM", length:256 },
+    false,
+    ["encrypt","decrypt"]
+  );
+}
+async function encryptString(plain, passphrase) {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(passphrase, salt);
+  const ct = await crypto.subtle.encrypt({ name:"AES-GCM", iv }, key, enc.encode(plain));
+  const out = new Uint8Array(salt.length + iv.length + ct.byteLength);
+  out.set(salt, 0); out.set(iv, salt.length); out.set(new Uint8Array(ct), salt.length + iv.length);
+  return btoa(String.fromCharCode(...out));
+}
+async function decryptString(b64, passphrase) {
+  const data = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = data.slice(0,16);
+  const iv = data.slice(16,28);
+  const ct = data.slice(28);
+  const key = await deriveKey(passphrase, salt);
+  const pt = await crypto.subtle.decrypt({ name:"AES-GCM", iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}
+let _ghTokenCache = null;
+async function getGhToken() {
+  // Token je uložen v plain v state.github.token (uživatel si nepřál šifrování).
+  // Datový soubor zůstává v lokálním IndexedDB v prohlížeči.
+  return state.github.token || null;
+}
+//#endregion
+
+//#region ============= GITHUB =============
+const GH_API = "https://api.github.com";
+async function ghHeaders() {
+  const tok = await getGhToken();
+  if (!tok) throw new Error("No token");
+  return { "Authorization": "token " + tok, "Accept":"application/vnd.github+json" };
+}
+function b64encUtf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64decUtf8(b64) {
+  return decodeURIComponent(escape(atob(b64.replace(/\n/g, ""))));
+}
+async function ghLoad() {
+  if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
+  setGhStatus("", "GitHub…");
+  try {
+    const headers = await ghHeaders();
+    const url = `${GH_API}/repos/${state.github.owner}/${state.github.repo}/contents/${encodeURIComponent(state.github.path)}?ref=${encodeURIComponent(state.github.branch)}`;
+    const r = await fetch(url, { headers });
+    if (r.status === 404) { toast("Soubor v repu zatím neexistuje.", "warning"); setGhStatus("dirty", "GitHub: nový"); return; }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    const content = b64decUtf8(j.content);
+    const data = JSON.parse(content);
+    state = mergeLoadedState(data);
+    state.github.sha = j.sha;
+    state.github.lastSync = Date.now();
+    saveState();
+    renderAll();
+    setGhStatus("synced", "GitHub OK");
+    sound.sync();
+    toast(T("syncOk"), "success");
+  } catch (e) {
+    console.error(e);
+    setGhStatus("error", "GitHub chyba");
+    toast(T("syncErr") + " " + e.message, "error"); sound.err();
+  }
+}
+async function ghSave() {
+  if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
+  setGhStatus("", "GitHub…");
+  try {
+    const headers = await ghHeaders();
+    headers["Content-Type"] = "application/json";
+    const content = JSON.stringify(state, null, 2);
+    // First, try Git Blob API for large files
+    const blobR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/blobs`, {
+      method:"POST",
+      headers,
+      body: JSON.stringify({ content: b64encUtf8(content), encoding:"base64" })
+    });
+    if (!blobR.ok) throw new Error("blob HTTP " + blobR.status);
+    const blob = await blobR.json();
+    // Get current ref
+    const refR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/ref/heads/${state.github.branch}`, { headers });
+    if (!refR.ok) throw new Error("ref HTTP " + refR.status);
+    const ref = await refR.json();
+    const baseSha = ref.object.sha;
+    // Get base tree
+    const commitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits/${baseSha}`, { headers });
+    if (!commitR.ok) throw new Error("commit HTTP " + commitR.status);
+    const baseCommit = await commitR.json();
+    // Create tree
+    const treeR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/trees`, {
+      method:"POST", headers,
+      body: JSON.stringify({
+        base_tree: baseCommit.tree.sha,
+        tree: [{ path: state.github.path, mode:"100644", type:"blob", sha: blob.sha }]
+      })
+    });
+    if (!treeR.ok) throw new Error("tree HTTP " + treeR.status);
+    const tree = await treeR.json();
+    // Create commit
+    const newCommitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits`, {
+      method:"POST", headers,
+      body: JSON.stringify({
+        message: "kanban: update " + new Date().toISOString(),
+        tree: tree.sha,
+        parents: [baseSha]
+      })
+    });
+    if (!newCommitR.ok) throw new Error("commit-create HTTP " + newCommitR.status);
+    const newCommit = await newCommitR.json();
+    // Move ref
+    const updR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/refs/heads/${state.github.branch}`, {
+      method:"PATCH", headers,
+      body: JSON.stringify({ sha: newCommit.sha })
+    });
+    if (!updR.ok) throw new Error("ref-update HTTP " + updR.status);
+    state.github.lastSync = Date.now();
+    saveState();
+    setGhStatus("synced", "GitHub OK");
+    sound.sync();
+    toast(T("syncOk"), "success");
+  } catch (e) {
+    console.error(e);
+    setGhStatus("error", "GitHub chyba");
+    toast(T("syncErr") + " " + e.message, "error"); sound.err();
+  }
+}
+function mergeLoadedState(data) {
+  // Replace state with loaded; preserve runtime ui if missing
+  const newState = Object.assign(deepClone(initialState), data);
+  if (!newState.ui) newState.ui = deepClone(initialState.ui);
+  if (!newState.pomodoro) newState.pomodoro = deepClone(initialState.pomodoro);
+  return newState;
+}
+//#endregion
+
+//#region ============= MARKDOWN =============
+function mdRender(src) {
+  if (!src) return "";
+  let s = String(src);
+  // escape
+  s = s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  // code blocks ```
+  s = s.replace(/```([\s\S]*?)```/g, (_,c) => `<pre><code>${c}</code></pre>`);
+  // inline code
+  s = s.replace(/`([^`\n]+)`/g, (_,c) => `<code>${c}</code>`);
+  // headers
+  s = s.replace(/^###### (.*)$/gm, "<h6>$1</h6>");
+  s = s.replace(/^##### (.*)$/gm, "<h5>$1</h5>");
+  s = s.replace(/^#### (.*)$/gm, "<h4>$1</h4>");
+  s = s.replace(/^### (.*)$/gm, "<h3>$1</h3>");
+  s = s.replace(/^## (.*)$/gm, "<h2>$1</h2>");
+  s = s.replace(/^# (.*)$/gm, "<h1>$1</h1>");
+  // hr
+  s = s.replace(/^---+$/gm, "<hr>");
+  // blockquote
+  s = s.replace(/^&gt; (.*)$/gm, "<blockquote>$1</blockquote>");
+  // bold/italic
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  s = s.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  s = s.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  // links
+  s = s.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // auto-link bare URLs
+  s = s.replace(/(^|[^"=\(>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  // unordered list
+  s = s.replace(/(?:^- .*(?:\n|$))+/gm, (m) => {
+    const items = m.trim().split("\n").map(l => l.replace(/^- /, "")).map(t => `<li>${t}</li>`).join("");
+    return `<ul>${items}</ul>`;
+  });
+  // ordered list
+  s = s.replace(/(?:^\d+\. .*(?:\n|$))+/gm, (m) => {
+    const items = m.trim().split("\n").map(l => l.replace(/^\d+\. /, "")).map(t => `<li>${t}</li>`).join("");
+    return `<ol>${items}</ol>`;
+  });
+  // paragraphs (split by blank lines)
+  s = s.split(/\n{2,}/).map(p => {
+    if (/^\s*<(h\d|ul|ol|pre|blockquote|hr)/.test(p)) return p;
+    return "<p>" + p.replace(/\n/g, "<br>") + "</p>";
+  }).join("\n");
+  return s;
+}
+//#endregion
+
+//#region ============= MODEL =============
+function currentWorkspace() {
+  if (!state.workspaces.length) return null;
+  return state.workspaces.find(w => w.id === state.ui.currentWorkspace) || state.workspaces[0];
+}
+function boardsInWorkspace(wsId) {
+  const id = wsId || (currentWorkspace() && currentWorkspace().id);
+  return state.boards.filter(b => b.workspaceId === id && !b.archived && !b.isTemplate);
+}
+function listsInBoard(boardId) {
+  return state.lists.filter(l => l.boardId === boardId && !l.archived).sort((a,b) => a.position - b.position);
+}
+function cardsInList(listId) {
+  return state.cards.filter(c => c.listId === listId && !c.archived && !c.deleted).sort((a,b) => a.position - b.position);
+}
+function cardsInBoard(boardId, opts={}) {
+  return state.cards.filter(c => c.boardId === boardId && !c.deleted && (opts.includeArchived || !c.archived));
+}
+function getCard(id) { return state.cards.find(c => c.id === id); }
+function getBoard(id) { return state.boards.find(b => b.id === id); }
+function getList(id) { return state.lists.find(l => l.id === id); }
+function getMember(id) { return state.members.find(m => m.id === id); }
+function getLabel(boardId, labelId) { const b = getBoard(boardId); return b && b.labels.find(l => l.id === labelId); }
+
+function newWorkspace(name) {
+  const ws = { id: uid("ws_"), name: name || T("untitled"), createdAt: Date.now() };
+  state.workspaces.push(ws);
+  if (!state.ui.currentWorkspace) state.ui.currentWorkspace = ws.id;
+  saveState();
+  return ws;
+}
+function newBoard(name, opts={}) {
+  const ws = currentWorkspace() || newWorkspace("Můj prostor");
+  const board = {
+    id: uid("b_"), workspaceId: ws.id, name: name || T("untitled"),
+    description: "",
+    background: { type:"color", value:"" },
+    members: [], // virtuální členové přiřazení k nástěnce
+    labels: [
+      { id: uid("l_"), name:"Urgentní", color:"--label-c4" },
+      { id: uid("l_"), name:"Důležité", color:"--label-c3" },
+      { id: uid("l_"), name:"Hotovo", color:"--label-c1" },
+    ],
+    customFields: [],
+    wipLimits: {},
+    archived: false, isTemplate: !!opts.isTemplate,
+    createdAt: Date.now(), updatedAt: Date.now(),
+  };
+  state.boards.push(board);
+  // default lists
+  ["Co dělat", "Pracuje se", "Hotovo"].forEach((n, i) => {
+    state.lists.push({ id: uid("li_"), boardId: board.id, name:n, position:i, archived:false, createdAt: Date.now() });
+  });
+  saveState();
+  return board;
+}
+function newList(boardId, name) {
+  const lists = listsInBoard(boardId);
+  const list = { id: uid("li_"), boardId, name: name || T("untitled"), position: lists.length, archived:false, createdAt: Date.now() };
+  state.lists.push(list);
+  saveState();
+  return list;
+}
+function newCard(listId, title, opts={}) {
+  const list = getList(listId);
+  if (!list) throw new Error("No list");
+  const board = getBoard(list.boardId);
+  // check WIP
+  const wip = board.wipLimits[listId];
+  if (wip && cardsInList(listId).length >= wip) {
+    sound.warn();
+    announce(T("wipExceeded", wip));
+    toast(T("wipExceeded", wip), "warning");
+  }
+  const cards = cardsInList(listId);
+  const card = {
+    id: uid("c_"), boardId: list.boardId, listId, position: cards.length,
+    title: title || T("untitled"),
+    description: "",
+    labels: [], members: [],
+    dueDate: null, startDate: null, completed: false,
+    cover: null,
+    checklists: [],
+    customFieldValues: {},
+    attachments: [],
+    comments: [],
+    activity: [{ id: uid("a_"), action: T("activityCreated"), timestamp: Date.now() }],
+    timeTracking: { entries: [], estimate: null },
+    time: { estimateSec: 0, spentSec: 0, runningSince: null },
+    parentCardId: opts.parentCardId || null,
+    dependencies: { blocks: [], blockedBy: [], related: [] },
+    mirroredFrom: null,
+    mirroredTo: [],
+    isTemplate: !!opts.isTemplate,
+    cardType: opts.cardType || "normal",
+    habit: opts.cardType === "habit" ? { frequency:"daily", streak:0, history:[], lastCompleted:null } : null,
+    reminders: [],
+    snoozedUntil: null,
+    archived: false, deleted: false,
+    createdAt: Date.now(), updatedAt: Date.now(), completedAt: null,
+  };
+  state.cards.push(card);
+  if (opts.parentCardId) {
+    // nothing extra; subcards are queried by parentCardId
+  }
+  saveState();
+  return card;
+}
+function logActivity(card, msg) {
+  card.activity.unshift({ id: uid("a_"), action: msg, timestamp: Date.now() });
+  card.activity = card.activity.slice(0, 200);
+  card.updatedAt = Date.now();
+}
+function moveCard(cardId, toListId, toIndex) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const fromList = getList(card.listId);
+  const toList = getList(toListId);
+  if (!toList) return;
+  const sameList = card.listId === toListId;
+  // Pull card out
+  const before = card.listId;
+  card.listId = toListId;
+  card.boardId = toList.boardId;
+  // Reorder
+  const others = state.cards.filter(c => c.listId === toListId && c.id !== cardId && !c.deleted && !c.archived).sort((a,b) => a.position - b.position);
+  const insertAt = clamp(toIndex == null ? others.length : toIndex, 0, others.length);
+  others.splice(insertAt, 0, card);
+  others.forEach((c, i) => c.position = i);
+  // also reflow source
+  if (!sameList) {
+    const srcOthers = state.cards.filter(c => c.listId === before && c.id !== cardId && !c.deleted && !c.archived).sort((a,b) => a.position - b.position);
+    srcOthers.forEach((c,i) => c.position = i);
+    if (fromList && toList) logActivity(card, T("activityMoved", fromList.name, toList.name));
+  }
+  // sync mirrors: if this is the source, the mirrors don't move (their listId remains theirs)
+  // but if this is a mirror, moving doesn't affect the source content
+  card.updatedAt = Date.now();
+  // WIP check
+  const board = getBoard(card.boardId);
+  const wip = board && board.wipLimits[toListId];
+  if (wip && cardsInList(toListId).length > wip) {
+    sound.warn(); announce(T("wipExceeded", wip)); toast(T("wipExceeded", wip), "warning");
+  }
+  saveState();
+}
+function moveList(listId, toIndex) {
+  const list = getList(listId);
+  if (!list) return;
+  const others = state.lists.filter(l => l.boardId === list.boardId && l.id !== listId && !l.archived).sort((a,b) => a.position - b.position);
+  const at = clamp(toIndex, 0, others.length);
+  others.splice(at, 0, list);
+  others.forEach((l,i) => l.position = i);
+  saveState();
+}
+function archiveCard(cardId) {
+  const c = getCard(cardId); if (!c) return;
+  c.archived = true; logActivity(c, T("activityArchived")); saveState();
+}
+function unarchiveCard(cardId) {
+  const c = getCard(cardId); if (!c) return;
+  c.archived = false; logActivity(c, T("activityUnarchived")); saveState();
+}
+function deleteCard(cardId) {
+  const c = getCard(cardId); if (!c) return;
+  c.deleted = true; c.deletedAt = Date.now();
+  state.trash.push({ id: uid("t_"), type:"card", cardId, deletedAt: Date.now() });
+  saveState();
+}
+function restoreCard(cardId) {
+  const c = getCard(cardId); if (!c) return;
+  c.deleted = false; c.deletedAt = null;
+  state.trash = state.trash.filter(t => t.cardId !== cardId);
+  saveState();
+}
+function permanentDelete(cardId) {
+  state.cards = state.cards.filter(c => c.id !== cardId);
+  state.trash = state.trash.filter(t => t.cardId !== cardId);
+  // remove dependency refs
+  state.cards.forEach(c => {
+    if (c.dependencies) {
+      c.dependencies.blocks = c.dependencies.blocks.filter(id => id !== cardId);
+      c.dependencies.blockedBy = c.dependencies.blockedBy.filter(id => id !== cardId);
+      c.dependencies.related = c.dependencies.related.filter(id => id !== cardId);
+    }
+    c.mirroredTo = (c.mirroredTo||[]).filter(id => id !== cardId);
+  });
+  saveState();
+}
+function deleteList(listId) {
+  const cards = cardsInList(listId);
+  cards.forEach(c => deleteCard(c.id));
+  const list = getList(listId); if (!list) return;
+  list.archived = true;
+  state.trash.push({ id: uid("t_"), type:"list", listId, deletedAt: Date.now() });
+  saveState();
+}
+function deleteBoard(boardId) {
+  const board = getBoard(boardId); if (!board) return;
+  board.archived = true;
+  // Cards remain but are inaccessible until restored
+  state.trash.push({ id: uid("t_"), type:"board", boardId, deletedAt: Date.now() });
+  saveState();
+}
+function restoreBoard(boardId) {
+  const board = getBoard(boardId); if (!board) return;
+  board.archived = false;
+  state.trash = state.trash.filter(t => t.boardId !== boardId);
+  saveState();
+}
+function toggleCardComplete(cardId) {
+  const c = getCard(cardId); if (!c) return;
+  c.completed = !c.completed;
+  c.completedAt = c.completed ? Date.now() : null;
+  logActivity(c, c.completed ? T("activityCompleted") : T("activityUncompleted"));
+  if (c.completed) sound.done();
+  saveState();
+}
+function setCardField(cardId, field, value) {
+  const c = getCard(cardId); if (!c) return;
+  c[field] = value; c.updatedAt = Date.now();
+  saveState();
+}
+function addLabel(boardId, name, color) {
+  const b = getBoard(boardId); if (!b) return null;
+  const lbl = { id: uid("l_"), name: name || T("untitled"), color: color || labelColors[0] };
+  b.labels.push(lbl); saveState();
+  return lbl;
+}
+function toggleCardLabel(cardId, labelId) {
+  const c = getCard(cardId); if (!c) return;
+  const lbl = getLabel(c.boardId, labelId);
+  if (c.labels.includes(labelId)) {
+    c.labels = c.labels.filter(l => l !== labelId);
+    if (lbl) logActivity(c, T("activityLabelRemoved", lbl.name));
+  } else {
+    c.labels.push(labelId);
+    if (lbl) logActivity(c, T("activityLabelAdded", lbl.name));
+  }
+  saveState();
+}
+function toggleCardMember(cardId, memberId) {
+  const c = getCard(cardId); if (!c) return;
+  const m = getMember(memberId);
+  if (c.members.includes(memberId)) {
+    c.members = c.members.filter(x => x !== memberId);
+    if (m) logActivity(c, T("activityMemberRemoved", m.name));
+  } else {
+    c.members.push(memberId);
+    if (m) logActivity(c, T("activityMemberAdded", m.name));
+  }
+  saveState();
+}
+function addComment(cardId, text) {
+  const c = getCard(cardId); if (!c || !text.trim()) return;
+  c.comments.unshift({ id: uid("cm_"), text: text.trim(), createdAt: Date.now() });
+  logActivity(c, T("activityCommented"));
+  saveState();
+}
+function addChecklist(cardId, name) {
+  const c = getCard(cardId); if (!c) return null;
+  const cl = { id: uid("cl_"), name: name || "Checklist", items: [] };
+  c.checklists.push(cl); saveState();
+  return cl;
+}
+function addChecklistItem(cardId, checklistId, text) {
+  const c = getCard(cardId); if (!c) return null;
+  const cl = c.checklists.find(x => x.id === checklistId);
+  if (!cl) return null;
+  const it = { id: uid("ci_"), text: text || "", completed: false };
+  cl.items.push(it); saveState();
+  return it;
+}
+function toggleChecklistItem(cardId, checklistId, itemId) {
+  const c = getCard(cardId); if (!c) return;
+  const cl = c.checklists.find(x => x.id === checklistId); if (!cl) return;
+  const it = cl.items.find(x => x.id === itemId); if (!it) return;
+  it.completed = !it.completed;
+  logActivity(c, it.completed ? T("activityChecklistDone", it.text) : T("activityChecklistTodo", it.text));
+  if (it.completed) sound.click();
+  saveState();
+}
+function checklistProgress(card) {
+  let total = 0, done = 0;
+  card.checklists.forEach(cl => cl.items.forEach(it => { total++; if (it.completed) done++; }));
+  return { total, done, pct: total ? Math.round(done/total*100) : 0 };
+}
+function mirrorCard(sourceId, toListId) {
+  const src = getCard(sourceId); if (!src) return null;
+  const toList = getList(toListId); if (!toList) return null;
+  const cards = cardsInList(toListId);
+  const mirror = {
+    id: uid("c_"),
+    boardId: toList.boardId,
+    listId: toListId,
+    position: cards.length,
+    mirroredFrom: src.id,
+    activity: [{ id: uid("a_"), action: "Vytvořeno jako zrcadlení", timestamp: Date.now() }],
+    archived: false, deleted: false,
+    createdAt: Date.now(), updatedAt: Date.now(),
+    // these are not used; we read from source
+    title: "", description: "", labels:[], members:[], checklists:[], comments:[], attachments:[],
+    customFieldValues:{}, timeTracking:{ entries:[], estimate:null }, time:{ estimateSec:0, spentSec:0, runningSince:null },
+    dependencies:{ blocks:[], blockedBy:[], related:[] }, mirroredTo:[],
+    cardType:"mirror", reminders:[], snoozedUntil:null,
+  };
+  state.cards.push(mirror);
+  src.mirroredTo = src.mirroredTo || [];
+  src.mirroredTo.push(mirror.id);
+  saveState();
+  return mirror;
+}
+function resolveCard(c) {
+  // For mirror card, return source for read; for normal card, return itself
+  if (c && c.mirroredFrom) {
+    const src = getCard(c.mirroredFrom);
+    return src || c;
+  }
+  return c;
+}
+function getSubcards(parentId) {
+  return state.cards.filter(c => c.parentCardId === parentId && !c.deleted);
+}
+function detectCycle(fromId, toId) {
+  // would adding fromId blocks toId create a cycle? i.e. is toId already (transitively) blocking fromId?
+  const seen = new Set();
+  const stack = [toId];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === fromId) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    const c = getCard(cur);
+    if (c && c.dependencies) stack.push(...c.dependencies.blocks);
+  }
+  return false;
+}
+function setDep(cardId, otherId, kind, add=true) {
+  const c = getCard(cardId), o = getCard(otherId);
+  if (!c || !o || c === o) return false;
+  c.dependencies = c.dependencies || { blocks:[], blockedBy:[], related:[] };
+  o.dependencies = o.dependencies || { blocks:[], blockedBy:[], related:[] };
+  const inverse = { blocks:"blockedBy", blockedBy:"blocks", related:"related" }[kind];
+  if (add) {
+    if (kind === "blocks" && detectCycle(cardId, otherId)) {
+      return false;
+    }
+    if (kind === "blockedBy" && detectCycle(otherId, cardId)) {
+      return false;
+    }
+    if (!c.dependencies[kind].includes(otherId)) c.dependencies[kind].push(otherId);
+    if (!o.dependencies[inverse].includes(cardId)) o.dependencies[inverse].push(cardId);
+  } else {
+    c.dependencies[kind] = c.dependencies[kind].filter(x => x !== otherId);
+    o.dependencies[inverse] = o.dependencies[inverse].filter(x => x !== cardId);
+  }
+  saveState();
+  return true;
+}
+//#endregion
+
+//#region ============= MEMBERS =============
+function newMember(name, opts={}) {
+  const m = {
+    id: uid("m_"),
+    name: name || T("untitled"),
+    initials: opts.initials || memberInitials(name),
+    color: opts.color || memberColors[state.members.length % memberColors.length],
+    email: opts.email || "",
+    notes: opts.notes || "",
+    createdAt: Date.now(),
+  };
+  state.members.push(m);
+  saveState();
+  return m;
+}
+function deleteMember(id) {
+  state.members = state.members.filter(m => m.id !== id);
+  state.cards.forEach(c => { c.members = (c.members||[]).filter(x => x !== id); });
+  saveState();
+}
+function memberWorkload(memberId) {
+  return state.cards.filter(c => !c.deleted && !c.archived && (c.members||[]).includes(memberId)).length;
+}
+function memberAvatar(member, sz="") {
+  if (!member) return el("span", { class:"member-avatar " + sz, style:{ background:"var(--bg-badge)", color:"var(--fg-muted)" }, "aria-label":"?" }, "?");
+  return el("span", {
+    class:"member-avatar " + sz,
+    style:{ background: colorVar(member.color) },
+    "aria-label": member.name,
+    title: member.name,
+  }, member.initials || memberInitials(member.name));
+}
+//#endregion
+
+//#region ============= SIDEBAR & HEADER RENDER =============
+function renderHeader() {
+  // workspace selector
+  const sel = $("#wsSelect");
+  clear(sel);
+  state.workspaces.forEach(ws => {
+    sel.appendChild(el("option", { value: ws.id, selected: ws.id === state.ui.currentWorkspace }, ws.name));
+  });
+  if (!state.workspaces.length) sel.appendChild(el("option", { value:"" }, "—"));
+  // view tabs
+  const tabs = $("#viewTabs");
+  clear(tabs);
+  const v = state.ui.currentView;
+  if (v.type === "board") {
+    const types = [
+      ["board", T("boardView")],
+      ["table", T("tableView")],
+      ["calendar", T("calendarView")],
+      ["timeline", T("timelineView")],
+      ["dashboard", T("dashboardView")],
+      ["eisenhower", T("eisenhowerView")],
+    ];
+    types.forEach(([key, label]) => {
+      const b = el("button", { role:"tab", "aria-pressed": (v.viewType||"board") === key, onclick: () => { v.viewType = key; saveState(); renderView(); renderHeader(); } }, label);
+      tabs.appendChild(b);
+    });
+  }
+  // title
+  const title = $("#viewTitle");
+  if (v.type === "board") {
+    const b = getBoard(v.boardId);
+    title.textContent = b ? b.name : "";
+  } else if (v.type === "smart") {
+    const labels = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
+    title.textContent = labels[v.smart] || v.smart;
+  } else if (v.type === "inbox") title.textContent = T("inbox");
+  else if (v.type === "planner") title.textContent = T("planner");
+  else if (v.type === "stickies") title.textContent = T("stickies");
+  else if (v.type === "members") title.textContent = T("members");
+  else if (v.type === "filter") {
+    const f = state.savedFilters.find(x => x.id === v.filterId);
+    title.textContent = f ? f.name : T("filters");
+  } else title.textContent = "";
+}
+function renderSidebar() {
+  const sv = $("#smartViewsList"); clear(sv);
+  const smarts = [
+    ["today", T("today")],
+    ["week", T("thisWeek")],
+    ["overdue", T("overdue")],
+    ["nodate", T("noDate")],
+    ["completed", T("completed")],
+    ["archive", T("archive")],
+    ["trash", T("trash")],
+  ];
+  smarts.forEach(([key, label]) => {
+    const count = countSmart(key);
+    const isActive = state.ui.currentView.type === "smart" && state.ui.currentView.smart === key;
+    const btn = el("button", {
+      class:"sidebar-item " + (isActive ? "active" : ""),
+      onclick: () => { state.ui.currentView = { type:"smart", smart:key }; saveState(); renderAll(); }
+    }, label, count > 0 ? el("span", { class:"badge" }, String(count)) : null);
+    const li = el("li", {}, btn); sv.appendChild(li);
+  });
+  const bl = $("#boardsList"); clear(bl);
+  boardsInWorkspace().forEach(b => {
+    const isActive = state.ui.currentView.type === "board" && state.ui.currentView.boardId === b.id;
+    const btn = el("button", {
+      class:"sidebar-item " + (isActive ? "active" : ""),
+      onclick: () => { state.ui.currentView = { type:"board", boardId: b.id, viewType: state.ui.currentView.viewType || "board" }; saveState(); renderAll(); }
+    }, b.name, el("span", { class:"badge" }, String(cardsInBoard(b.id).length)));
+    btn.addEventListener("contextmenu", (e) => { e.preventDefault(); openBoardMenu(b, e); });
+    const li = el("li", {}, btn); bl.appendChild(li);
+  });
+  const sf = $("#savedFiltersList"); clear(sf);
+  state.savedFilters.forEach(f => {
+    const isActive = state.ui.currentView.type === "filter" && state.ui.currentView.filterId === f.id;
+    const btn = el("button", {
+      class:"sidebar-item " + (isActive ? "active" : ""),
+      onclick: () => { state.ui.currentView = { type:"filter", filterId: f.id }; saveState(); renderAll(); }
+    }, f.name);
+    const li = el("li", {}, btn); sf.appendChild(li);
+  });
+}
+function countSmart(key) {
+  const all = state.cards.filter(c => !c.deleted);
+  if (key === "today") return all.filter(c => c.dueDate && isToday(c.dueDate) && !c.completed && !c.archived).length;
+  if (key === "week") {
+    const start = startOfWeek(); const end = addDays(start, 7);
+    return all.filter(c => c.dueDate && new Date(c.dueDate) >= start && new Date(c.dueDate) < end && !c.completed && !c.archived).length;
+  }
+  if (key === "overdue") return all.filter(c => c.dueDate && new Date(c.dueDate) < dateOnly(new Date()) && !c.completed && !c.archived).length;
+  if (key === "nodate") return all.filter(c => !c.dueDate && !c.archived && !c.completed && c.cardType !== "mirror").length;
+  if (key === "completed") return all.filter(c => c.completed && !c.archived).length;
+  if (key === "archive") return all.filter(c => c.archived).length;
+  if (key === "trash") return state.cards.filter(c => c.deleted).length;
+  return 0;
+}
+function openBoardMenu(board, ev) {
+  // simple: open a small modal with rename / archive / delete
+  const m = openModal({
+    title: board.name,
+    body: el("div", {},
+      el("div", { class:"field-row" },
+        el("label", {}, T("rename")),
+        el("input", { type:"text", value: board.name, id:"bnRename" })
+      )
+    ),
+    footer: [
+      el("button", { class:"danger", onclick: async () => { const ok = await confirm2(T("confirmDeleteBoard"), { danger:true }); if (ok) { deleteBoard(board.id); state.ui.currentView = { type:"welcome" }; renderAll(); m.close(); } } }, T("delete")),
+      el("button", { class:"primary", onclick: () => { board.name = $("#bnRename").value; saveState(); renderAll(); m.close(); } }, T("save")),
+    ],
+    size:"small",
+  });
+}
+//#endregion
+
+//#region ============= KEYBOARD SHORTCUT HELPERS =============
+// Vytvoří novou „rychlou" poznámku (sticky) a přepne se do jejich pohledu.
+function createNewSticky() {
+  state.stickyNotes.push({
+    id: uid("sn_"), text:"", color:"--label-c2",
+    x: 20 + Math.floor(Math.random()*200),
+    y: 20 + Math.floor(Math.random()*100),
+    w: 220, h: 160, createdAt: Date.now()
+  });
+  state.ui.currentView = { type:"stickies" };
+  saveState(); renderAll(); sound.add();
+  announce("Nová poznámka vytvořena.");
+  // focus na textarea nově vytvořeného lístku
+  setTimeout(() => {
+    const notes = $$(".sticky-note textarea");
+    if (notes.length) notes[notes.length - 1].focus();
+  }, 60);
+}
+
+// Přepne na další/předchozí nástěnku cyklicky.
+function cycleBoard(dir) {
+  const bs = state.boards.filter(b => !b.archived);
+  if (!bs.length) return;
+  const cur = state.ui.currentView.type === "board" ? state.ui.currentView.boardId : null;
+  let idx = bs.findIndex(b => b.id === cur);
+  if (idx < 0) idx = 0;
+  else idx = (idx + dir + bs.length) % bs.length;
+  state.ui.currentView = { type:"board", boardId: bs[idx].id, viewType: state.ui.currentView.viewType || "board" };
+  saveState(); renderAll();
+  announce("Nástěnka: " + bs[idx].name);
+  sound.click();
+}
+
+// Otevře picker pro skok na libovolnou nástěnku.
+function pickBoardGoto() {
+  const bs = state.boards.filter(b => !b.archived);
+  if (!bs.length) { toast("Žádné nástěnky.", "info"); return; }
+  const sel = el("select", { "aria-label": T("pickBoard") });
+  bs.forEach(b => sel.appendChild(el("option", { value:b.id }, b.name)));
+  const cur = state.ui.currentView.type === "board" ? state.ui.currentView.boardId : null;
+  if (cur) sel.value = cur;
+  const m = openModal({
+    title: T("pickBoardGoto"),
+    body: el("div", { class:"field-row" }, el("label", {}, T("pickBoard")), sel),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => { state.ui.currentView = { type:"board", boardId: sel.value, viewType: state.ui.currentView.viewType || "board" }; saveState(); renderAll(); m.close(); sound.click(); } }, T("open")),
+    ],
+    size:"small",
+  });
+  setTimeout(() => sel.focus(), 50);
+}
+
+// Modal pro přesun karty do jiného seznamu (i na jiné nástěnce).
+async function openMoveCardDialog(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const boardSel = el("select", { "aria-label": T("pickBoard") });
+  state.boards.filter(b => !b.archived).forEach(b => boardSel.appendChild(el("option", { value:b.id }, b.name)));
+  boardSel.value = card.boardId;
+  const listSel = el("select", { "aria-label": T("pickList") });
+  function refreshLists() {
+    clear(listSel);
+    listsInBoard(boardSel.value).forEach(l => listSel.appendChild(el("option", { value:l.id }, l.name)));
+    if (listsInBoard(boardSel.value).some(l => l.id === card.listId)) listSel.value = card.listId;
+  }
+  boardSel.addEventListener("change", refreshLists);
+  refreshLists();
+  const m = openModal({
+    title: T("moveCard") + " — „" + card.title + "“",
+    body: el("div", {},
+      el("div", { class:"field-row" }, el("label", {}, T("pickBoard")), boardSel),
+      el("div", { class:"field-row" }, el("label", {}, T("pickList")), listSel)
+    ),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const toList = listSel.value;
+        if (!toList) return;
+        moveCard(card.id, toList);
+        saveState(); renderView(); m.close(); sound.drop();
+        announce("Karta přesunuta do seznamu " + getList(toList)?.name);
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  setTimeout(() => boardSel.focus(), 50);
+}
+
+// Modal pro nastavení termínu karty (rychlý vstup bez otevírání plného detailu).
+function openSetDueDialog(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const inp = el("input", { type:"date", value: card.dueDate ? isoLocalDate(card.dueDate) : "", "aria-label": T("dueDate") });
+  const m = openModal({
+    title: T("setDueShort") + " — „" + card.title + "“",
+    body: el("div", { class:"field-row" }, el("label", {}, T("dueDate")), inp),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"danger", onclick: () => { setCardField(card.id, "dueDate", null); logActivity(card, T("activityDueRemoved")); saveState(); renderView(); m.close(); sound.click(); announce("Termín odebrán."); } }, T("delete")),
+      el("button", { class:"primary", onclick: () => {
+        if (!inp.value) return;
+        setCardField(card.id, "dueDate", inp.value);
+        logActivity(card, T("activityDueSet", formatDate(inp.value)));
+        saveState(); renderView(); m.close(); sound.click();
+        announce("Termín nastaven na " + formatDate(inp.value));
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  setTimeout(() => inp.focus(), 50);
+}
+
+// Rychlý picker štítků pro fokusovanou kartu (samostatný modal).
+function openCardLabelsDialog(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const board = getBoard(card.boardId);
+  if (!board) return;
+  pickLabels(card, board).then(() => { saveState(); renderView(); });
+}
+
+// Rychlý picker členů pro fokusovanou kartu.
+function openCardMembersDialog(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const board = getBoard(card.boardId);
+  if (!board) return;
+  pickMembers(card, board).then(() => { saveState(); renderView(); });
+}
+
+// Rychlé přidání komentáře na fokusovanou kartu.
+function openCardCommentDialog(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const ta = el("textarea", { rows:4, "aria-label": T("addComment") });
+  const m = openModal({
+    title: T("addCommentShort") + " — „" + card.title + "“",
+    body: ta,
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const text = ta.value.trim();
+        if (!text) return;
+        card.comments = card.comments || [];
+        card.comments.push({ id: uid("cm_"), text, createdAt: Date.now() });
+        logActivity(card, T("activityCommented"));
+        saveState(); renderView(); m.close(); sound.add();
+        announce("Komentář přidán.");
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  setTimeout(() => ta.focus(), 50);
+}
+
+// Vrátí kolekci karet v pořadí v jakém se zobrazují v aktuálním pohledu (pro navigaci , . v detailu).
+function siblingCardsForNav(card) {
+  const board = getBoard(card.boardId);
+  if (!board) return [card];
+  // Pokud jsme v board view, tak v pořadí seznamů a karet v nich
+  const lists = listsInBoard(board.id);
+  const out = [];
+  lists.forEach(l => cardsInList(l.id).forEach(c => out.push(c)));
+  return out;
+}
+//#endregion
+
+function renderView() {
+  const c = $("#viewContainer");
+  clear(c);
+  const v = state.ui.currentView;
+  if (v.type === "welcome") return renderWelcome(c);
+  if (v.type === "board") {
+    const b = getBoard(v.boardId);
+    if (!b) { state.ui.currentView = { type:"welcome" }; return renderWelcome(c); }
+    const t = v.viewType || "board";
+    if (t === "board") return renderBoardView(c, b);
+    if (t === "table") return renderTableView(c, b);
+    if (t === "calendar") return renderCalendarView(c, b);
+    if (t === "timeline") return renderTimelineView(c, b);
+    if (t === "dashboard") return renderDashboardView(c, b);
+    if (t === "eisenhower") return renderEisenhowerView(c, b);
+  }
+  if (v.type === "smart") return renderSmartView(c, v.smart);
+  if (v.type === "inbox") return renderInboxView(c);
+  if (v.type === "planner") return renderPlannerView(c);
+  if (v.type === "stickies") return renderStickiesView(c);
+  if (v.type === "members") return renderMembersView(c);
+  if (v.type === "filter") return renderFilterView(c, v.filterId);
+}
+function renderAll() {
+  applyTheme();
+  applyI18n();
+  renderHeader();
+  renderSidebar();
+  renderView();
+  setGhStatus("", "GitHub");
+}
+function renderWelcome(c) {
+  c.appendChild(el("div", { style:{ padding:"40px 24px", maxWidth:"640px", margin:"0 auto" } },
+    el("h2", {}, T("welcome")),
+    el("p", {}, T("welcomeText")),
+    el("div", { style:{ display:"flex", gap:"8px", marginTop:"16px" } },
+      el("button", { class:"primary", onclick: () => promptNewBoard() }, T("newBoard")),
+      el("button", { class:"ghost", onclick: () => { createSample(); renderAll(); } }, T("createSample")),
+    )
+  ));
+}
+function createSample() {
+  const ws = currentWorkspace() || newWorkspace("Můj prostor");
+  if (!state.members.length) {
+    newMember("Anna Procházková", { color:"--member-c1" });
+    newMember("Petr Dvořák", { color:"--member-c2" });
+    newMember("Tomáš Kovář", { color:"--member-c5" });
+  }
+  const b = newBoard("Ukázka");
+  const lists = listsInBoard(b.id);
+  const todo = lists[0], doing = lists[1], done = lists[2];
+  newCard(todo.id, "Naplánovat schůzku");
+  const c1 = newCard(todo.id, "Připravit prezentaci");
+  c1.labels.push(b.labels[1].id);
+  c1.dueDate = isoLocalDate(addDays(new Date(), 2));
+  c1.members.push(state.members[0].id);
+  c1.description = "Slidy podle nového šablonového vzhledu.";
+  addChecklist(c1.id, "Hlavní body");
+  const cl = c1.checklists[0];
+  addChecklistItem(c1.id, cl.id, "Úvod");
+  addChecklistItem(c1.id, cl.id, "Hlavní část");
+  addChecklistItem(c1.id, cl.id, "Závěr");
+  newCard(doing.id, "Reaguje se na e-mail klienta");
+  const c2 = newCard(done.id, "Týdenní reporting");
+  c2.completed = true; c2.completedAt = Date.now();
+  state.ui.currentView = { type:"board", boardId: b.id, viewType:"board" };
+  saveState();
+}
+function promptNewBoard() {
+  const inp = el("input", { type:"text", id:"bnNewName", placeholder: T("boardName") });
+  const mm = openModal({
+    title: T("newBoard"),
+    body: el("div", { class:"field-row" }, el("label", { for:"bnNewName" }, T("name")), inp),
+    footer: [
+      el("button", { class:"ghost", onclick: () => mm.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const b = newBoard(inp.value || T("untitled"));
+        state.ui.currentView = { type:"board", boardId: b.id, viewType:"board" };
+        renderAll();
+        mm.close();
+        sound.add();
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".modal").querySelector("button.primary").click(); });
+}
+//#endregion
+
+//#region ============= BOARD VIEW =============
+let _kbdGrabbed = null;  // { cardId, listId, fromIndex }
+function renderBoardView(container, board) {
+  // toolbar
+  const tb = el("div", { class:"board-bar" });
+  tb.appendChild(el("button", { class:"icon-btn", onclick: () => editBoardSettings(board), title:"Nastavení nástěnky" }, "⚙"));
+  // filter chips: members
+  if (state.members.length) {
+    const filterMembers = state.ui.boardFilter && state.ui.boardFilter.members || [];
+    state.members.forEach(m => {
+      const active = filterMembers.includes(m.id);
+      const b = el("button", {
+        class:"icon-btn", style:{ opacity: active ? "1" : ".55", border: active ? "2px solid var(--accent)" : "1px solid var(--border)" },
+        title: m.name + (active ? " (aktivní filtr)" : ""),
+        onclick: () => toggleBoardFilter("members", m.id),
+      });
+      b.appendChild(memberAvatar(m, "sm"));
+      tb.appendChild(b);
+    });
+  }
+  // labels
+  if (board.labels.length) {
+    tb.appendChild(el("span", { style:{ width:"8px" } }));
+    board.labels.forEach(l => {
+      const filterLabels = state.ui.boardFilter && state.ui.boardFilter.labels || [];
+      const active = filterLabels.includes(l.id);
+      tb.appendChild(el("button", {
+        class:"label-chip named",
+        style:{ background: colorVar(l.color), border: active ? "2px solid var(--accent)" : "none", padding: active ? "0 6px" : "2px 8px" },
+        onclick: () => toggleBoardFilter("labels", l.id),
+        title: l.name + (active ? " (aktivní filtr)" : ""),
+      }, l.name));
+    });
+  }
+  if ((state.ui.boardFilter && (state.ui.boardFilter.members||[]).length + (state.ui.boardFilter.labels||[]).length) > 0) {
+    tb.appendChild(el("button", { class:"ghost", onclick: () => { state.ui.boardFilter = null; renderView(); } }, "Zrušit filtry"));
+  }
+  container.appendChild(tb);
+  // lists
+  const lc = el("div", { class:"lists-container", role:"list", "aria-label":"Seznamy nástěnky" });
+  listsInBoard(board.id).forEach((lst, idx) => lc.appendChild(renderListColumn(board, lst, idx)));
+  // add list
+  const addListBtn = el("button", { class:"list-add primary", style:{ minWidth:"260px", height:"40px" }, onclick: () => promptNewList(board) }, T("addList"));
+  lc.appendChild(addListBtn);
+  container.appendChild(lc);
+  // bulk bar
+  if (state.ui.selectedCards && state.ui.selectedCards.length) renderBulkBar();
+}
+function toggleBoardFilter(kind, id) {
+  if (!state.ui.boardFilter) state.ui.boardFilter = { members:[], labels:[] };
+  const arr = state.ui.boardFilter[kind] = state.ui.boardFilter[kind] || [];
+  const i = arr.indexOf(id);
+  if (i >= 0) arr.splice(i, 1); else arr.push(id);
+  renderView();
+}
+function passesBoardFilter(card) {
+  const f = state.ui.boardFilter;
+  if (!f) return true;
+  if (f.members && f.members.length && !f.members.some(id => (card.members||[]).includes(id))) return false;
+  if (f.labels && f.labels.length && !f.labels.some(id => (card.labels||[]).includes(id))) return false;
+  return true;
+}
+function renderListColumn(board, list, idx) {
+  const col = el("section", { class:"list", role:"listitem", "aria-labelledby": "lname_" + list.id, dataset:{ listId: list.id } });
+  const wip = board.wipLimits[list.id] || 0;
+  const cards = cardsInList(list.id);
+  const cnt = cards.length;
+  const overWip = wip && cnt > wip;
+  const head = el("div", { class:"list-header" });
+  const nameInp = el("input", { class:"list-name", type:"text", value: list.name, id:"lname_" + list.id, "aria-label":"Název seznamu" });
+  nameInp.addEventListener("change", () => { list.name = nameInp.value; saveState(); renderHeader(); renderSidebar(); });
+  head.appendChild(nameInp);
+  head.appendChild(el("span", { class:"list-count " + (overWip ? "over-wip" : ""), title: wip ? `WIP ${cnt}/${wip}` : `${cnt}` }, wip ? `${cnt}/${wip}` : String(cnt)));
+  // list menu
+  const menuBtn = el("button", { class:"icon-btn", "aria-label":"Menu seznamu", onclick: (e) => openListMenu(board, list, e) }, "···");
+  head.appendChild(menuBtn);
+  col.appendChild(head);
+  const cardsEl = el("div", { class:"list-cards", dataset:{ listDrop:"1", listId: list.id } });
+  // drop handlers on cards container
+  cardsEl.addEventListener("dragover", (e) => { e.preventDefault(); cardsEl.classList.add("drop-target"); });
+  cardsEl.addEventListener("dragleave", () => cardsEl.classList.remove("drop-target"));
+  cardsEl.addEventListener("drop", (e) => {
+    e.preventDefault(); cardsEl.classList.remove("drop-target");
+    const cardId = e.dataTransfer.getData("text/card");
+    if (!cardId) return;
+    const targets = $$(".card", cardsEl);
+    let insertAt = targets.length;
+    for (let i = 0; i < targets.length; i++) {
+      const r = targets[i].getBoundingClientRect();
+      if (e.clientY < r.top + r.height/2) { insertAt = i; break; }
+    }
+    moveCard(cardId, list.id, insertAt);
+    sound.drop();
+    renderView();
+    announce(`Karta přesunuta do listu ${list.name}.`);
+  });
+  cards.filter(passesBoardFilter).forEach((card, i) => cardsEl.appendChild(renderCard(card, list, i)));
+  col.appendChild(cardsEl);
+  // add card
+  const addArea = el("div", { class:"list-add" });
+  const addBtn = el("button", { onclick: () => addCardInline(list, addArea, cardsEl) }, T("addCard"));
+  addArea.appendChild(addBtn);
+  col.appendChild(addArea);
+  return col;
+}
+function addCardInline(list, addArea, cardsEl) {
+  const inp = el("input", { type:"text", placeholder: T("addCardTitle"), "aria-label": T("addCardTitle") });
+  const ok = el("button", { class:"primary", onclick: doAdd }, T("addCard"));
+  const cancel = el("button", { class:"ghost", onclick: cleanup }, T("cancel"));
+  function doAdd() {
+    const t = inp.value.trim();
+    if (!t) { inp.focus(); return; }
+    const card = newCard(list.id, t);
+    sound.add();
+    cardsEl.appendChild(renderCard(card, list, cardsInList(list.id).length - 1));
+    announce("Karta přidána.");
+    inp.value = ""; inp.focus();
+  }
+  function cleanup() {
+    addArea.replaceChildren(el("button", { onclick: () => addCardInline(list, addArea, cardsEl) }, T("addCard")));
+  }
+  addArea.replaceChildren(inp, el("div", { style:{ display:"flex", gap:"4px", marginTop:"4px" } }, ok, cancel));
+  inp.focus();
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); doAdd(); }
+    if (e.key === "Escape") cleanup();
+  });
+}
+function promptNewList(board) {
+  const inp = el("input", { type:"text", placeholder: T("listName") });
+  const m = openModal({
+    title: T("addList"),
+    body: el("div", { class:"field-row" }, el("label", {}, T("name")), inp),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => { newList(board.id, inp.value || T("untitled")); m.close(); renderView(); sound.add(); } }, T("save")),
+    ],
+    size:"small",
+  });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".modal").querySelector("button.primary").click(); });
+}
+function openListMenu(board, list, ev) {
+  const m = openModal({
+    title: list.name,
+    body: el("div", {},
+      el("div", { class:"field-row" },
+        el("label", {}, T("rename")),
+        el("input", { type:"text", value: list.name, id:"lnRename" })
+      ),
+      el("div", { class:"field-row" },
+        el("label", {}, T("wipLimit")),
+        el("input", { type:"number", min:"0", value: board.wipLimits[list.id] || "", id:"lnWip", placeholder: T("none") })
+      )
+    ),
+    footer: [
+      el("button", { class:"danger", onclick: async () => { if (await confirm2(T("confirmDeleteList"), { danger:true })) { deleteList(list.id); m.close(); renderView(); sound.remove(); toast(T("sentToTrash"), "info"); } } }, T("delete")),
+      el("button", { class:"primary", onclick: () => {
+        list.name = $("#lnRename").value;
+        const w = parseInt($("#lnWip").value, 10);
+        if (w > 0) board.wipLimits[list.id] = w; else delete board.wipLimits[list.id];
+        saveState(); m.close(); renderView();
+      } }, T("save"))
+    ],
+    size:"small"
+  });
+}
+function editBoardSettings(board) {
+  const m = openModal({
+    title: T("settings") + " – " + board.name,
+    body: renderBoardSettingsBody(board),
+    footer: [el("button", { class:"primary", onclick: () => m.close() }, T("close"))],
+    size:"large",
+  });
+}
+function renderBoardSettingsBody(board) {
+  const wrap = el("div", {});
+  // name
+  wrap.appendChild(el("div", { class:"field-row" },
+    el("label", {}, T("boardName")),
+    el("input", { type:"text", value: board.name, oninput: (e) => { board.name = e.target.value; saveState(); renderHeader(); renderSidebar(); } })
+  ));
+  // background color
+  wrap.appendChild(el("div", { class:"field-row" },
+    el("label", {}, T("backgroundColor")),
+    el("input", { type:"color", value: board.background.value || "#ffffff", oninput: (e) => { board.background = { type:"color", value:e.target.value }; saveState(); } })
+  ));
+  // labels
+  wrap.appendChild(el("h3", {}, T("labels")));
+  const lblList = el("div", { class:"tag-row" });
+  function refreshLabels() {
+    clear(lblList);
+    board.labels.forEach(l => {
+      const chip = el("span", { class:"label-chip named", style:{ background: colorVar(l.color), display:"inline-flex", alignItems:"center", gap:"4px", paddingLeft:"6px", paddingRight:"4px" } },
+        el("span", { contenteditable:"true", oninput: (e) => { l.name = e.target.textContent; saveState(); } }, l.name),
+        el("button", { class:"icon-btn", style:{ background:"transparent", color:"#fff", padding:"0 4px", minWidth:"20px", minHeight:"20px" }, onclick: () => { board.labels = board.labels.filter(x => x.id !== l.id); state.cards.forEach(c => c.labels = c.labels.filter(x => x !== l.id)); saveState(); refreshLabels(); }, "aria-label":"Smazat štítek" }, "✕")
+      );
+      lblList.appendChild(chip);
+    });
+  }
+  refreshLabels();
+  wrap.appendChild(lblList);
+  const newLblName = el("input", { type:"text", placeholder: T("labelName"), style:{ maxWidth:"200px", display:"inline-block" } });
+  const newLblColor = el("select", { style:{ maxWidth:"140px", display:"inline-block", marginLeft:"6px" } });
+  labelColors.forEach((c,i) => newLblColor.appendChild(el("option", { value:c }, colorName(c))));
+  const addLblBtn = el("button", { class:"primary", style:{ marginLeft:"6px" }, onclick: () => { if (newLblName.value.trim()) { addLabel(board.id, newLblName.value.trim(), newLblColor.value); newLblName.value=""; refreshLabels(); } } }, T("addLabel"));
+  wrap.appendChild(el("div", { style:{ marginTop:"6px" } }, newLblName, newLblColor, addLblBtn));
+  // custom fields
+  wrap.appendChild(el("h3", {}, T("customFields")));
+  const cfList = el("div", {});
+  function refreshCFs() {
+    clear(cfList);
+    board.customFields.forEach(cf => {
+      const row = el("div", { class:"field-row", style:{ display:"grid", gridTemplateColumns:"1fr 120px 1fr 80px", gap:"6px", alignItems:"center" } },
+        el("input", { type:"text", value: cf.name, oninput: (e) => { cf.name = e.target.value; saveState(); } }),
+        (() => {
+          const sel = el("select", { onchange: (e) => { cf.type = e.target.value; saveState(); } });
+          ["text","number","date","checkbox","select","url"].forEach(t => sel.appendChild(el("option", { value:t, selected: cf.type === t }, T(t))));
+          return sel;
+        })(),
+        el("input", { type:"text", value:(cf.options||[]).join(", "), placeholder: T("fieldOptions"), oninput:(e) => { cf.options = e.target.value.split(",").map(s => s.trim()).filter(Boolean); saveState(); } }),
+        el("button", { class:"danger", onclick: () => { board.customFields = board.customFields.filter(x => x.id !== cf.id); saveState(); refreshCFs(); } }, T("delete"))
+      );
+      cfList.appendChild(row);
+    });
+  }
+  refreshCFs();
+  wrap.appendChild(cfList);
+  wrap.appendChild(el("button", { class:"ghost", onclick: () => {
+    board.customFields.push({ id: uid("cf_"), name:"Nové pole", type:"text", options:[] });
+    saveState(); refreshCFs();
+  } }, T("addCustomField")));
+  return wrap;
+}
+//#endregion
+
+//#region ============= CARD RENDER =============
+function renderCard(card, list, position) {
+  const eff = resolveCard(card);
+  const isMirror = card.mirroredFrom != null;
+  const board = getBoard(card.boardId);
+  const overdue = eff.dueDate && !eff.completed && new Date(eff.dueDate) < dateOnly(new Date());
+  const dueSoon = eff.dueDate && !eff.completed && !overdue && daysFromNow(eff.dueDate) <= 1;
+  const blockedByOpen = (eff.dependencies?.blockedBy || []).some(id => { const o = getCard(id); return o && !o.completed && !o.archived && !o.deleted; });
+  const node = el("article", {
+    class: "card" + (eff.completed ? " complete" : "") + (overdue ? " overdue" : "") + (dueSoon ? " due-soon" : "") + (state.ui.selectedCards && state.ui.selectedCards.includes(card.id) ? " selected" : "") + (state.ui.dimUnselected && !(state.ui.selectedCards||[]).includes(card.id) ? " dim" : ""),
+    tabindex: "0",
+    role:"button",
+    "aria-label": cardAriaLabel(card, eff),
+    dataset:{ cardId: card.id, listId: list ? list.id : "", position: String(position) },
+    draggable: !isMirror,
+    onclick: (e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) { toggleSelect(card.id); renderView(); } else openCardDetail(card.id); },
+    onkeydown: (e) => onCardKey(e, card),
+    ondragstart: (e) => { e.dataTransfer.setData("text/card", card.id); e.dataTransfer.effectAllowed = "move"; node.classList.add("dragging"); sound.pickup(); },
+    ondragend: () => node.classList.remove("dragging"),
+  });
+  // cover
+  if (eff.cover && eff.cover.value) {
+    const isFull = eff.cover.full;
+    const cov = el("div", { class:"card-cover" + (isFull ? " full" : ""), style:{ background: eff.cover.value } });
+    if (isFull) cov.appendChild(el("div", {}, eff.title));
+    node.appendChild(cov);
+  }
+  // labels
+  if (eff.labels && eff.labels.length) {
+    const lr = el("div", { class:"card-labels" });
+    eff.labels.forEach(lid => {
+      const lb = getLabel(eff.boardId, lid);
+      if (!lb) return;
+      lr.appendChild(el("span", { class:"label-chip named", style:{ background: colorVar(lb.color) }, title: lb.name, "aria-label":"Štítek: " + lb.name }, lb.name));
+    });
+    node.appendChild(lr);
+  }
+  // title (skip if shown in cover)
+  if (!(eff.cover && eff.cover.full && eff.cover.value)) {
+    node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + eff.title));
+  }
+  // meta
+  const meta = el("div", { class:"card-meta" });
+  if (eff.dueDate) {
+    const d = formatDate(eff.dueDate);
+    const dueClass = eff.completed ? "done" : (overdue ? "overdue" : "due");
+    meta.appendChild(el("span", { class:"meta-chip " + dueClass, title:"Termín" }, d));
+  }
+  const prog = checklistProgress(eff);
+  if (prog.total) meta.appendChild(el("span", { class:"meta-chip", title:"Checklist" }, `☑ ${prog.done}/${prog.total}`));
+  if (eff.comments && eff.comments.length) meta.appendChild(el("span", { class:"meta-chip", title:"Komentáře" }, `💬 ${eff.comments.length}`));
+  if (eff.attachments && eff.attachments.length) meta.appendChild(el("span", { class:"meta-chip", title:"Přílohy" }, `📎 ${eff.attachments.length}`));
+  if (eff.time && (eff.time.spentSec || eff.time.runningSince)) {
+    let sec = eff.time.spentSec || 0;
+    if (eff.time.runningSince) sec += Math.round((Date.now() - eff.time.runningSince) / 1000);
+    meta.appendChild(el("span", { class:"meta-chip", title:"Strávený čas" }, "⏱ " + formatHours(sec)));
+  }
+  if (eff.cardType === "habit" && eff.habit) {
+    meta.appendChild(el("span", { class:"habit-streak", title:"Série dní" }, "🔥 " + (eff.habit.streak || 0)));
+  }
+  // members on the right
+  if (eff.members && eff.members.length) {
+    const mr = el("div", { class:"card-members" });
+    eff.members.forEach(mid => mr.appendChild(memberAvatar(getMember(mid))));
+    meta.appendChild(mr);
+  }
+  if (meta.children.length) node.appendChild(meta);
+  // indicators
+  const ind = el("div", { class:"indicator-row" });
+  const subs = getSubcards(eff.id);
+  if (subs.length) {
+    const done = subs.filter(s => s.completed).length;
+    ind.appendChild(el("span", { class:"subcards-badge", title:"Podkarty" }, `↳ ${done}/${subs.length}`));
+  }
+  if (eff.dependencies) {
+    if (eff.dependencies.blocks.length) ind.appendChild(el("span", { class:"dep-badge", title:"Blokuje X karet" }, "→ " + eff.dependencies.blocks.length));
+    if (eff.dependencies.blockedBy.length) ind.appendChild(el("span", { class:"dep-badge", style:{ background:"var(--warning-bg)", color:"var(--warning)" }, title:"Blokována" }, "⊘ " + eff.dependencies.blockedBy.length));
+  }
+  if (isMirror) ind.appendChild(el("span", { class:"mirror-badge", title:"Zrcadlená kopie" }, "↪ mirror"));
+  if (blockedByOpen) ind.appendChild(el("span", { class:"dep-badge", style:{ background:"var(--danger-bg)", color:"var(--danger)" }, title:"Blokována otevřenou závislostí" }, "blokována"));
+  if (ind.children.length) node.appendChild(ind);
+  return node;
+}
+function cardAriaLabel(card, eff) {
+  const parts = [eff.title];
+  if (eff.completed) parts.push("hotovo");
+  if (eff.dueDate) {
+    const days = daysFromNow(eff.dueDate);
+    if (days < 0) parts.push("po termínu o " + (-days) + " dní");
+    else if (days === 0) parts.push("termín dnes");
+    else parts.push("termín za " + days + " dní");
+  }
+  if (eff.members && eff.members.length) parts.push("členové: " + eff.members.map(id => { const m = getMember(id); return m ? m.name : ""; }).filter(Boolean).join(", "));
+  if (eff.labels && eff.labels.length) parts.push("štítky: " + eff.labels.map(id => { const l = getLabel(eff.boardId, id); return l ? l.name : ""; }).filter(Boolean).join(", "));
+  const prog = checklistProgress(eff);
+  if (prog.total) parts.push("checklist " + prog.done + " z " + prog.total);
+  return parts.join(", ");
+}
+function formatHours(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+function toggleSelect(cardId) {
+  state.ui.selectedCards = state.ui.selectedCards || [];
+  const i = state.ui.selectedCards.indexOf(cardId);
+  if (i >= 0) state.ui.selectedCards.splice(i, 1);
+  else state.ui.selectedCards.push(cardId);
+}
+function onCardKey(e, card) {
+  // Enter: open card detail
+  if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); openCardDetail(card.id); return; }
+  // Space: toggle selection
+  if (e.key === " " && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleSelect(card.id); renderView(); return; }
+  // Cmd/Ctrl+Enter: toggle complete
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); toggleCardComplete(card.id); renderView(); return; }
+  // Modifier-free single keys (do not intercept when user holds Ctrl/Alt/Meta):
+  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    // 'a' — přiřadit členy
+    if (e.key === "a" || e.key === "A") { e.preventDefault(); openCardMembersDialog(card.id); return; }
+    // 'l' — štítky
+    if (e.key === "l" || e.key === "L") { e.preventDefault(); openCardLabelsDialog(card.id); return; }
+    // 'd' — termín
+    if (e.key === "d" || e.key === "D") { e.preventDefault(); openSetDueDialog(card.id); return; }
+    // 'c' — komentář
+    if (e.key === "c" || e.key === "C") { e.preventDefault(); openCardCommentDialog(card.id); return; }
+    // 'r' — přesun karty do jiného seznamu / nástěnky
+    if (e.key === "r" || e.key === "R") { e.preventDefault(); openMoveCardDialog(card.id); return; }
+    // 'u' — uchopit pro přesun šipkami (původně 'g', ale 'g' je teď globální pro goto-nástěnku)
+    if (e.key === "u" || e.key === "U") {
+      e.preventDefault();
+      if (_kbdGrabbed && _kbdGrabbed.cardId === card.id) {
+        _kbdGrabbed = null;
+        renderView();
+        announce("Uvolněno.");
+      } else {
+        _kbdGrabbed = { cardId: card.id };
+        announce("Karta uchopena. Šipkami přesuň, U pro upuštění, Esc pro zrušení.");
+        sound.pickup();
+        renderView();
+      }
+      return;
+    }
+  }
+  if (_kbdGrabbed && _kbdGrabbed.cardId === card.id) {
+    if (e.key === "Escape") { _kbdGrabbed = null; renderView(); announce("Zrušeno."); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); kbdMoveCard(card, "up"); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); kbdMoveCard(card, "down"); return; }
+    if (e.key === "ArrowLeft") { e.preventDefault(); kbdMoveCard(card, "left"); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); kbdMoveCard(card, "right"); return; }
+  }
+  // Plain arrow navigation
+  if (!_kbdGrabbed) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const cards = $$(".card", e.target.closest(".list-cards"));
+      const i = cards.indexOf(e.target);
+      const next = e.key === "ArrowDown" ? cards[i+1] : cards[i-1];
+      if (next) next.focus();
+    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const lists = $$(".list");
+      const cur = e.target.closest(".list");
+      const idx = lists.indexOf(cur);
+      const target = e.key === "ArrowRight" ? lists[idx+1] : lists[idx-1];
+      if (target) {
+        const tCards = $$(".card", target);
+        if (tCards.length) tCards[0].focus();
+      }
+    }
+  }
+}
+function kbdMoveCard(card, dir) {
+  if (dir === "up" || dir === "down") {
+    const siblings = cardsInList(card.listId);
+    const i = siblings.findIndex(c => c.id === card.id);
+    const j = dir === "up" ? i-1 : i+1;
+    if (j < 0 || j >= siblings.length) return;
+    moveCard(card.id, card.listId, j);
+    sound.click();
+    renderView();
+    setTimeout(() => { const f = document.querySelector(`.card[data-card-id="${card.id}"]`); if (f) f.focus(); }, 30);
+    announce("Posunuto " + (dir === "up" ? "nahoru" : "dolů") + ".");
+  }
+  if (dir === "left" || dir === "right") {
+    const board = getBoard(card.boardId);
+    const lists = listsInBoard(board.id);
+    const i = lists.findIndex(l => l.id === card.listId);
+    const j = dir === "left" ? i-1 : i+1;
+    if (j < 0 || j >= lists.length) return;
+    moveCard(card.id, lists[j].id);
+    sound.drop();
+    renderView();
+    setTimeout(() => { const f = document.querySelector(`.card[data-card-id="${card.id}"]`); if (f) f.focus(); }, 30);
+    announce("Přesunuto do seznamu „" + lists[j].name + "“.");
+  }
+}
+function renderBulkBar() {
+  const existing = $("#bulkBar");
+  if (existing) existing.remove();
+  const sel = state.ui.selectedCards;
+  if (!sel || !sel.length) return;
+  const bar = el("div", { class:"bulk-bar", id:"bulkBar" },
+    el("span", {}, T("bulkSelected", sel.length)),
+    el("button", { class:"ghost", onclick: () => bulkAction("complete") }, T("activityCompleted")),
+    el("button", { class:"ghost", onclick: () => bulkAction("archive") }, T("bulkArchive")),
+    el("button", { class:"ghost", onclick: () => bulkAction("move") }, T("bulkMove")),
+    el("button", { class:"ghost", onclick: () => bulkAction("label") }, T("bulkLabel")),
+    el("button", { class:"danger", onclick: () => bulkAction("delete") }, T("bulkDelete")),
+    el("button", { class:"ghost", onclick: () => { state.ui.selectedCards = []; renderView(); } }, T("deselect")),
+  );
+  document.body.appendChild(bar);
+}
+async function bulkAction(action) {
+  const sel = state.ui.selectedCards || [];
+  if (!sel.length) return;
+  if (action === "complete") sel.forEach(id => { const c = getCard(id); if (c && !c.completed) toggleCardComplete(id); });
+  if (action === "archive") sel.forEach(archiveCard);
+  if (action === "delete") {
+    if (!await confirm2("Smazat " + sel.length + " karet?", { danger:true })) return;
+    sel.forEach(deleteCard);
+    sound.remove();
+  }
+  if (action === "move") {
+    const tgt = await pickList();
+    if (tgt) sel.forEach(id => moveCard(id, tgt));
+  }
+  if (action === "label") {
+    const board = getBoard(getCard(sel[0])?.boardId);
+    if (!board) return;
+    const lid = await pickLabel(board);
+    if (lid) sel.forEach(id => { const c = getCard(id); if (c && !c.labels.includes(lid)) toggleCardLabel(id, lid); });
+  }
+  state.ui.selectedCards = [];
+  renderView();
+}
+function pickList() {
+  return new Promise(resolve => {
+    const sel = el("select", { id:"plList" });
+    boardsInWorkspace().forEach(b => {
+      const og = el("optgroup", { label: b.name });
+      listsInBoard(b.id).forEach(l => og.appendChild(el("option", { value:l.id }, l.name)));
+      sel.appendChild(og);
+    });
+    const m = openModal({
+      title: T("pickList"),
+      body: el("div", { class:"field-row" }, sel),
+      footer: [
+        el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("cancel")),
+        el("button", { class:"primary", onclick: () => { const v = sel.value; m.close(); resolve(v); } }, T("save")),
+      ],
+      size:"small",
+    });
+  });
+}
+function pickLabel(board) {
+  return new Promise(resolve => {
+    const ul = el("ul", { class:"picker-list" });
+    board.labels.forEach(l => {
+      ul.appendChild(el("li", {}, el("button", { onclick: () => { m.close(); resolve(l.id); } },
+        el("span", { class:"label-chip", style:{ background: colorVar(l.color) } }), l.name)));
+    });
+    const m = openModal({ title: T("pickLabels"), body: ul, size:"small", footer:[el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("cancel"))] });
+  });
+}
+//#region ============= BOARD MEMBERS =============
+function toggleBoardMember(boardId, memberId) {
+  const b = getBoard(boardId);
+  if (!b) return;
+  if (!b.members) b.members = [];
+  const i = b.members.indexOf(memberId);
+  if (i >= 0) b.members.splice(i, 1); else b.members.push(memberId);
+  b.updatedAt = Date.now();
+  saveState();
+}
+function boardMembers(board) {
+  if (!board || !board.members) return [];
+  return board.members.map(getMember).filter(Boolean);
+}
+function memberBoards(memberId) {
+  return state.boards.filter(b => !b.archived && (b.members || []).includes(memberId));
+}
+function memberCards(memberId, opts={}) {
+  return state.cards.filter(c => {
+    if (!c.members || !c.members.includes(memberId)) return false;
+    if (!opts.includeArchived && c.archived) return false;
+    if (!opts.includeCompleted && c.completed) return false;
+    return true;
+  });
+}
+//#endregion
+
+//#region ============= CARD DETAIL MODAL =============
+function openCardDetail(cardId) {
+  const card = getCard(cardId);
+  if (!card) return;
+  const real = resolveCard(card);
+  const board = getBoard(real.boardId);
+  const list = getList(real.listId);
+  if (!board || !list) return;
+
+  const titleInput = el("input", { type:"text", value: real.title, class:"card-title-input", "aria-label": T("cardName") });
+  titleInput.addEventListener("change", () => {
+    const old = real.title;
+    setCardField(real.id, "title", titleInput.value || T("untitled"));
+    logActivity(real, T("activityRenamed", old, titleInput.value));
+    announce("Název změněn.");
+    saveState();
+  });
+
+  const body = el("div", { class:"card-detail" });
+  const left = el("div", { class:"card-detail-main" });
+  const right = el("div", { class:"card-detail-side" });
+
+  // Sekce: stav (hotovo, archivováno, v listu)
+  const statusRow = el("div", { class:"card-status-row" });
+  const completeBtn = el("button", { class:"ghost", onclick: () => {
+    toggleCardComplete(real.id);
+    sound.done();
+    refresh();
+  } }, real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo");
+  const inListInfo = el("span", { class:"muted" }, "Seznam: " + list.name);
+  statusRow.append(completeBtn, inListInfo);
+  left.appendChild(statusRow);
+
+  // Popis
+  const descSection = el("section", { "aria-label": T("description") });
+  descSection.appendChild(el("h3", {}, T("description")));
+  const descPreview = el("div", { class:"md-rendered", role:"region", tabindex:"0" });
+  const descTextarea = el("textarea", { class:"md-edit", rows:"6", "aria-label": T("description") });
+  const descToggleBtn = el("button", { class:"ghost" }, "Upravit");
+  let editingDesc = false;
+  function refreshDesc() {
+    if (editingDesc) {
+      descPreview.style.display = "none";
+      descTextarea.style.display = "";
+      descTextarea.value = real.description || "";
+      descToggleBtn.textContent = "Náhled / uložit";
+    } else {
+      descPreview.style.display = "";
+      descTextarea.style.display = "none";
+      descPreview.innerHTML = real.description ? mdRender(real.description) : "<p class='muted'>(prázdné)</p>";
+      descToggleBtn.textContent = real.description ? "Upravit" : "Přidat popis";
+    }
+  }
+  descToggleBtn.addEventListener("click", () => {
+    if (editingDesc) {
+      const old = real.description || "";
+      setCardField(real.id, "description", descTextarea.value);
+      if (old !== descTextarea.value) logActivity(real, T("activityDescChanged"));
+      saveState();
+    }
+    editingDesc = !editingDesc;
+    refreshDesc();
+  });
+  descSection.append(descPreview, descTextarea, descToggleBtn);
+  left.appendChild(descSection);
+  refreshDesc();
+
+  // Checklisty
+  const clSection = el("section", { "aria-label": T("checklists") });
+  clSection.appendChild(el("h3", {}, T("checklists")));
+  const clContainer = el("div");
+  function refreshChecklists() {
+    clear(clContainer);
+    (real.checklists || []).forEach(cl => {
+      const wrap = el("div", { class:"checklist" });
+      const head = el("div", { class:"checklist-head" });
+      const name = el("input", { type:"text", value: cl.name, "aria-label":"Název checklistu" });
+      name.addEventListener("change", () => { cl.name = name.value; saveState(); });
+      const prog = checklistProgress(real);
+      const progSpan = el("span", { class:"muted" }, `${cl.items.filter(i => i.done).length}/${cl.items.length}`);
+      const delBtn = el("button", { class:"ghost danger", onclick: async () => {
+        if (await confirm2("Smazat checklist?", { danger:true })) {
+          real.checklists = real.checklists.filter(x => x.id !== cl.id);
+          saveState();
+          refreshChecklists();
+        }
+      } }, T("delete"));
+      head.append(name, progSpan, delBtn);
+      wrap.appendChild(head);
+      const items = el("ul", { class:"checklist-items" });
+      cl.items.forEach(item => {
+        const li = el("li");
+        const cb = el("input", { type:"checkbox", checked: item.done, id:`it_${item.id}`, "aria-label": item.text });
+        cb.addEventListener("change", () => {
+          toggleChecklistItem(real.id, cl.id, item.id);
+          li.querySelector(".item-text").classList.toggle("done", cb.checked);
+          progSpan.textContent = `${cl.items.filter(i => i.done).length}/${cl.items.length}`;
+          sound.click();
+        });
+        const lbl = el("label", { for:`it_${item.id}`, class:"item-text" + (item.done ? " done" : "") }, item.text);
+        const editBtn = el("button", { class:"ghost small", onclick: () => {
+          const inp = el("input", { type:"text", value:item.text });
+          li.replaceChild(inp, lbl);
+          inp.focus();
+          inp.addEventListener("blur", () => {
+            item.text = inp.value || item.text;
+            lbl.textContent = item.text;
+            li.replaceChild(lbl, inp);
+            saveState();
+          });
+          inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+        } }, T("edit"));
+        const rmBtn = el("button", { class:"ghost small", onclick: () => {
+          cl.items = cl.items.filter(x => x.id !== item.id);
+          saveState();
+          refreshChecklists();
+        } }, "×");
+        li.append(cb, lbl, editBtn, rmBtn);
+        items.appendChild(li);
+      });
+      wrap.appendChild(items);
+      const addRow = el("div", { class:"add-row" });
+      const newItem = el("input", { type:"text", placeholder: T("addItem") + "…" });
+      const addBtn = el("button", { class:"ghost", onclick: () => {
+        if (!newItem.value.trim()) return;
+        addChecklistItem(real.id, cl.id, newItem.value.trim());
+        newItem.value = "";
+        refreshChecklists();
+        sound.add();
+      } }, "+");
+      newItem.addEventListener("keydown", e => { if (e.key === "Enter") addBtn.click(); });
+      addRow.append(newItem, addBtn);
+      wrap.appendChild(addRow);
+      clContainer.appendChild(wrap);
+    });
+  }
+  refreshChecklists();
+  clSection.appendChild(clContainer);
+  const addClBtn = el("button", { class:"ghost", onclick: () => {
+    const name = prompt("Název checklistu:", "Checklist");
+    if (name) { addChecklist(real.id, name); refreshChecklists(); sound.add(); }
+  } }, "+ " + T("addChecklist"));
+  clSection.appendChild(addClBtn);
+  left.appendChild(clSection);
+
+  // Vlastní pole
+  if (board.customFields && board.customFields.length) {
+    const cfSection = el("section", { "aria-label": T("customFields") });
+    cfSection.appendChild(el("h3", {}, T("customFields")));
+    const cfTable = el("dl", { class:"cf-list" });
+    board.customFields.forEach(cf => {
+      const dt = el("dt", {}, cf.name);
+      let inp;
+      const cur = (real.customFieldValues || {})[cf.id] || "";
+      if (cf.type === "text") inp = el("input", { type:"text", value: cur });
+      else if (cf.type === "number") inp = el("input", { type:"number", value: cur });
+      else if (cf.type === "date") inp = el("input", { type:"date", value: cur });
+      else if (cf.type === "checkbox") { inp = el("input", { type:"checkbox" }); inp.checked = cur === true || cur === "true"; }
+      else if (cf.type === "url") inp = el("input", { type:"url", value: cur });
+      else if (cf.type === "select") {
+        inp = el("select");
+        inp.appendChild(el("option", { value:"" }, "—"));
+        (cf.options || []).forEach(o => inp.appendChild(el("option", { value:o }, o)));
+        inp.value = cur;
+      }
+      else inp = el("input", { type:"text", value: cur });
+      inp.id = `cf_${cf.id}`;
+      inp.setAttribute("aria-label", cf.name);
+      inp.addEventListener("change", () => {
+        if (!real.customFieldValues) real.customFieldValues = {};
+        real.customFieldValues[cf.id] = cf.type === "checkbox" ? inp.checked : inp.value;
+        saveState();
+      });
+      const dd = el("dd", {}, inp);
+      cfTable.append(dt, dd);
+    });
+    cfSection.appendChild(cfTable);
+    left.appendChild(cfSection);
+  }
+
+  // Komentáře
+  const cmSection = el("section", { "aria-label": T("comments") });
+  cmSection.appendChild(el("h3", {}, T("comments")));
+  const cmList = el("ul", { class:"comments" });
+  function refreshComments() {
+    clear(cmList);
+    (real.comments || []).slice().reverse().forEach(c => {
+      const li = el("li");
+      const meta = el("div", { class:"comment-meta muted" }, formatDate(c.createdAt, true));
+      const text = el("div", { class:"comment-text", html: mdRender(c.text) });
+      li.append(meta, text);
+      cmList.appendChild(li);
+    });
+  }
+  refreshComments();
+  cmSection.appendChild(cmList);
+  const cmInput = el("textarea", { rows:"2", placeholder: T("addComment"), "aria-label": T("addComment") });
+  const cmBtn = el("button", { class:"primary", onclick: () => {
+    if (!cmInput.value.trim()) return;
+    addComment(real.id, cmInput.value.trim());
+    cmInput.value = "";
+    refreshComments();
+    sound.add();
+  } }, T("addComment"));
+  cmSection.append(cmInput, cmBtn);
+  left.appendChild(cmSection);
+
+  // Aktivita
+  const actSection = el("section", { "aria-label": T("activity") });
+  actSection.appendChild(el("h3", {}, T("activity")));
+  const actList = el("ul", { class:"activity-list" });
+  function refreshActivity() {
+    clear(actList);
+    (real.activity || []).slice().reverse().slice(0, 50).forEach(a => {
+      actList.appendChild(el("li", {},
+        el("span", { class:"muted" }, formatDate(a.at, true) + ": "),
+        el("span", {}, a.msg)));
+    });
+  }
+  refreshActivity();
+  actSection.appendChild(actList);
+  left.appendChild(actSection);
+
+  // ----- Pravý sloupec -----
+
+  // Členové
+  const mSec = el("section", { "aria-label": T("members") });
+  mSec.appendChild(el("h4", {}, T("members")));
+  const mList = el("div", { class:"chips" });
+  function refreshMembers() {
+    clear(mList);
+    (real.members || []).forEach(mid => {
+      const m = getMember(mid);
+      if (!m) return;
+      const chip = el("button", { class:"chip member-chip", onclick: () => {
+        toggleCardMember(real.id, mid);
+        refreshMembers();
+        sound.click();
+      }, "aria-label": "Odebrat člena " + m.name }, memberAvatar(m, "sm"), m.name, " ×");
+      mList.appendChild(chip);
+    });
+  }
+  refreshMembers();
+  mSec.appendChild(mList);
+  const mPickBtn = el("button", { class:"ghost", onclick: async () => {
+    await pickMembers(real, board);
+    refreshMembers();
+    refreshActivity();
+  } }, "+ " + T("pickMembers"));
+  mSec.appendChild(mPickBtn);
+  right.appendChild(mSec);
+
+  // Štítky
+  const lSec = el("section", { "aria-label": T("labels") });
+  lSec.appendChild(el("h4", {}, T("labels")));
+  const lList = el("div", { class:"chips" });
+  function refreshLabels() {
+    clear(lList);
+    (real.labels || []).forEach(lid => {
+      const l = getLabel(real.boardId, lid);
+      if (!l) return;
+      const chip = el("button", { class:"chip", style:{ background: colorVar(l.color), color:"#fff" }, onclick: () => {
+        toggleCardLabel(real.id, lid);
+        refreshLabels();
+        sound.click();
+      }, "aria-label": "Odebrat štítek " + l.name }, l.name, " ×");
+      lList.appendChild(chip);
+    });
+  }
+  refreshLabels();
+  lSec.appendChild(lList);
+  const lPickBtn = el("button", { class:"ghost", onclick: async () => {
+    await pickLabels(real, board);
+    refreshLabels();
+    refreshActivity();
+  } }, "+ " + T("pickLabels"));
+  lSec.appendChild(lPickBtn);
+  right.appendChild(lSec);
+
+  // Termíny
+  const dSec = el("section", { "aria-label": T("dueDate") });
+  dSec.appendChild(el("h4", {}, T("dueDate")));
+  const startInp = el("input", { type:"date", value: real.startDate || "", "aria-label": T("startDate") });
+  startInp.addEventListener("change", () => { setCardField(real.id, "startDate", startInp.value || null); saveState(); });
+  const dueInp = el("input", { type:"date", value: real.dueDate || "", "aria-label": T("dueDate") });
+  dueInp.addEventListener("change", () => {
+    const old = real.dueDate;
+    setCardField(real.id, "dueDate", dueInp.value || null);
+    if (dueInp.value) logActivity(real, T("activityDueSet", formatDate(dueInp.value)));
+    else if (old) logActivity(real, T("activityDueRemoved"));
+    saveState();
+    refreshActivity();
+  });
+  const snoozeInp = el("input", { type:"date", value: real.snoozeUntil || "", "aria-label": T("snoozeUntil") });
+  snoozeInp.addEventListener("change", () => { setCardField(real.id, "snoozeUntil", snoozeInp.value || null); saveState(); });
+  dSec.append(
+    el("label", {}, T("startDate") + ": ", startInp),
+    el("label", {}, T("dueDate") + ": ", dueInp),
+    el("label", {}, T("snoozeUntil") + ": ", snoozeInp),
+  );
+  right.appendChild(dSec);
+
+  // Cover
+  const covSec = el("section", { "aria-label": T("cover") });
+  covSec.appendChild(el("h4", {}, T("cover")));
+  const covColors = ["", "--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8","--label-c9","--label-c10"];
+  const covRow = el("div", { class:"color-picker" });
+  covColors.forEach(c => {
+    const b = el("button", { class:"color-swatch", style: c ? { background: colorVar(c) } : {}, "aria-label": c ? "Barva " + colorName(c) : "Bez barvy" }, c ? "" : "—");
+    if (real.cover && real.cover.color === c) b.classList.add("selected");
+    b.addEventListener("click", () => {
+      setCardField(real.id, "cover", c ? { color:c, full: real.cover && real.cover.full } : null);
+      covRow.querySelectorAll(".color-swatch").forEach(x => x.classList.remove("selected"));
+      b.classList.add("selected");
+      saveState();
+    });
+    covRow.appendChild(b);
+  });
+  covSec.appendChild(covRow);
+  const covFull = el("input", { type:"checkbox", id:"covFull" });
+  covFull.checked = !!(real.cover && real.cover.full);
+  covFull.addEventListener("change", () => {
+    if (real.cover) { real.cover.full = covFull.checked; saveState(); }
+  });
+  covSec.appendChild(el("label", { for:"covFull" }, covFull, " Plné záhlaví"));
+  right.appendChild(covSec);
+
+  // Přílohy
+  const aSec = el("section", { "aria-label": T("attachments") });
+  aSec.appendChild(el("h4", {}, T("attachments")));
+  const aList = el("ul", { class:"attachments" });
+  function refreshAttachments() {
+    clear(aList);
+    (real.attachments || []).forEach(at => {
+      const li = el("li");
+      const a = el("a", { href: at.url, target:"_blank", rel:"noopener" }, at.name || at.url);
+      const rm = el("button", { class:"ghost small", onclick: () => {
+        real.attachments = real.attachments.filter(x => x.id !== at.id);
+        saveState();
+        refreshAttachments();
+      } }, "×");
+      li.append(a, " ", rm);
+      aList.appendChild(li);
+    });
+  }
+  refreshAttachments();
+  aSec.appendChild(aList);
+  const aUrl = el("input", { type:"url", placeholder: T("attachmentUrl") });
+  const aName = el("input", { type:"text", placeholder: T("attachmentName") });
+  const aAdd = el("button", { class:"ghost", onclick: () => {
+    if (!aUrl.value.trim()) return;
+    if (!real.attachments) real.attachments = [];
+    real.attachments.push({ id: uid("at_"), url: aUrl.value.trim(), name: aName.value.trim() || aUrl.value.trim(), createdAt: Date.now() });
+    aUrl.value = ""; aName.value = "";
+    saveState();
+    refreshAttachments();
+    sound.add();
+  } }, "+ " + T("addAttachment"));
+  aSec.append(aUrl, aName, aAdd);
+  right.appendChild(aSec);
+
+  // Time tracking
+  const tSec = el("section", { "aria-label": T("timeTracking") });
+  tSec.appendChild(el("h4", {}, T("timeTracking")));
+  if (!real.time) real.time = { estimateSec:0, spentSec:0, runningSince:null };
+  const estInp = el("input", { type:"number", min:"0", step:"0.25", value: (real.time.estimateSec || 0) / 3600, "aria-label": T("estimate") + " (h)" });
+  estInp.addEventListener("change", () => { real.time.estimateSec = Math.round(parseFloat(estInp.value || "0") * 3600); saveState(); });
+  const spentLabel = el("span", {}, formatHours(real.time.spentSec || 0));
+  const runBtn = el("button", { class:"ghost" }, real.time.runningSince ? "Stop" : "Start");
+  runBtn.addEventListener("click", () => {
+    if (real.time.runningSince) {
+      real.time.spentSec = (real.time.spentSec || 0) + Math.round((Date.now() - real.time.runningSince) / 1000);
+      real.time.runningSince = null;
+      runBtn.textContent = "Start";
+    } else {
+      real.time.runningSince = Date.now();
+      runBtn.textContent = "Stop";
+    }
+    spentLabel.textContent = formatHours(real.time.spentSec || 0);
+    saveState();
+  });
+  const addManual = el("button", { class:"ghost", onclick: () => {
+    const h = parseFloat(prompt("Přidat strávené hodiny:", "0.25") || "0");
+    if (h > 0) { real.time.spentSec = (real.time.spentSec || 0) + Math.round(h * 3600); spentLabel.textContent = formatHours(real.time.spentSec); saveState(); }
+  } }, "+ Hodiny");
+  tSec.append(
+    el("label", {}, T("estimate") + " (h): ", estInp),
+    el("div", {}, "Stráveno: ", spentLabel, " ", runBtn, " ", addManual),
+  );
+  right.appendChild(tSec);
+
+  // Dependencies
+  const depSec = el("section", { "aria-label": T("dependencies") });
+  depSec.appendChild(el("h4", {}, T("dependencies")));
+  function depRow(kind, label) {
+    const row = el("div", { class:"dep-row" });
+    const list = el("ul");
+    (real[kind] || []).forEach(otherId => {
+      const oc = getCard(otherId);
+      if (!oc) return;
+      const li = el("li");
+      const link = el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(otherId); } }, oc.title);
+      const rm = el("button", { class:"ghost small", onclick: () => { setDep(real.id, otherId, kind, false); refreshDeps(); } }, "×");
+      li.append(link, " ", rm);
+      list.appendChild(li);
+    });
+    const addBtn = el("button", { class:"ghost", onclick: async () => {
+      const oid = await pickCard();
+      if (oid && oid !== real.id) {
+        if (setDep(real.id, oid, kind, true)) { refreshDeps(); sound.add(); }
+        else { toast("Tato závislost by vytvořila cyklus.", "warning"); sound.err(); }
+      }
+    } }, "+ " + label);
+    row.append(el("strong", {}, label + ":"), list, addBtn);
+    return row;
+  }
+  const depBox = el("div");
+  function refreshDeps() {
+    clear(depBox);
+    depBox.append(depRow("blocks", T("blocks")), depRow("blockedBy", T("blockedBy")), depRow("related", T("related")));
+  }
+  refreshDeps();
+  depSec.appendChild(depBox);
+  right.appendChild(depSec);
+
+  // Akce
+  const actBox = el("section", { class:"card-actions", "aria-label": T("actions") });
+  actBox.appendChild(el("h4", {}, T("actions")));
+  const moveBtn = el("button", { class:"ghost", onclick: async () => {
+    const tgt = await pickList();
+    if (tgt) { moveCard(real.id, tgt); close(); renderAll(); sound.drop(); }
+  } }, "Přesunout do listu…");
+  const mirrorBtn = el("button", { class:"ghost", onclick: async () => {
+    const tgt = await pickList();
+    if (tgt) { mirrorCard(real.id, tgt); toast("Vytvořeno zrcadlo.", "success"); sound.add(); }
+  } }, T("mirror"));
+  const archBtn = el("button", { class:"ghost", onclick: () => {
+    if (real.archived) unarchiveCard(real.id); else archiveCard(real.id);
+    close(); renderAll(); sound.click();
+  } }, real.archived ? T("unarchive") : T("archiveAction"));
+  const tplBtn = el("button", { class:"ghost", onclick: () => {
+    saveCardAsTemplate(real);
+    toast("Uloženo jako šablona.", "success"); sound.add();
+  } }, T("saveAsTemplate"));
+  const focusBtn = el("button", { class:"ghost", onclick: () => {
+    state.ui.focusCardId = real.id;
+    close();
+    renderAll();
+    document.body.classList.add("focus-mode");
+  } }, T("focusMode"));
+  const pomoBtn = el("button", { class:"ghost", onclick: () => { startPomodoro(real.id); } }, T("startPomodoro"));
+  const delBtn = el("button", { class:"ghost danger", onclick: async () => {
+    if (await confirm2(T("confirmDeleteCard"), { danger:true })) {
+      deleteCard(real.id);
+      close(); renderAll();
+      toast(T("sentToTrash"), "success"); sound.remove();
+    }
+  } }, T("delete"));
+  actBox.append(moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, delBtn);
+  right.appendChild(actBox);
+
+  body.append(left, right);
+
+  const m = openModal({
+    title: titleInput,
+    body,
+    size: "large",
+    onClose: () => {
+      if (editingDesc) {
+        const old = real.description || "";
+        setCardField(real.id, "description", descTextarea.value);
+        if (old !== descTextarea.value) logActivity(real, T("activityDescChanged"));
+        saveState();
+      }
+      renderAll();
+    }
+  });
+
+  // Klávesové zkratky v otevřeném detailu karty:
+  //   , = předchozí karta, . = další karta (v rámci aktuální nástěnky)
+  //   A / L / D / C / R = akce přímo na aktuální kartě (i když jsme v modalu)
+  // Zkratky fungují jen když focus není ve formulářovém poli (input, textarea apod.).
+  const modalKeyHandler = (e) => {
+    if (e.target.matches("input, textarea, select, [contenteditable]")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // , . = navigace
+    if (e.key === "," || e.key === ".") {
+      const siblings = siblingCardsForNav(real);
+      const idx = siblings.findIndex(c => c.id === real.id);
+      if (idx < 0) return;
+      const dir = e.key === "." ? 1 : -1;
+      const next = siblings[(idx + dir + siblings.length) % siblings.length];
+      if (next && next.id !== real.id) {
+        e.preventDefault();
+        m.close();
+        setTimeout(() => openCardDetail(next.id), 30);
+        announce(e.key === "." ? "Další karta." : "Předchozí karta.");
+      }
+      return;
+    }
+    // Rychlé akce A/L/D/C/R — stejné jako na focusované kartě v board view
+    const k = e.key.toLowerCase();
+    if (k === "a") { e.preventDefault(); openCardMembersDialog(real.id); return; }
+    if (k === "l") { e.preventDefault(); openCardLabelsDialog(real.id); return; }
+    if (k === "d") { e.preventDefault(); openSetDueDialog(real.id); return; }
+    if (k === "c") { e.preventDefault(); openCardCommentDialog(real.id); return; }
+    if (k === "r") { e.preventDefault(); openMoveCardDialog(real.id); return; }
+  };
+  m.overlay.addEventListener("keydown", modalKeyHandler);
+
+  function close() { m.close(); }
+  function refresh() {
+    completeBtn.textContent = real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo";
+  }
+}
+//#endregion
+
+//#region ============= PICKERS (members, labels, card) =============
+function pickMembers(card, board) {
+  return new Promise(resolve => {
+    const ul = el("ul", { class:"picker-list", role:"listbox" });
+    const allMembers = (board.members && board.members.length)
+      ? board.members.map(getMember).filter(Boolean)
+      : state.members.slice();
+    if (!allMembers.length) {
+      const note = el("p", { class:"muted" }, "Žádní členové. Přidej v sekci „Členové“ nebo přidej členy nástěnce v jejím nastavení.");
+      const m = openModal({ title: T("pickMembers"), body: note, size:"small",
+        footer: [el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("close"))] });
+      return;
+    }
+    allMembers.forEach(mb => {
+      const isOn = (card.members || []).includes(mb.id);
+      const btn = el("button", { class: "picker-row" + (isOn ? " on" : ""), role:"option", "aria-selected": isOn ? "true" : "false" },
+        memberAvatar(mb, "sm"), mb.name, isOn ? " ✓" : "");
+      btn.addEventListener("click", () => {
+        toggleCardMember(card.id, mb.id);
+        const nowOn = (card.members || []).includes(mb.id);
+        btn.classList.toggle("on", nowOn);
+        btn.setAttribute("aria-selected", nowOn ? "true" : "false");
+        sound.click();
+      });
+      ul.appendChild(el("li", {}, btn));
+    });
+    const m = openModal({ title: T("pickMembers"), body: ul, size:"small",
+      footer: [el("button", { class:"primary", onclick: () => { m.close(); resolve(true); } }, T("close"))] });
+  });
+}
+function pickLabels(card, board) {
+  return new Promise(resolve => {
+    const ul = el("ul", { class:"picker-list", role:"listbox" });
+    function refresh() {
+      clear(ul);
+      board.labels.forEach(l => {
+        const isOn = (card.labels || []).includes(l.id);
+        const btn = el("button", { class: "picker-row" + (isOn ? " on" : ""), role:"option", "aria-selected": isOn ? "true" : "false" },
+          el("span", { class:"label-chip", style:{ background: colorVar(l.color) } }), l.name, isOn ? " ✓" : "");
+        btn.addEventListener("click", () => {
+          toggleCardLabel(card.id, l.id);
+          refresh();
+          sound.click();
+        });
+        ul.appendChild(el("li", {}, btn));
+      });
+      // přidat nový štítek inline
+      const addRow = el("li", { class:"picker-add" });
+      const ni = el("input", { type:"text", placeholder: T("labelName") });
+      const nc = el("select", { "aria-label": T("color") });
+      ["--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8","--label-c9","--label-c10"].forEach((c, i) => nc.appendChild(el("option", { value:c }, colorName(c))));
+      const nb = el("button", { class:"ghost", onclick: () => {
+        if (!ni.value.trim()) return;
+        addLabel(board.id, ni.value.trim(), nc.value);
+        refresh();
+      } }, "+ " + T("addLabel"));
+      addRow.append(ni, nc, nb);
+      ul.appendChild(addRow);
+    }
+    refresh();
+    const m = openModal({ title: T("pickLabels"), body: ul, size:"small",
+      footer: [el("button", { class:"primary", onclick: () => { m.close(); resolve(true); } }, T("close"))] });
+  });
+}
+function pickCard() {
+  return new Promise(resolve => {
+    const inp = el("input", { type:"search", placeholder:"Hledat kartu…", "aria-label":"Hledat kartu" });
+    const ul = el("ul", { class:"picker-list", role:"listbox" });
+    function refresh() {
+      clear(ul);
+      const q = inp.value.toLowerCase().trim();
+      const cs = state.cards.filter(c => !c.archived && (!q || c.title.toLowerCase().includes(q))).slice(0, 50);
+      cs.forEach(c => {
+        const b = getBoard(c.boardId);
+        const li = el("li");
+        const btn = el("button", { class:"picker-row", onclick: () => { m.close(); resolve(c.id); } },
+          c.title, " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+        li.appendChild(btn);
+        ul.appendChild(li);
+      });
+    }
+    inp.addEventListener("input", refresh);
+    refresh();
+    const m = openModal({ title: T("pickCard"), body: el("div", {}, inp, ul), size:"small",
+      footer: [el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("cancel"))] });
+    setTimeout(() => inp.focus(), 50);
+  });
+}
+//#endregion
+
+//#region ============= TEMPLATES =============
+function saveCardAsTemplate(card) {
+  if (!state.cardTemplates) state.cardTemplates = [];
+  const tpl = deepClone(card);
+  tpl.id = uid("tpl_");
+  tpl.isTemplate = true;
+  tpl.templateName = card.title;
+  tpl.archived = false;
+  delete tpl.activity;
+  delete tpl.comments;
+  state.cardTemplates.push(tpl);
+  saveState();
+}
+function instantiateCardTemplate(tplId, listId) {
+  const tpl = (state.cardTemplates || []).find(t => t.id === tplId);
+  if (!tpl) return null;
+  const c = newCard(listId, tpl.title);
+  c.description = tpl.description;
+  c.labels = (tpl.labels || []).slice();
+  c.members = (tpl.members || []).slice();
+  c.checklists = deepClone(tpl.checklists || []).map(cl => { cl.id = uid("cl_"); cl.items.forEach(i => i.id = uid("ci_")); return cl; });
+  c.customFieldValues = deepClone(tpl.customFieldValues || {});
+  saveState();
+  return c;
+}
+//#endregion
+
+//#region ============= TABLE VIEW =============
+function renderTableView(container, board) {
+  const cards = cardsInBoard(board.id).filter(c => !c.archived);
+  const wrap = el("div", { class:"view-wrap table-view" });
+  wrap.appendChild(el("h2", {}, board.name + " — " + T("tableView")));
+  const table = el("table", { class:"data-table", "aria-label": board.name });
+  const thead = el("thead");
+  const headerRow = el("tr");
+  const cols = [
+    { key:"title", label:T("cardName") },
+    { key:"list", label:"List" },
+    { key:"labels", label:T("labels") },
+    { key:"members", label:T("members") },
+    { key:"dueDate", label:T("dueDate") },
+    { key:"completed", label:T("completed") },
+  ];
+  let sortKey = state.ui.tableSort || "title";
+  let sortDir = state.ui.tableDir || 1;
+  cols.forEach(c => {
+    const th = el("th", { scope:"col" });
+    const b = el("button", { class:"th-sort", onclick: () => {
+      if (sortKey === c.key) sortDir = -sortDir; else { sortKey = c.key; sortDir = 1; }
+      state.ui.tableSort = sortKey; state.ui.tableDir = sortDir;
+      saveState(); renderView();
+    } }, c.label, sortKey === c.key ? (sortDir > 0 ? " ▲" : " ▼") : "");
+    th.appendChild(b);
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  const sorted = cards.slice().sort((a, b) => {
+    let av, bv;
+    if (sortKey === "list") { av = (getList(a.listId) || {}).position || 0; bv = (getList(b.listId) || {}).position || 0; }
+    else if (sortKey === "labels") { av = (a.labels || []).length; bv = (b.labels || []).length; }
+    else if (sortKey === "members") { av = (a.members || []).length; bv = (b.members || []).length; }
+    else if (sortKey === "completed") { av = a.completed ? 1 : 0; bv = b.completed ? 1 : 0; }
+    else { av = a[sortKey] || ""; bv = b[sortKey] || ""; }
+    return av < bv ? -sortDir : av > bv ? sortDir : 0;
+  });
+  sorted.forEach(c => {
+    const tr = el("tr", { tabindex:"0" });
+    tr.addEventListener("dblclick", () => openCardDetail(c.id));
+    tr.addEventListener("keydown", e => { if (e.key === "Enter") openCardDetail(c.id); });
+    const titleTd = el("td");
+    titleTd.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
+    tr.appendChild(titleTd);
+    tr.appendChild(el("td", {}, (getList(c.listId) || {}).name || ""));
+    const lblTd = el("td");
+    (c.labels || []).forEach(lid => {
+      const l = getLabel(c.boardId, lid);
+      if (l) lblTd.appendChild(el("span", { class:"label-chip-named", style:{ background: colorVar(l.color), color:"#fff" } }, l.name));
+    });
+    tr.appendChild(lblTd);
+    const memTd = el("td");
+    (c.members || []).forEach(mid => {
+      const m = getMember(mid);
+      if (m) memTd.appendChild(memberAvatar(m, "sm"));
+    });
+    tr.appendChild(memTd);
+    tr.appendChild(el("td", {}, c.dueDate ? formatDate(c.dueDate) : ""));
+    tr.appendChild(el("td", {}, c.completed ? "✓" : ""));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  if (!sorted.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= CALENDAR VIEW =============
+function renderCalendarView(container, board) {
+  const wrap = el("div", { class:"view-wrap calendar-view" });
+  const cur = state.ui.calCursor ? new Date(state.ui.calCursor) : new Date();
+  cur.setDate(1);
+  const monthNames = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
+  const monthNamesEn = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const mn = LANG === "cs" ? monthNames : monthNamesEn;
+  const headBar = el("div", { class:"cal-head" });
+  const prev = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() - 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "‹");
+  const next = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() + 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "›");
+  const todayBtn = el("button", { class:"ghost", onclick: () => { state.ui.calCursor = new Date().toISOString(); saveState(); renderView(); } }, T("today"));
+  headBar.append(prev, el("h2", {}, mn[cur.getMonth()] + " " + cur.getFullYear()), next, todayBtn);
+  wrap.appendChild(headBar);
+
+  const grid = el("div", { class:"cal-grid", role:"grid" });
+  const dow = LANG === "cs" ? ["Po","Út","St","Čt","Pá","So","Ne"] : ["Mo","Tu","We","Th","Fr","Sa","Su"];
+  dow.forEach(d => grid.appendChild(el("div", { class:"cal-dow", role:"columnheader" }, d)));
+
+  const start = startOfWeek(new Date(cur));
+  const cards = (board ? cardsInBoard(board.id) : state.cards).filter(c => !c.archived && c.dueDate);
+  const byDay = {};
+  cards.forEach(c => { (byDay[c.dueDate] = byDay[c.dueDate] || []).push(c); });
+
+  for (let i = 0; i < 42; i++) {
+    const day = addDays(start, i);
+    const iso = isoLocalDate(day);
+    const isOther = day.getMonth() !== cur.getMonth();
+    const isTod = isToday(day);
+    const cell = el("div", { class:"cal-cell" + (isOther ? " other" : "") + (isTod ? " today" : ""), role:"gridcell" });
+    cell.appendChild(el("div", { class:"cal-date" }, day.getDate()));
+    (byDay[iso] || []).forEach(c => {
+      const b = el("button", { class:"cal-card" + (c.completed ? " done" : ""), onclick: () => openCardDetail(c.id) }, c.title);
+      cell.appendChild(b);
+    });
+    grid.appendChild(cell);
+  }
+  wrap.appendChild(grid);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= TIMELINE VIEW =============
+function renderTimelineView(container, board) {
+  const wrap = el("div", { class:"view-wrap timeline-view" });
+  wrap.appendChild(el("h2", {}, board.name + " — " + T("timelineView")));
+  const cards = cardsInBoard(board.id).filter(c => !c.archived && (c.startDate || c.dueDate));
+  if (!cards.length) { wrap.appendChild(el("p", { class:"muted" }, "Karty bez termínů. Přidej startDate/dueDate.")); container.appendChild(wrap); return; }
+  let minD = null, maxD = null;
+  cards.forEach(c => {
+    const s = c.startDate ? new Date(c.startDate) : new Date(c.dueDate);
+    const e = c.dueDate ? new Date(c.dueDate) : new Date(c.startDate);
+    if (!minD || s < minD) minD = s;
+    if (!maxD || e > maxD) maxD = e;
+  });
+  const totalDays = Math.max(1, Math.round((maxD - minD) / 86400000) + 1);
+  const tl = el("div", { class:"tl-wrap", role:"table", "aria-label":"Časová osa" });
+  const head = el("div", { class:"tl-head", role:"row" });
+  head.appendChild(el("div", { class:"tl-label", role:"rowheader" }, "Karta"));
+  for (let i = 0; i < totalDays; i++) {
+    const d = addDays(minD, i);
+    head.appendChild(el("div", { class:"tl-day" + (isToday(d) ? " today" : ""), role:"columnheader" }, d.getDate() + "."));
+  }
+  tl.appendChild(head);
+  cards.forEach(c => {
+    const row = el("div", { class:"tl-row", role:"row" });
+    row.appendChild(el("div", { class:"tl-label", role:"rowheader" }, el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title)));
+    const s = c.startDate ? new Date(c.startDate) : new Date(c.dueDate);
+    const e = c.dueDate ? new Date(c.dueDate) : new Date(c.startDate);
+    const startIdx = Math.round((s - minD) / 86400000);
+    const len = Math.max(1, Math.round((e - s) / 86400000) + 1);
+    const bar = el("div", { class:"tl-bar" + (c.completed ? " done" : ""), style:{ marginLeft:(startIdx * 32) + "px", width:(len * 32 - 4) + "px" }, role:"cell", "aria-label": c.title + ", " + len + " dní" }, c.title);
+    bar.addEventListener("click", () => openCardDetail(c.id));
+    row.appendChild(bar);
+    tl.appendChild(row);
+  });
+  wrap.appendChild(tl);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= DASHBOARD VIEW =============
+function renderDashboardView(container, board) {
+  const wrap = el("div", { class:"view-wrap dashboard-view" });
+  wrap.appendChild(el("h2", {}, board.name + " — " + T("dashboardView")));
+  const cards = cardsInBoard(board.id).filter(c => !c.archived);
+  const lists = listsInBoard(board.id);
+  // Tile: kartu na list
+  const t1 = el("section", { class:"dash-tile", "aria-labelledby":"dash-perlist" });
+  t1.appendChild(el("h3", { id:"dash-perlist" }, "Karty v listech"));
+  const ul1 = el("ul");
+  lists.forEach(l => {
+    const n = cards.filter(c => c.listId === l.id).length;
+    const wip = board.wipLimits && board.wipLimits[l.id];
+    ul1.appendChild(el("li", {}, `${l.name}: ${n}` + (wip ? ` / WIP ${wip}` : "")));
+  });
+  t1.appendChild(ul1);
+  // Tile: štítky
+  const t2 = el("section", { class:"dash-tile" });
+  t2.appendChild(el("h3", {}, "Štítky"));
+  const ul2 = el("ul");
+  board.labels.forEach(l => {
+    const n = cards.filter(c => (c.labels || []).includes(l.id)).length;
+    ul2.appendChild(el("li", {}, el("span", { class:"label-chip-named", style:{ background: colorVar(l.color), color:"#fff" } }, l.name), " ", n));
+  });
+  t2.appendChild(ul2);
+  // Tile: členové
+  const t3 = el("section", { class:"dash-tile" });
+  t3.appendChild(el("h3", {}, T("members")));
+  const ul3 = el("ul");
+  const bMembers = boardMembers(board);
+  if (!bMembers.length) ul3.appendChild(el("li", { class:"muted" }, "Bez přiřazených členů nástěnce."));
+  bMembers.forEach(m => {
+    const n = cards.filter(c => (c.members || []).includes(m.id) && !c.completed).length;
+    ul3.appendChild(el("li", {}, memberAvatar(m, "sm"), " ", m.name, " — ", n, " otevřených"));
+  });
+  t3.appendChild(ul3);
+  // Tile: stav
+  const t4 = el("section", { class:"dash-tile" });
+  t4.appendChild(el("h3", {}, "Stav"));
+  const overdueN = cards.filter(c => !c.completed && c.dueDate && new Date(c.dueDate) < dateOnly(new Date())).length;
+  const dueSoonN = cards.filter(c => !c.completed && c.dueDate && daysFromNow(c.dueDate) >= 0 && daysFromNow(c.dueDate) <= 3).length;
+  const compN = cards.filter(c => c.completed).length;
+  t4.appendChild(el("ul", {},
+    el("li", {}, "Otevřené: ", cards.filter(c => !c.completed).length),
+    el("li", {}, T("overdue") + ": ", overdueN),
+    el("li", {}, "Brzy splatné: ", dueSoonN),
+    el("li", {}, T("completed") + ": ", compN),
+  ));
+  wrap.append(t1, t2, t3, t4);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= EISENHOWER MATRIX =============
+function renderEisenhowerView(container, board) {
+  const wrap = el("div", { class:"view-wrap eis-view" });
+  wrap.appendChild(el("h2", {}, board.name + " — " + T("eisenhowerView")));
+  wrap.appendChild(el("p", { class:"muted" }, "Karty se třídí podle štítků „Urgentní“ a „Důležité“."));
+  const findLabel = (n) => board.labels.find(l => l.name.toLowerCase().includes(n));
+  const lUrgent = findLabel("urgent");
+  const lImportant = findLabel("důlež") || findLabel("import");
+  const cards = cardsInBoard(board.id).filter(c => !c.archived && !c.completed);
+  function isUrgent(c) { return lUrgent && (c.labels || []).includes(lUrgent.id); }
+  function isImportant(c) { return lImportant && (c.labels || []).includes(lImportant.id); }
+  const quads = [
+    { id:"q1", title:"Důležité a urgentní", filter:c => isUrgent(c) && isImportant(c) },
+    { id:"q2", title:"Důležité, neurgentní", filter:c => !isUrgent(c) && isImportant(c) },
+    { id:"q3", title:"Urgentní, nedůležité", filter:c => isUrgent(c) && !isImportant(c) },
+    { id:"q4", title:"Ani urgentní, ani důležité", filter:c => !isUrgent(c) && !isImportant(c) },
+  ];
+  const grid = el("div", { class:"eis-grid" });
+  quads.forEach(q => {
+    const sec = el("section", { class:"eis-quad", "aria-labelledby":q.id });
+    sec.appendChild(el("h3", { id:q.id }, q.title));
+    const ul = el("ul");
+    cards.filter(q.filter).forEach(c => {
+      const li = el("li");
+      li.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
+      ul.appendChild(li);
+    });
+    if (!ul.children.length) ul.appendChild(el("li", { class:"muted" }, "—"));
+    sec.appendChild(ul);
+    grid.appendChild(sec);
+  });
+  wrap.appendChild(grid);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= SMART VIEWS =============
+function renderSmartView(container, smart) {
+  const wrap = el("div", { class:"view-wrap smart-view" });
+  const titles = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
+  wrap.appendChild(el("h2", {}, titles[smart] || smart));
+  let cards = [];
+  if (smart === "today") cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && isoLocalDate(new Date()) === c.dueDate);
+  else if (smart === "week") {
+    const today = dateOnly(new Date());
+    const end = addDays(today, 7);
+    cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) >= today && new Date(c.dueDate) <= end);
+  }
+  else if (smart === "overdue") cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) < dateOnly(new Date()));
+  else if (smart === "nodate") cards = state.cards.filter(c => !c.archived && !c.completed && !c.dueDate);
+  else if (smart === "completed") cards = state.cards.filter(c => !c.archived && c.completed);
+  else if (smart === "archive") cards = state.cards.filter(c => c.archived);
+  else if (smart === "trash") {
+    // trash z karet a nástěnek
+    const cs = state.cards.filter(c => state.trash.includes(c.id));
+    const trashUl = el("ul", { class:"smart-list" });
+    if (!cs.length) trashUl.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+    cs.forEach(c => {
+      const li = el("li");
+      li.appendChild(el("strong", {}, c.title));
+      const restore = el("button", { class:"ghost", onclick: () => { restoreCard(c.id); renderView(); toast(T("restored"), "success"); } }, T("unarchive"));
+      const perm = el("button", { class:"ghost danger", onclick: async () => {
+        if (await confirm2("Smazat trvale? Tato akce je nevratná.", { danger:true })) { permanentDelete(c.id); renderView(); toast(T("deleted"), "warning"); sound.remove(); }
+      } }, "Smazat trvale");
+      li.append(" ", restore, " ", perm);
+      trashUl.appendChild(li);
+    });
+    wrap.appendChild(trashUl);
+    container.appendChild(wrap);
+    return;
+  }
+  if (!cards.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
+  else {
+    const ul = el("ul", { class:"smart-list" });
+    cards.forEach(c => {
+      const li = el("li");
+      const b = getBoard(c.boardId);
+      const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title);
+      const meta = el("span", { class:"muted" }, " — " + (b ? b.name : "") + (c.dueDate ? ", " + formatDate(c.dueDate) : ""));
+      li.append(btn, meta);
+      ul.appendChild(li);
+    });
+    wrap.appendChild(ul);
+  }
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= INBOX VIEW =============
+function renderInboxView(container) {
+  const wrap = el("div", { class:"view-wrap inbox-view" });
+  wrap.appendChild(el("h2", {}, T("inbox")));
+  const addRow = el("div", { class:"add-row" });
+  const inp = el("input", { type:"text", placeholder: T("addInbox"), "aria-label": T("addInbox") });
+  const btn = el("button", { class:"primary", onclick: () => {
+    if (!inp.value.trim()) return;
+    state.inbox.push({ id: uid("ib_"), text: inp.value.trim(), createdAt: Date.now() });
+    inp.value = "";
+    saveState();
+    renderView();
+    sound.add();
+  } }, "+");
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") btn.click(); });
+  addRow.append(inp, btn);
+  wrap.appendChild(addRow);
+  const ul = el("ul", { class:"inbox-list" });
+  if (!state.inbox.length) ul.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+  state.inbox.slice().reverse().forEach(item => {
+    const li = el("li");
+    li.appendChild(el("span", {}, item.text));
+    const moveBtn = el("button", { class:"ghost", onclick: async () => {
+      const lid = await pickList();
+      if (lid) {
+        const c = newCard(lid, item.text);
+        state.inbox = state.inbox.filter(x => x.id !== item.id);
+        saveState(); renderView(); sound.drop();
+        toast("Přesunuto na nástěnku.", "success");
+      }
+    } }, T("moveToBoard"));
+    const delBtn = el("button", { class:"ghost danger", onclick: () => {
+      state.inbox = state.inbox.filter(x => x.id !== item.id);
+      saveState(); renderView();
+    } }, "×");
+    li.append(" ", moveBtn, " ", delBtn);
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= PLANNER VIEW =============
+function renderPlannerView(container) {
+  const wrap = el("div", { class:"view-wrap planner-view" });
+  wrap.appendChild(el("h2", {}, T("planner")));
+  const today = dateOnly(new Date());
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(today, i);
+    const iso = isoLocalDate(day);
+    const sec = el("section", { class:"planner-day" });
+    sec.appendChild(el("h3", {}, formatDate(iso)));
+    const cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate === iso);
+    const ul = el("ul");
+    if (!cards.length) ul.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+    cards.forEach(c => {
+      const li = el("li");
+      const b = getBoard(c.boardId);
+      li.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
+      li.append(" ", el("span", { class:"muted" }, "(" + (b ? b.name : "") + ")"));
+      ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    wrap.appendChild(sec);
+  }
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= STICKIES VIEW =============
+function renderStickiesView(container) {
+  const wrap = el("div", { class:"view-wrap stickies-view" });
+  wrap.appendChild(el("h2", {}, T("stickies")));
+  const addBtn = el("button", { class:"primary", onclick: () => {
+    state.stickyNotes.push({ id: uid("sn_"), text:"", color:"--label-c2", x: 20 + Math.floor(Math.random()*200), y: 20 + Math.floor(Math.random()*100), w: 220, h: 160, createdAt: Date.now() });
+    saveState(); renderView(); sound.add();
+  } }, "+ " + T("addSticky"));
+  wrap.appendChild(addBtn);
+  const board = el("div", { class:"sticky-board", role:"region", "aria-label": T("stickies") });
+  state.stickyNotes.forEach(s => {
+    const note = el("div", { class:"sticky-note", style:{ background: colorVar(s.color), left: s.x + "px", top: s.y + "px", width: s.w + "px", height: s.h + "px" } });
+    const head = el("div", { class:"sticky-head" });
+    const colorSel = el("select", { "aria-label": T("color") });
+    ["--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8"].forEach((c, i) => colorSel.appendChild(el("option", { value:c }, colorName(c))));
+    colorSel.value = s.color;
+    colorSel.addEventListener("change", () => { s.color = colorSel.value; saveState(); renderView(); });
+    const moveX = el("input", { type:"number", value:s.x, "aria-label":"X" });
+    const moveY = el("input", { type:"number", value:s.y, "aria-label":"Y" });
+    moveX.addEventListener("change", () => { s.x = parseInt(moveX.value || "0"); saveState(); note.style.left = s.x + "px"; });
+    moveY.addEventListener("change", () => { s.y = parseInt(moveY.value || "0"); saveState(); note.style.top = s.y + "px"; });
+    const del = el("button", { class:"ghost danger", onclick: () => { state.stickyNotes = state.stickyNotes.filter(x => x.id !== s.id); saveState(); renderView(); sound.remove(); } }, "×");
+    head.append(colorSel, " X:", moveX, " Y:", moveY, del);
+    const ta = el("textarea", { "aria-label": T("sticky") }, s.text);
+    ta.addEventListener("change", () => { s.text = ta.value; saveState(); });
+    note.append(head, ta);
+    board.appendChild(note);
+  });
+  wrap.appendChild(board);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= MEMBERS VIEW =============
+function renderMembersView(container) {
+  const wrap = el("div", { class:"view-wrap members-view" });
+  wrap.appendChild(el("h2", {}, T("members")));
+  wrap.appendChild(el("p", { class:"muted" }, "Virtuální členové. Lze je přiřadit deskám i kartám. Bez notifikací."));
+  const addRow = el("div", { class:"add-row" });
+  const ni = el("input", { type:"text", placeholder: T("memberName"), "aria-label": T("memberName") });
+  const nin = el("input", { type:"text", placeholder: T("memberInitials"), "aria-label": T("memberInitials"), maxlength:"3" });
+  const ne = el("input", { type:"email", placeholder: T("memberEmail"), "aria-label": T("memberEmail") });
+  const addBtn = el("button", { class:"primary", onclick: () => {
+    if (!ni.value.trim()) return;
+    newMember(ni.value.trim(), { initials: nin.value.trim() || null, email: ne.value.trim() });
+    ni.value = ""; nin.value = ""; ne.value = "";
+    renderView(); sound.add();
+  } }, "+ " + T("addMember"));
+  ni.addEventListener("keydown", e => { if (e.key === "Enter") addBtn.click(); });
+  addRow.append(ni, nin, ne, addBtn);
+  wrap.appendChild(addRow);
+
+  if (!state.members.length) wrap.appendChild(el("p", { class:"muted" }, T("noMembers")));
+  const ul = el("ul", { class:"members-list" });
+  state.members.forEach(m => {
+    const li = el("li");
+    li.appendChild(memberAvatar(m, "lg"));
+    const name = el("input", { type:"text", value:m.name, "aria-label": T("memberName") });
+    name.addEventListener("change", () => { m.name = name.value; m.initials = memberInitials(name.value); saveState(); renderView(); });
+    const email = el("input", { type:"email", value: m.email || "", "aria-label": T("memberEmail") });
+    email.addEventListener("change", () => { m.email = email.value; saveState(); });
+    const colorSel = el("select", { "aria-label": T("memberColor") });
+    ["--member-c1","--member-c2","--member-c3","--member-c4","--member-c5","--member-c6","--member-c7","--member-c8","--member-c9","--member-c10"].forEach((c, i) => colorSel.appendChild(el("option", { value:c }, colorName(c))));
+    colorSel.value = m.color;
+    colorSel.addEventListener("change", () => { m.color = colorSel.value; saveState(); renderView(); });
+    const cardCount = memberCards(m.id).length;
+    const boardCount = memberBoards(m.id).length;
+    const stats = el("span", { class:"muted" }, ` — ${boardCount} nástěnek, ${cardCount} otevřených karet`);
+    const del = el("button", { class:"ghost danger", onclick: async () => {
+      if (await confirm2("Smazat člena „" + m.name + "“ a odebrat ho ze všech karet a nástěnek?", { danger:true })) {
+        // remove from boards too
+        state.boards.forEach(b => { if (b.members) b.members = b.members.filter(x => x !== m.id); });
+        deleteMember(m.id);
+        renderView(); sound.remove();
+      }
+    } }, T("delete"));
+    li.append(" ", name, " ", email, " ", colorSel, stats, " ", del);
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= SAVED FILTER VIEW =============
+function renderFilterView(container, filterId) {
+  const f = state.savedFilters.find(x => x.id === filterId);
+  const wrap = el("div", { class:"view-wrap" });
+  if (!f) { wrap.appendChild(el("p", {}, "Filtr nenalezen.")); container.appendChild(wrap); return; }
+  wrap.appendChild(el("h2", {}, "Filtr: " + f.name));
+  const cards = applyFilter(f);
+  if (!cards.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
+  const ul = el("ul", { class:"smart-list" });
+  cards.forEach(c => {
+    const b = getBoard(c.boardId);
+    const li = el("li");
+    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  container.appendChild(wrap);
+}
+function applyFilter(f) {
+  const q = (f.query || "").toLowerCase();
+  return state.cards.filter(c => {
+    if (c.archived && !f.includeArchived) return false;
+    if (c.completed && !f.includeCompleted) return false;
+    if (q && !(c.title.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q))) return false;
+    if (f.boardId && c.boardId !== f.boardId) return false;
+    if (f.labelId && !(c.labels || []).includes(f.labelId)) return false;
+    if (f.memberId && !(c.members || []).includes(f.memberId)) return false;
+    return true;
+  });
+}
+//#endregion
+
+//#region ============= SEARCH VIEW =============
+function renderSearchView(container, query) {
+  const q = (query || "").toLowerCase().trim();
+  const wrap = el("div", { class:"view-wrap" });
+  wrap.appendChild(el("h2", {}, 'Vyhledávání: "' + query + '"'));
+  if (!q) { container.appendChild(wrap); return; }
+  const cards = state.cards.filter(c => !c.archived && (c.title.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q) || (c.comments || []).some(cm => cm.text.toLowerCase().includes(q))));
+  wrap.appendChild(el("p", { class:"muted" }, "Nalezeno: " + cards.length));
+  const ul = el("ul", { class:"smart-list" });
+  cards.forEach(c => {
+    const b = getBoard(c.boardId);
+    const li = el("li");
+    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + (b ? b.name : "")));
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  // Save filter
+  const saveBtn = el("button", { class:"ghost", onclick: () => {
+    const name = prompt(T("filterName") + ":", query);
+    if (name) {
+      state.savedFilters.push({ id: uid("f_"), name, query: q });
+      saveState(); renderAll();
+      toast("Filtr uložen.", "success");
+    }
+  } }, "+ " + T("saveFilter"));
+  wrap.appendChild(saveBtn);
+  container.appendChild(wrap);
+}
+//#endregion
+
+//#region ============= QUICK CAPTURE =============
+function openQuickCapture() {
+  const inp = el("input", { type:"text", placeholder:"Nový úkol… (např. „Zítra zavolat mámě“)", "aria-label":"Nový úkol" });
+  const target = el("select", { "aria-label":"Cíl" });
+  target.appendChild(el("option", { value:"inbox" }, "→ Inbox"));
+  state.boards.filter(b => !b.archived).forEach(b => {
+    listsInBoard(b.id).forEach(l => target.appendChild(el("option", { value:"list:"+l.id }, b.name + " / " + l.name)));
+  });
+  const m = openModal({
+    title: T("quickCapture"),
+    body: el("div", { class:"qc" }, inp, target),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const text = inp.value.trim();
+        if (!text) return;
+        const tgt = target.value;
+        if (tgt === "inbox") state.inbox.push({ id: uid("ib_"), text, createdAt: Date.now() });
+        else if (tgt.startsWith("list:")) newCard(tgt.slice(5), text);
+        saveState();
+        m.close();
+        sound.add();
+        toast("Přidáno.", "success");
+        renderAll();
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); m.modal.querySelector(".primary").click(); } });
+  setTimeout(() => inp.focus(), 50);
+}
+//#endregion
+
+//#region ============= POMODORO =============
+let _pomoTimer = null;
+function startPomodoro(cardId) {
+  if (state.pomodoro.active) stopPomodoro();
+  state.pomodoro = { active:true, cardId, startedAt: Date.now(), type:"work", completed: state.pomodoro.completed || 0 };
+  saveState();
+  sound.pomoStart();
+  toast(T("pomoStarted", state.settings.pomodoroWork), "success");
+  scheduleNextPomo();
+  updatePomoIndicator();
+}
+function stopPomodoro() {
+  if (_pomoTimer) clearTimeout(_pomoTimer);
+  state.pomodoro = { active:false, cardId:null, startedAt:null, type:"work", completed: state.pomodoro.completed || 0 };
+  saveState();
+  updatePomoIndicator();
+}
+function scheduleNextPomo() {
+  if (_pomoTimer) clearTimeout(_pomoTimer);
+  const dur = (state.pomodoro.type === "work" ? state.settings.pomodoroWork : state.settings.pomodoroBreak) * 60 * 1000;
+  const elapsed = Date.now() - state.pomodoro.startedAt;
+  const remaining = Math.max(0, dur - elapsed);
+  _pomoTimer = setTimeout(() => {
+    if (state.pomodoro.type === "work") {
+      // log time on card
+      if (state.pomodoro.cardId) {
+        const c = getCard(state.pomodoro.cardId);
+        if (c) {
+          if (!c.time) c.time = { estimateSec:0, spentSec:0, runningSince:null };
+          c.time.spentSec = (c.time.spentSec || 0) + state.settings.pomodoroWork * 60;
+        }
+      }
+      state.pomodoro.completed = (state.pomodoro.completed || 0) + 1;
+      state.pomodoro.type = "break";
+      state.pomodoro.startedAt = Date.now();
+      saveState();
+      sound.pomoEnd();
+      announce(T("pomoBreak"), true);
+      toast(T("pomoBreak"), "info");
+      scheduleNextPomo();
+    } else {
+      sound.pomoEnd();
+      announce(T("pomoDone"), true);
+      toast(T("pomoDone"), "success");
+      stopPomodoro();
+    }
+    updatePomoIndicator();
+  }, remaining);
+}
+function updatePomoIndicator() {
+  const e = $("#pomoIndicator");
+  if (!e) return;
+  if (!state.pomodoro.active) { e.textContent = ""; return; }
+  const c = state.pomodoro.cardId ? getCard(state.pomodoro.cardId) : null;
+  e.textContent = "⏱ " + (state.pomodoro.type === "work" ? "Práce" : "Pauza") + (c ? " — " + c.title : "");
+}
+//#endregion
+
+//#region ============= HELP =============
+function openHelp() {
+  const body = el("div");
+  body.appendChild(el("h3", {}, T("keyboardShortcuts")));
+
+  // Globální zkratky (fungují všude mimo formulářová pole)
+  body.appendChild(el("h4", {}, "Globální"));
+  const globalItems = [
+    ["N", "Nová karta / rychlý zápis (Quick Capture)"],
+    ["M", "Nová poznámka (lepicí lístek) a skok do pohledu Poznámek"],
+    ["S", "Uložit do GitHubu (pokud je GitHub zapnutý)"],
+    ["I", "Skok do Inboxu"],
+    ["P", "Skok do Plánovače"],
+    ["G", "Skok na libovolnou nástěnku (otevře výběr)"],
+    ["B", "Přepnout na další nástěnku cyklicky"],
+    ["T", "Přepnout téma (světlé/tmavé/auto)"],
+    ["/", "Skok do vyhledávání"],
+    ["?", "Tato nápověda"],
+    ["Esc", "Zrušit výběr karet / zavřít dialog"],
+  ];
+  const gd = el("dl", { class:"shortcuts" });
+  globalItems.forEach(([k, v]) => { gd.append(el("dt", {}, k), el("dd", {}, v)); });
+  body.appendChild(gd);
+
+  // Na fokusované kartě (v pohledu Nástěnka, Tabulka atd.)
+  body.appendChild(el("h4", {}, "Na fokusované kartě"));
+  const cardItems = [
+    ["Enter", "Otevřít detail karty"],
+    ["Space", "Vybrat / odvybrat kartu (pro hromadné akce)"],
+    ["Ctrl+Enter", "Označit jako hotové / vrátit zpět"],
+    ["A", "Přiřadit členy"],
+    ["L", "Štítky"],
+    ["D", "Termín"],
+    ["C", "Komentář"],
+    ["R", "Přesunout do jiného seznamu / nástěnky"],
+    ["U", "Uchopit pro přesun šipkami (pak ↑↓←→, U znovu pro upuštění)"],
+    ["Šipky", "Pohyb mezi kartami v seznamu / mezi seznamy"],
+  ];
+  const cd = el("dl", { class:"shortcuts" });
+  cardItems.forEach(([k, v]) => { cd.append(el("dt", {}, k), el("dd", {}, v)); });
+  body.appendChild(cd);
+
+  // V otevřeném detailu karty
+  body.appendChild(el("h4", {}, "V otevřeném detailu karty"));
+  const detailItems = [
+    [".", "Další karta"],
+    [",", "Předchozí karta"],
+    ["A / L / D / C / R", "Stejné akce jako na fokusované kartě"],
+    ["Esc", "Zavřít detail"],
+  ];
+  const dd = el("dl", { class:"shortcuts" });
+  detailItems.forEach(([k, v]) => { dd.append(el("dt", {}, k), el("dd", {}, v)); });
+  body.appendChild(dd);
+
+  body.appendChild(el("h3", {}, "Virtuální členové"));
+  body.appendChild(el("p", {}, "Členové jsou virtuální — neexistují jako uživatelé, neposílají se jim žádné notifikace. Slouží k vlastnímu rozdělení rolí, např. „já“, „klient“, „dodavatel“. Přiřaď je ke kartám pro filtrování a přehled."));
+
+  body.appendChild(el("h3", {}, "GitHub synchronizace"));
+  body.appendChild(el("p", {}, "V nastavení zadej Personal Access Token a heslo. Token se uloží šifrovaně (AES-GCM). Při dalším použití se zeptá na heslo. Ukládání je ruční — přes tlačítko „Uložit do GitHubu“ v nastavení nebo klávesou S kdykoliv. Poslední zápis vyhraje (last-write-wins), takže pokud pracuješ na víc zařízeních, nejdřív načti nejnovější verzi."));
+
+  body.appendChild(el("h3", {}, "O aplikaci"));
+  body.appendChild(el("p", {}, "mrello je jednouživatelská aplikace pro správu úkolů. Data se ukládají lokálně do prohlížeče (IndexedDB). Všechny funkce fungují offline."));
+
+  openModal({ title: T("helpTitle"), body, size:"medium",
+    footer: [el("button", { class:"primary", onclick: function() { this.closest(".modal-overlay").click(); } }, T("close"))]
+  });
+}
+//#endregion
+
+//#region ============= SETTINGS =============
+function openSettings() {
+  const body = el("div", { class:"settings-form" });
+  // Téma
+  body.appendChild(el("h3", {}, T("theme")));
+  const themeSel = el("select", { id:"setTheme" });
+  ["auto","light","dark"].forEach(t => themeSel.appendChild(el("option", { value:t }, t)));
+  themeSel.value = state.settings.theme;
+  body.appendChild(el("label", { for:"setTheme" }, T("theme") + ": ", themeSel));
+  // Velikost písma
+  const fsSel = el("select", { id:"setFs" });
+  ["small","normal","large"].forEach(t => fsSel.appendChild(el("option", { value:t }, t)));
+  fsSel.value = state.settings.fontSize;
+  body.appendChild(el("label", { for:"setFs" }, T("fontSize") + ": ", fsSel));
+  // Kontrast
+  const hcCb = el("input", { type:"checkbox", id:"setHc" });
+  hcCb.checked = state.settings.highContrast;
+  body.appendChild(el("label", { for:"setHc" }, hcCb, " " + T("contrast")));
+  // Zvuk
+  const sndCb = el("input", { type:"checkbox", id:"setSnd" });
+  sndCb.checked = state.settings.soundEnabled !== false;
+  body.appendChild(el("label", { for:"setSnd" }, sndCb, " " + T("sound")));
+  // Pomodoro
+  body.appendChild(el("h3", {}, T("pomodoro")));
+  const pwIn = el("input", { type:"number", min:"1", max:"180", value: state.settings.pomodoroWork, id:"setPw" });
+  const pbIn = el("input", { type:"number", min:"1", max:"60", value: state.settings.pomodoroBreak, id:"setPb" });
+  body.appendChild(el("label", { for:"setPw" }, T("pomodoroWork") + ": ", pwIn));
+  body.appendChild(el("label", { for:"setPb" }, T("pomodoroBreak") + ": ", pbIn));
+  // GitHub
+  body.appendChild(el("h3", {}, T("githubSync")));
+  body.appendChild(el("p", { class:"muted" }, "Token je uložen v plain v lokální databázi prohlížeče. Šifrování není používáno."));
+  const ghEn = el("input", { type:"checkbox", id:"setGhEn" });
+  ghEn.checked = state.github.enabled;
+  body.appendChild(el("label", { for:"setGhEn" }, ghEn, " Povolit GitHub synchronizaci"));
+  const ghTok = el("input", { type:"password", id:"setGhTok", value: state.github.token || "", autocomplete:"new-password" });
+  body.appendChild(el("label", { for:"setGhTok" }, T("githubToken") + ": ", ghTok));
+  const ghOwn = el("input", { type:"text", id:"setGhOwn", value: state.github.owner });
+  body.appendChild(el("label", { for:"setGhOwn" }, T("githubOwner") + ": ", ghOwn));
+  const ghRepo = el("input", { type:"text", id:"setGhRepo", value: state.github.repo });
+  body.appendChild(el("label", { for:"setGhRepo" }, T("githubRepo") + ": ", ghRepo));
+  const ghBr = el("input", { type:"text", id:"setGhBr", value: state.github.branch });
+  body.appendChild(el("label", { for:"setGhBr" }, T("githubBranch") + ": ", ghBr));
+  const ghPath = el("input", { type:"text", id:"setGhPath", value: state.github.path });
+  body.appendChild(el("label", { for:"setGhPath" }, T("githubPath") + ": ", ghPath));
+  const ghRow = el("div", { class:"row" });
+  const ghLoadBtn = el("button", { class:"ghost", onclick: () => ghLoad() }, T("loadFromGithub"));
+  const ghSaveBtn = el("button", { class:"ghost", onclick: () => ghSave() }, T("saveToGithub"));
+  ghRow.append(ghLoadBtn, ghSaveBtn);
+  body.appendChild(ghRow);
+  // Export / Import
+  body.appendChild(el("h3", {}, T("export") + " / " + T("import")));
+  const expRow = el("div", { class:"row" });
+  expRow.append(
+    el("button", { class:"ghost", onclick: () => exportJson() }, T("exportJson")),
+    el("button", { class:"ghost", onclick: () => exportCsv() }, T("exportCsv")),
+    el("button", { class:"ghost", onclick: () => exportMarkdown() }, T("exportMarkdown")),
+    el("button", { class:"ghost", onclick: () => exportIcs() }, T("exportIcs")),
+  );
+  body.appendChild(expRow);
+  const impRow = el("div", { class:"row" });
+  impRow.append(
+    el("button", { class:"ghost", onclick: async () => {
+      const f = await pickFile(".json");
+      if (!f) return;
+      try {
+        const data = JSON.parse(await readFileAsText(f));
+        if (await confirm2("Importovat a NAHRADIT současná data?", { danger:true })) {
+          state = mergeLoadedState(data);
+          saveState(); renderAll(); toast("Importováno.", "success");
+        }
+      } catch (e) { toast("Chyba importu: " + e.message, "error"); }
+    } }, T("importJson")),
+  );
+  body.appendChild(impRow);
+  // Footer save
+  const m = openModal({
+    title: T("settingsTitle"), body, size:"large",
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        state.settings.theme = themeSel.value;
+        state.settings.fontSize = fsSel.value;
+        state.settings.highContrast = hcCb.checked;
+        state.settings.soundEnabled = sndCb.checked;
+        state.settings.pomodoroWork = parseInt(pwIn.value || "25");
+        state.settings.pomodoroBreak = parseInt(pbIn.value || "5");
+        state.github.enabled = ghEn.checked;
+        state.github.token = ghTok.value;
+        state.github.owner = ghOwn.value.trim();
+        state.github.repo = ghRepo.value.trim();
+        state.github.branch = ghBr.value.trim() || "main";
+        state.github.path = ghPath.value.trim() || "kanban.json";
+        applyTheme(); applyI18n();
+        saveState(); renderAll();
+        m.close();
+        toast(T("saved"), "success"); sound.click();
+      } }, T("save")),
+    ]
+  });
+}
+//#endregion
+
+//#region ============= EXPORT / IMPORT =============
+function exportJson() {
+  downloadBlob(JSON.stringify(state, null, 2), "kanban-export.json", "application/json");
+}
+function exportCsv() {
+  const rows = [["board","list","title","labels","members","dueDate","completed","description"]];
+  state.cards.filter(c => !c.archived).forEach(c => {
+    const b = getBoard(c.boardId), l = getList(c.listId);
+    const labels = (c.labels || []).map(lid => { const x = getLabel(c.boardId, lid); return x ? x.name : ""; }).filter(Boolean).join(";");
+    const members = (c.members || []).map(mid => { const m = getMember(mid); return m ? m.name : ""; }).filter(Boolean).join(";");
+    rows.push([b ? b.name : "", l ? l.name : "", c.title, labels, members, c.dueDate || "", c.completed ? "1" : "0", (c.description || "").replace(/[\r\n]+/g, " ")]);
+  });
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\n");
+  downloadBlob("\uFEFF" + csv, "kanban-export.csv", "text/csv;charset=utf-8");
+}
+function exportMarkdown() {
+  let out = "# mrello export\n\n";
+  state.boards.filter(b => !b.archived).forEach(b => {
+    out += "## " + b.name + "\n\n";
+    listsInBoard(b.id).forEach(l => {
+      out += "### " + l.name + "\n\n";
+      cardsInList(l.id).filter(c => !c.archived).forEach(c => {
+        out += "- " + (c.completed ? "[x]" : "[ ]") + " **" + c.title + "**" + (c.dueDate ? " (do " + c.dueDate + ")" : "") + "\n";
+        if (c.description) out += "  " + c.description.replace(/\n/g, "\n  ") + "\n";
+      });
+      out += "\n";
+    });
+  });
+  downloadBlob(out, "kanban-export.md", "text/markdown");
+}
+function exportIcs() {
+  let out = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//mrello//CS\r\n";
+  state.cards.filter(c => !c.archived && c.dueDate).forEach(c => {
+    const dt = c.dueDate.replace(/-/g, "");
+    out += "BEGIN:VEVENT\r\nUID:" + c.id + "@kanban\r\nDTSTART;VALUE=DATE:" + dt + "\r\nDTEND;VALUE=DATE:" + dt + "\r\nSUMMARY:" + c.title.replace(/[\r\n,;]/g, " ") + "\r\n";
+    if (c.description) out += "DESCRIPTION:" + c.description.replace(/[\r\n]+/g, " ").replace(/[,;]/g, " ") + "\r\n";
+    out += "END:VEVENT\r\n";
+  });
+  out += "END:VCALENDAR\r\n";
+  downloadBlob(out, "kanban-export.ics", "text/calendar");
+}
+//#endregion
+
+//#region ============= APPLY THEME =============
+function applyTheme() {
+  const t = state.settings.theme;
+  let resolved = t;
+  if (t === "auto") {
+    resolved = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.setAttribute("data-theme", resolved);
+  document.documentElement.setAttribute("data-fontsize", state.settings.fontSize || "normal");
+  document.documentElement.toggleAttribute("data-high-contrast", !!state.settings.highContrast);
+}
+//#endregion
+
+//#region ============= INIT =============
+async function init() {
+  // load state
+  try {
+    const data = await idbLoad();
+    if (data) state = mergeLoadedState(data);
+  } catch (e) {
+    try {
+      const ls = localStorage.getItem(STORAGE_KEY);
+      if (ls) state = mergeLoadedState(JSON.parse(ls));
+    } catch {}
+  }
+  if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
+  if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
+  LANG = state.settings.language || "cs";
+  applyTheme();
+  applyI18n();
+  renderAll();
+
+  // resume Pomodoro?
+  if (state.pomodoro && state.pomodoro.active) scheduleNextPomo();
+
+  // header buttons
+  $("#wsManage").addEventListener("click", openWorkspaceManager);
+  $("#wsSelect").addEventListener("change", (e) => { state.ui.currentWorkspace = e.target.value; state.ui.currentView = { type:"welcome" }; saveState(); renderAll(); });
+  $("#newBoardBtn").addEventListener("click", promptNewBoard);
+  $("#quickCaptureBtn").addEventListener("click", openQuickCapture);
+  $("#inboxBtn").addEventListener("click", () => { state.ui.currentView = { type:"inbox" }; renderAll(); });
+  $("#plannerBtn").addEventListener("click", () => { state.ui.currentView = { type:"planner" }; renderAll(); });
+  $("#stickyBtn").addEventListener("click", () => { state.ui.currentView = { type:"stickies" }; renderAll(); });
+  $("#membersBtn").addEventListener("click", () => { state.ui.currentView = { type:"members" }; renderAll(); });
+  $("#themeBtn").addEventListener("click", () => {
+    const order = ["auto","light","dark"];
+    state.settings.theme = order[(order.indexOf(state.settings.theme) + 1) % order.length];
+    applyTheme(); saveState();
+    toast("Téma: " + state.settings.theme, "info");
+  });
+  $("#helpBtn").addEventListener("click", openHelp);
+  $("#settingsBtn").addEventListener("click", openSettings);
+
+  const search = $("#globalSearch");
+  search.addEventListener("input", debounce((e) => {
+    const q = e.target.value;
+    if (q && q.length >= 2) { state.ui.currentView = { type:"search", query: q }; renderView(); }
+  }, 250));
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { state.ui.currentView = { type:"search", query: e.target.value }; renderView(); }
+    if (e.key === "Escape") { e.target.value = ""; state.ui.currentView = { type:"welcome" }; renderAll(); }
+  });
+
+  // global shortcuts (aktivní jen mimo formulářové prvky)
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea, select, [contenteditable]")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case "/":  e.preventDefault(); search.focus(); search.select(); return;
+      case "?":  e.preventDefault(); openHelp(); return;
+      case "n": case "N":  e.preventDefault(); openQuickCapture(); return;
+      case "m": case "M":  e.preventDefault(); createNewSticky(); return;
+      case "s": case "S":
+        if (state.github.enabled) { e.preventDefault(); ghSave(); }
+        return;
+      case "g": case "G":  e.preventDefault(); pickBoardGoto(); return;
+      case "b": case "B":  e.preventDefault(); cycleBoard(1); return;
+      case "i": case "I":  e.preventDefault(); state.ui.currentView = { type:"inbox" }; renderAll(); return;
+      case "p": case "P":  e.preventDefault(); state.ui.currentView = { type:"planner" }; renderAll(); return;
+      case "t": case "T":
+        e.preventDefault();
+        state.settings.theme = state.settings.theme === "dark" ? "light" : (state.settings.theme === "light" ? "auto" : "dark");
+        applyTheme(); saveState();
+        announce("Téma: " + state.settings.theme);
+        return;
+      case "Escape":
+        if (state.ui.focusCardId) { state.ui.focusCardId = null; document.body.classList.remove("focus-mode"); renderAll(); }
+        else if (state.ui.selectedCards && state.ui.selectedCards.length) { state.ui.selectedCards = []; renderView(); }
+        return;
+    }
+  });
+
+  setGhStatus(state.github.enabled ? "" : "", state.github.enabled ? "GitHub OK" : "");
+
+  // Periodická kontrola: habit streak reset po zmeškaném dni
+  setInterval(() => {
+    const today = isoLocalDate(new Date());
+    state.cards.forEach(c => {
+      if (c.cardType === "habit" && c.habit && c.habit.lastCompleted && c.habit.lastCompleted !== today) {
+        const last = new Date(c.habit.lastCompleted);
+        const days = Math.round((dateOnly(new Date()) - last) / 86400000);
+        if (days > 1) c.habit.streak = 0;
+      }
+    });
+  }, 60 * 1000);
+}
+
+function openWorkspaceManager() {
+  const body = el("div");
+  const ul = el("ul");
+  function refresh() {
+    clear(ul);
+    state.workspaces.forEach(ws => {
+      const li = el("li");
+      const name = el("input", { type:"text", value: ws.name });
+      name.addEventListener("change", () => { ws.name = name.value; saveState(); renderAll(); });
+      const del = el("button", { class:"ghost danger", onclick: async () => {
+        if (state.workspaces.length === 1) { toast("Musí zůstat alespoň jeden prostor.", "warning"); return; }
+        if (await confirm2("Smazat prostor a všechny jeho nástěnky?", { danger:true })) {
+          state.boards.filter(b => b.workspaceId === ws.id).forEach(b => deleteBoard(b.id));
+          state.workspaces = state.workspaces.filter(x => x.id !== ws.id);
+          if (state.ui.currentWorkspace === ws.id) state.ui.currentWorkspace = state.workspaces[0].id;
+          saveState(); renderAll(); refresh();
+        }
+      } }, T("delete"));
+      li.append(name, " ", del);
+      ul.appendChild(li);
+    });
+  }
+  refresh();
+  const addRow = el("div", { class:"add-row" });
+  const ni = el("input", { type:"text", placeholder:"Nový prostor" });
+  const addBtn = el("button", { class:"ghost", onclick: () => {
+    if (!ni.value.trim()) return;
+    newWorkspace(ni.value.trim());
+    ni.value = ""; refresh(); renderAll(); sound.add();
+  } }, "+");
+  addRow.append(ni, addBtn);
+  body.append(ul, addRow);
+  openModal({ title: T("manageWorkspaces"), body, size:"medium",
+    footer: [el("button", { class:"primary", onclick: function() { this.closest(".modal-overlay").click(); } }, T("close"))]
+  });
+}
+
+document.addEventListener("DOMContentLoaded", init);
+//#endregion
+
+</script>
+</body>
+</html>
