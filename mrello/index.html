@@ -1260,6 +1260,61 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
   height: 18px;
   cursor: pointer;
 }
+
+/* Automation manager / editor */
+.automation-manager fieldset,
+.automation-editor fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+.automation-manager fieldset > legend,
+.automation-editor fieldset > legend {
+  font-weight: 600;
+  padding: 0 6px;
+  color: var(--fg-muted);
+}
+.automation-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.automation-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-alt);
+}
+.automation-header {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.automation-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  align-items: center;
+}
+.automation-row {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  margin: 6px 0;
+  background: var(--bg);
+}
+.automation-params {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}
+.automation-params .field-row {
+  margin: 4px 0;
+}
 </style>
 </head>
 <body>
@@ -1857,6 +1912,12 @@ const initialState = {
   stickyNotes: [],
   trash: [],
   savedFilters: [],
+  // Automatizace — jsou to buď globální (aktivní na vybraných nástěnkách) nebo ruční (tlačítko na kartě).
+  // Struktura jedné: { id, name, description, enabled, trigger: {type, params}, conditions: [{field, op, value}],
+  //                    actions: [{type, params}], activeBoardIds: [...] | null }
+  // activeBoardIds: null = aktivní všude; pole = aktivní jen na uvedených nástěnkách.
+  // Pro ruční (trigger.type === "manual") activeBoardIds určuje, na kterých nástěnkách se tlačítko zobrazí.
+  automations: [],
   ui: {
     currentWorkspace: null,
     currentView: { type:"welcome" },
@@ -2348,6 +2409,7 @@ function newCard(listId, title, opts={}) {
     // nothing extra; subcards are queried by parentCardId
   }
   saveState();
+  runAutomationsFor("card.created", { card });
   return card;
 }
 function logActivity(card, msg) {
@@ -2361,6 +2423,7 @@ function moveCard(cardId, toListId, toIndex) {
   const fromList = getList(card.listId);
   const toList = getList(toListId);
   if (!toList) return;
+  const fromListId = card.listId;
   const sameList = card.listId === toListId;
   // Pull card out
   const before = card.listId;
@@ -2377,8 +2440,6 @@ function moveCard(cardId, toListId, toIndex) {
     srcOthers.forEach((c,i) => c.position = i);
     if (fromList && toList) logActivity(card, T("activityMoved", fromList.name, toList.name));
   }
-  // sync mirrors: if this is the source, the mirrors don't move (their listId remains theirs)
-  // but if this is a mirror, moving doesn't affect the source content
   card.updatedAt = Date.now();
   // WIP check
   const board = getBoard(card.boardId);
@@ -2387,6 +2448,7 @@ function moveCard(cardId, toListId, toIndex) {
     sound.warn(); announce(T("wipExceeded", wip)); toast(T("wipExceeded", wip), "warning");
   }
   saveState();
+  if (!sameList) runAutomationsFor("card.moved", { card, fromListId, toListId });
 }
 function moveList(listId, toIndex) {
   const list = getList(listId);
@@ -2400,10 +2462,12 @@ function moveList(listId, toIndex) {
 function archiveCard(cardId) {
   const c = getCard(cardId); if (!c) return;
   c.archived = true; logActivity(c, T("activityArchived")); saveState();
+  runAutomationsFor("card.archived", { card: c });
 }
 function unarchiveCard(cardId) {
   const c = getCard(cardId); if (!c) return;
   c.archived = false; logActivity(c, T("activityUnarchived")); saveState();
+  runAutomationsFor("card.unarchived", { card: c });
 }
 function deleteCard(cardId) {
   const c = getCard(cardId); if (!c) return;
@@ -2452,36 +2516,15 @@ function restoreBoard(boardId) {
   state.trash = state.trash.filter(t => t.boardId !== boardId);
   saveState();
 }
-// Prefix přidaný do názvu karty když se označí jako hotová.
-// Michal si přeje, aby byl zapsaný přímo v datech (title), ne jen zobrazovaný —
-// tak ho vidí kdekoliv (export, sync, GitHub …).
-const COMPLETE_MARKER = "\u2611\ufe0f\u2611\ufe0f ";  // ☑️☑️ + mezera
-function hasCompleteMarker(title) {
-  return typeof title === "string" && title.startsWith(COMPLETE_MARKER);
-}
-function addCompleteMarker(title) {
-  if (!title) return COMPLETE_MARKER.trimEnd();
-  return hasCompleteMarker(title) ? title : (COMPLETE_MARKER + title);
-}
-function removeCompleteMarker(title) {
-  if (!title) return title;
-  return hasCompleteMarker(title) ? title.slice(COMPLETE_MARKER.length) : title;
-}
-// Helper: nastaví completed state karty a zároveň synchronizuje marker v title.
-// Používá se všude, kde se karta přepíná na hotovou / nehotovou.
-function applyCompletedState(card, completed) {
-  if (!card) return;
-  card.completed = completed;
-  card.completedAt = completed ? Date.now() : null;
-  card.title = completed ? addCompleteMarker(card.title) : removeCompleteMarker(card.title);
-  card.updatedAt = Date.now();
-}
 function toggleCardComplete(cardId) {
   const c = getCard(cardId); if (!c) return;
-  applyCompletedState(c, !c.completed);
+  c.completed = !c.completed;
+  c.completedAt = c.completed ? Date.now() : null;
+  c.updatedAt = Date.now();
   logActivity(c, c.completed ? T("activityCompleted") : T("activityUncompleted"));
   if (c.completed) sound.done();
   saveState();
+  runAutomationsFor(c.completed ? "card.completed" : "card.uncompleted", { card: c });
 }
 function setCardField(cardId, field, value) {
   const c = getCard(cardId); if (!c) return;
@@ -2497,7 +2540,8 @@ function addLabel(boardId, name, color) {
 function toggleCardLabel(cardId, labelId) {
   const c = getCard(cardId); if (!c) return;
   const lbl = getLabel(c.boardId, labelId);
-  if (c.labels.includes(labelId)) {
+  const wasIncluded = c.labels.includes(labelId);
+  if (wasIncluded) {
     c.labels = c.labels.filter(l => l !== labelId);
     if (lbl) logActivity(c, T("activityLabelRemoved", lbl.name));
   } else {
@@ -2505,11 +2549,13 @@ function toggleCardLabel(cardId, labelId) {
     if (lbl) logActivity(c, T("activityLabelAdded", lbl.name));
   }
   saveState();
+  runAutomationsFor(wasIncluded ? "card.labelRemoved" : "card.labelAdded", { card: c, labelId });
 }
 function toggleCardMember(cardId, memberId) {
   const c = getCard(cardId); if (!c) return;
   const m = getMember(memberId);
-  if (c.members.includes(memberId)) {
+  const wasIncluded = c.members.includes(memberId);
+  if (wasIncluded) {
     c.members = c.members.filter(x => x !== memberId);
     if (m) logActivity(c, T("activityMemberRemoved", m.name));
   } else {
@@ -2517,12 +2563,14 @@ function toggleCardMember(cardId, memberId) {
     if (m) logActivity(c, T("activityMemberAdded", m.name));
   }
   saveState();
+  runAutomationsFor(wasIncluded ? "card.memberRemoved" : "card.memberAdded", { card: c, memberId });
 }
 function addComment(cardId, text) {
   const c = getCard(cardId); if (!c || !text.trim()) return;
   c.comments.unshift({ id: uid("cm_"), text: text.trim(), createdAt: Date.now() });
   logActivity(c, T("activityCommented"));
   saveState();
+  runAutomationsFor("card.commentAdded", { card: c, commentText: text.trim() });
 }
 function addChecklist(cardId, name) {
   const c = getCard(cardId); if (!c) return null;
@@ -2542,10 +2590,16 @@ function toggleChecklistItem(cardId, checklistId, itemId) {
   const c = getCard(cardId); if (!c) return;
   const cl = c.checklists.find(x => x.id === checklistId); if (!cl) return;
   const it = cl.items.find(x => x.id === itemId); if (!it) return;
+  const wasDone = it.completed;
   it.completed = !it.completed;
   logActivity(c, it.completed ? T("activityChecklistDone", it.text) : T("activityChecklistTodo", it.text));
   if (it.completed) sound.click();
   saveState();
+  // Trigger: pokud všechny položky všech checklistů jsou hotové a předtím nebyly
+  if (!wasDone) {
+    const prog = checklistProgress(c);
+    if (prog.total > 0 && prog.done === prog.total) runAutomationsFor("card.checklistCompleted", { card: c });
+  }
 }
 function checklistProgress(card) {
   let total = 0, done = 0;
@@ -3059,7 +3113,7 @@ function createSample() {
   addChecklistItem(c1.id, cl.id, "Závěr");
   newCard(doing.id, "Reaguje se na e-mail klienta");
   const c2 = newCard(done.id, "Týdenní reporting");
-  applyCompletedState(c2, true);
+  c2.completed = true; c2.completedAt = Date.now();
   state.ui.currentView = { type:"board", boardId: b.id, viewType:"board" };
   saveState();
 }
@@ -3369,6 +3423,40 @@ function renderBoardSettingsBody(board) {
     board.customFields.push({ id: uid("cf_"), name:"Nové pole", type:"text", options:[] });
     saveState(); refreshCFs();
   } }, T("addCustomField")));
+
+  // --- Aktivní automatizace pro tuto nástěnku ---
+  wrap.appendChild(el("h3", {}, "Aktivní automatizace"));
+  wrap.appendChild(el("p", { class:"small muted" },
+    "Zaškrtni, které globální automatizace mají být aktivní na této nástěnce. " +
+    "Automatizace s prázdným seznamem nástěnek jsou aktivní všude (tady je nelze vypnout — uprav je v Nastavení)."));
+  const auList = el("div", {});
+  if (!state.automations || !state.automations.length) {
+    auList.appendChild(el("p", { class:"muted small" }, "Zatím žádné automatizace. Vytvoř je v Nastavení → Spravovat automatizace."));
+  } else {
+    state.automations.forEach(au => {
+      const row = el("div", { class:"field-row" });
+      const allBoards = !au.activeBoardIds || au.activeBoardIds.length === 0;
+      const activeHere = allBoards || au.activeBoardIds.includes(board.id);
+      const cb = el("input", { type:"checkbox", checked: activeHere, disabled: allBoards, id:"brdau_" + au.id });
+      cb.addEventListener("change", () => {
+        au.activeBoardIds = au.activeBoardIds || [];
+        if (cb.checked) {
+          if (!au.activeBoardIds.includes(board.id)) au.activeBoardIds.push(board.id);
+        } else {
+          au.activeBoardIds = au.activeBoardIds.filter(x => x !== board.id);
+        }
+        saveState();
+      });
+      row.appendChild(el("label", { for:"brdau_" + au.id },
+        cb, " ",
+        el("strong", {}, au.name || "(bez názvu)"),
+        el("span", { class:"muted small" }, " — " + triggerLabel(au.trigger) + (allBoards ? " (aktivní všude)" : "")),
+      ));
+      auList.appendChild(row);
+    });
+  }
+  wrap.appendChild(auList);
+
   return wrap;
 }
 //#endregion
@@ -4294,6 +4382,27 @@ function openCardDetail(cardId) {
   actBox.append(moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, delBtn);
   right.appendChild(actBox);
 
+  // --- Ruční automatizace: tlačítka pro každé manual pravidlo aktivní na této nástěnce ---
+  const manualAutomations = (state.automations || []).filter(au =>
+    au.enabled &&
+    au.trigger && au.trigger.type === "manual" &&
+    isAutomationActiveOnBoard(au, real.boardId)
+  );
+  if (manualAutomations.length) {
+    const autoSec = el("section", { class:"card-actions", "aria-label": "Ruční automatizace" });
+    autoSec.appendChild(el("h4", {}, "Ruční automatizace"));
+    manualAutomations.forEach(au => {
+      const btnLabel = au.trigger.params?.buttonLabel || au.name || "Provést";
+      const btn = el("button", {
+        class: "ghost",
+        title: au.description || btnLabel,
+        onclick: () => { runAutomationManually(au.id, real.id); refresh(); }
+      }, btnLabel);
+      autoSec.appendChild(btn);
+    });
+    right.appendChild(autoSec);
+  }
+
   body.append(left, right);
 
   const m = openModal({
@@ -5056,6 +5165,409 @@ function updatePomoIndicator() {
 }
 //#endregion
 
+//#region ============= AUTOMATION UI =============
+// Správa automatizací: seznam + editor.
+// Přístupné přes tlačítko v Nastavení (sekce "Automatizace").
+// Editor generuje formulář dynamicky z definic AUTOMATION_TRIGGERS / AUTOMATION_CONDITION_FIELDS / AUTOMATION_ACTIONS.
+
+function openAutomationManager() {
+  const body = el("div", { class:"automation-manager" });
+  const listWrap = el("div");
+  function refresh() {
+    clear(listWrap);
+    const aus = state.automations || [];
+    if (!aus.length) {
+      listWrap.appendChild(el("p", { class:"muted" }, "Žádné automatizace. Klikni na „Přidat“ pro vytvoření první."));
+      return;
+    }
+    const ul = el("ul", { class:"automation-list" });
+    aus.forEach(au => {
+      const li = el("li", { class:"automation-item" });
+      const header = el("div", { class:"automation-header" });
+      header.appendChild(el("strong", {}, au.name || "(bez názvu)"));
+      const trigLbl = el("span", { class:"muted" }, " — " + triggerLabel(au.trigger));
+      header.appendChild(trigLbl);
+      li.appendChild(header);
+      if (au.description) li.appendChild(el("div", { class:"muted small" }, au.description));
+      const counts = el("div", { class:"muted small" },
+        (au.conditions?.length || 0) + " podmínek, " +
+        (au.actions?.length || 0) + " akcí, " +
+        (!au.activeBoardIds || au.activeBoardIds.length === 0 ? "všechny nástěnky" : au.activeBoardIds.length + " nástěnek")
+      );
+      li.appendChild(counts);
+      const controls = el("div", { class:"automation-controls" });
+      const enCb = el("input", { type:"checkbox", checked: !!au.enabled, id: "au_en_" + au.id, "aria-label":"Zapnuto — " + au.name });
+      enCb.addEventListener("change", () => {
+        au.enabled = enCb.checked;
+        saveState();
+        announce(au.enabled ? "Automatizace zapnuta" : "Automatizace vypnuta");
+      });
+      controls.appendChild(el("label", { for: "au_en_" + au.id, style:{ display:"inline-flex", alignItems:"center", gap:"4px" } }, enCb, " Zapnuto"));
+      controls.appendChild(el("button", { class:"ghost", onclick: () => { openAutomationEditor(au.id); } }, "Upravit"));
+      controls.appendChild(el("button", { class:"ghost", onclick: () => {
+        const dup = deepClone(au);
+        dup.id = uid("au_");
+        dup.name = (au.name || "") + " (kopie)";
+        delete dup._lastRun; delete dup._ran;
+        state.automations.push(dup);
+        saveState(); refresh(); sound.add();
+      } }, "Duplikovat"));
+      controls.appendChild(el("button", { class:"danger", onclick: async () => {
+        if (await confirm2("Smazat automatizaci „" + au.name + "“?", { danger:true })) {
+          state.automations = state.automations.filter(x => x.id !== au.id);
+          saveState(); refresh(); sound.remove();
+        }
+      } }, "Smazat"));
+      li.appendChild(controls);
+      ul.appendChild(li);
+    });
+    listWrap.appendChild(ul);
+  }
+  refresh();
+  body.appendChild(listWrap);
+
+  const addBtn = el("button", { class:"primary", onclick: () => openAutomationEditor(null, refresh) }, "+ Přidat automatizaci");
+  body.appendChild(addBtn);
+
+  openModal({
+    title: "Automatizace",
+    body,
+    size: "large",
+    footer: [
+      el("button", { class:"primary", onclick: function() { this.closest(".modal-overlay").click(); } }, T("close")),
+    ],
+  });
+  // Po zavření editoru (když uživatel vytvoří/uloží automatizaci) refresh seznamu se volá z callbacků
+  // Je ale bezpečnější i pravidelně přerenderovat při zobrazení:
+  setTimeout(refresh, 50);
+}
+
+// Editor jedné automatizace. Pokud automationId je null, vytvoří novou.
+function openAutomationEditor(automationId, onSave) {
+  const isNew = !automationId;
+  const au = isNew
+    ? { id: uid("au_"), name: "", description: "", enabled: true,
+        trigger: { type: "manual", params: { buttonLabel: "Provést" } },
+        conditions: [], actions: [], activeBoardIds: null }
+    : deepClone(state.automations.find(a => a.id === automationId));
+  if (!au) return;
+
+  const form = el("div", { class:"automation-editor" });
+
+  // --- Název ---
+  const nameInp = el("input", { type:"text", value: au.name || "", id:"auName", "aria-label":"Název automatizace" });
+  const nameFs = el("fieldset", {},
+    el("legend", {}, "Název"),
+    el("label", { for:"auName", class:"sr-only" }, "Název"),
+    nameInp,
+  );
+  form.appendChild(nameFs);
+
+  // --- Popis ---
+  const descInp = el("textarea", { rows:"2", id:"auDesc", "aria-label":"Popis automatizace" }, au.description || "");
+  const descFs = el("fieldset", {},
+    el("legend", {}, "Popis (volitelný)"),
+    el("label", { for:"auDesc", class:"sr-only" }, "Popis"),
+    descInp,
+  );
+  form.appendChild(descFs);
+
+  // --- Trigger ---
+  const trigFs = el("fieldset", {}, el("legend", {}, "Kdy se spustí (trigger)"));
+  const trigSel = el("select", { id:"auTrig", "aria-label":"Typ triggeru" });
+  AUTOMATION_TRIGGERS.forEach(t => trigSel.appendChild(el("option", { value: t.type }, t.label)));
+  trigSel.value = au.trigger?.type || "manual";
+  trigFs.appendChild(el("label", { for:"auTrig" }, "Typ: ", trigSel));
+  const trigParamsDiv = el("div", { class:"automation-params" });
+  trigFs.appendChild(trigParamsDiv);
+  form.appendChild(trigFs);
+
+  function refreshTriggerParams() {
+    clear(trigParamsDiv);
+    const def = AUTOMATION_TRIGGERS.find(t => t.type === trigSel.value);
+    if (!def) return;
+    if (!au.trigger || au.trigger.type !== trigSel.value) {
+      au.trigger = { type: trigSel.value, params: {} };
+      // Pro manual trigger rovnou připrav defaultní text tlačítka
+      if (trigSel.value === "manual" && !au.trigger.params.buttonLabel) au.trigger.params.buttonLabel = "Provést";
+    }
+    def.params.forEach(p => {
+      const row = renderParamRow(p, au.trigger.params, { boardContext: null });
+      trigParamsDiv.appendChild(row);
+    });
+  }
+  trigSel.addEventListener("change", refreshTriggerParams);
+  refreshTriggerParams();
+
+  // --- Podmínky ---
+  const condFs = el("fieldset", {}, el("legend", {}, "Podmínky (všechny musí platit)"));
+  const condList = el("div");
+  condFs.appendChild(condList);
+  const addCondBtn = el("button", { class:"ghost", onclick: () => {
+    au.conditions = au.conditions || [];
+    au.conditions.push({ field: "title", op: "contains", value: "" });
+    refreshConditions();
+  } }, "+ Přidat podmínku");
+  condFs.appendChild(addCondBtn);
+  form.appendChild(condFs);
+
+  function refreshConditions() {
+    clear(condList);
+    (au.conditions || []).forEach((cond, idx) => {
+      const row = el("div", { class:"automation-row", role:"group", "aria-label":"Podmínka " + (idx+1) });
+      const fieldSel = el("select", { "aria-label":"Pole" });
+      AUTOMATION_CONDITION_FIELDS.forEach(f => fieldSel.appendChild(el("option", { value: f.key }, f.label)));
+      fieldSel.value = cond.field;
+      const opSel = el("select", { "aria-label":"Operátor" });
+      const valWrap = el("span");
+      function refreshOp() {
+        const fDef = AUTOMATION_CONDITION_FIELDS.find(f => f.key === fieldSel.value);
+        clear(opSel);
+        if (fDef) fDef.ops.forEach(op => opSel.appendChild(el("option", { value: op }, OPERATOR_LABELS[op] || op)));
+        if (!fDef || !fDef.ops.includes(cond.op)) cond.op = fDef?.ops[0];
+        opSel.value = cond.op;
+        refreshVal();
+      }
+      function refreshVal() {
+        clear(valWrap);
+        const fDef = AUTOMATION_CONDITION_FIELDS.find(f => f.key === fieldSel.value);
+        if (!fDef || fDef.valueType === "none") return;
+        const valElm = renderValueInput(fDef.valueType, cond.value, (v) => { cond.value = v; });
+        valWrap.appendChild(valElm);
+      }
+      fieldSel.addEventListener("change", () => { cond.field = fieldSel.value; refreshOp(); });
+      opSel.addEventListener("change", () => { cond.op = opSel.value; });
+      refreshOp();
+      const rm = el("button", { class:"ghost small", "aria-label":"Odebrat podmínku", onclick: () => {
+        au.conditions.splice(idx, 1); refreshConditions();
+      } }, "×");
+      row.append(fieldSel, " ", opSel, " ", valWrap, " ", rm);
+      condList.appendChild(row);
+    });
+    if (!(au.conditions || []).length) {
+      condList.appendChild(el("p", { class:"muted small" }, "(žádné podmínky — automatizace se spustí vždy při triggeru)"));
+    }
+  }
+  refreshConditions();
+
+  // --- Akce ---
+  const actFs = el("fieldset", {}, el("legend", {}, "Akce (provedou se v pořadí)"));
+  const actList = el("div");
+  actFs.appendChild(actList);
+  const addActBtn = el("button", { class:"ghost", onclick: () => {
+    au.actions = au.actions || [];
+    au.actions.push({ type: AUTOMATION_ACTIONS[0].type, params: {} });
+    refreshActions();
+  } }, "+ Přidat akci");
+  actFs.appendChild(addActBtn);
+  form.appendChild(actFs);
+
+  function refreshActions() {
+    clear(actList);
+    (au.actions || []).forEach((act, idx) => {
+      const row = el("div", { class:"automation-row", role:"group", "aria-label":"Akce " + (idx+1) });
+      const typeSel = el("select", { "aria-label":"Typ akce" });
+      AUTOMATION_ACTIONS.forEach(a => typeSel.appendChild(el("option", { value: a.type }, a.label)));
+      typeSel.value = act.type;
+      const paramsDiv = el("div", { class:"automation-params" });
+      function refreshParams() {
+        clear(paramsDiv);
+        const def = AUTOMATION_ACTIONS.find(a => a.type === typeSel.value);
+        if (!def) return;
+        if (act.type !== typeSel.value) { act.type = typeSel.value; act.params = {}; }
+        def.params.forEach(p => {
+          const r = renderParamRow(p, act.params, { boardContext: null });
+          paramsDiv.appendChild(r);
+        });
+      }
+      typeSel.addEventListener("change", () => { act.type = typeSel.value; act.params = {}; refreshParams(); });
+      refreshParams();
+      const up = el("button", { class:"ghost small", "aria-label":"Posunout nahoru", onclick: () => {
+        if (idx === 0) return;
+        const t = au.actions[idx-1]; au.actions[idx-1] = au.actions[idx]; au.actions[idx] = t;
+        refreshActions();
+      } }, "↑");
+      const dn = el("button", { class:"ghost small", "aria-label":"Posunout dolů", onclick: () => {
+        if (idx === au.actions.length-1) return;
+        const t = au.actions[idx+1]; au.actions[idx+1] = au.actions[idx]; au.actions[idx] = t;
+        refreshActions();
+      } }, "↓");
+      const rm = el("button", { class:"ghost small", "aria-label":"Odebrat akci", onclick: () => {
+        au.actions.splice(idx, 1); refreshActions();
+      } }, "×");
+      const headerRow = el("div", {}, typeSel, " ", up, dn, rm);
+      row.append(headerRow, paramsDiv);
+      actList.appendChild(row);
+    });
+    if (!(au.actions || []).length) {
+      actList.appendChild(el("p", { class:"muted small" }, "(žádné akce — přidej alespoň jednu, jinak pravidlo nic neudělá)"));
+    }
+  }
+  refreshActions();
+
+  // --- Scope ---
+  const scopeFs = el("fieldset", {}, el("legend", {}, "Kde je aktivní"));
+  const allRb = el("input", { type:"radio", name:"auScope", id:"auScopeAll", checked: !au.activeBoardIds || au.activeBoardIds.length === 0 });
+  const selRb = el("input", { type:"radio", name:"auScope", id:"auScopeSel", checked: !!(au.activeBoardIds && au.activeBoardIds.length) });
+  const boardChecks = el("div", { id:"auBoardChecks", style:{ display: selRb.checked ? "" : "none", paddingLeft:"20px", marginTop:"6px" } });
+  function refreshBoardChecks() {
+    clear(boardChecks);
+    const boards = state.boards.filter(b => !b.archived);
+    if (!boards.length) boardChecks.appendChild(el("p", { class:"muted small" }, "Žádné nástěnky."));
+    boards.forEach(b => {
+      const cbId = "aubrd_" + b.id;
+      const cb = el("input", { type:"checkbox", id: cbId, checked: (au.activeBoardIds || []).includes(b.id) });
+      cb.addEventListener("change", () => {
+        au.activeBoardIds = au.activeBoardIds || [];
+        if (cb.checked) {
+          if (!au.activeBoardIds.includes(b.id)) au.activeBoardIds.push(b.id);
+        } else {
+          au.activeBoardIds = au.activeBoardIds.filter(x => x !== b.id);
+        }
+      });
+      boardChecks.appendChild(el("label", { for: cbId, style:{ display:"block" } }, cb, " ", b.name));
+    });
+  }
+  refreshBoardChecks();
+  allRb.addEventListener("change", () => { if (allRb.checked) { au.activeBoardIds = null; boardChecks.style.display = "none"; } });
+  selRb.addEventListener("change", () => { if (selRb.checked) { au.activeBoardIds = au.activeBoardIds || []; boardChecks.style.display = ""; refreshBoardChecks(); } });
+  scopeFs.appendChild(el("label", { for:"auScopeAll" }, allRb, " Aktivní na všech nástěnkách"));
+  scopeFs.appendChild(el("label", { for:"auScopeSel", style:{ display:"block", marginTop:"4px" } }, selRb, " Jen na vybraných:"));
+  scopeFs.appendChild(boardChecks);
+  form.appendChild(scopeFs);
+
+  // --- Enabled ---
+  const enCb = el("input", { type:"checkbox", id:"auEnabled", checked: !!au.enabled });
+  form.appendChild(el("fieldset", {},
+    el("legend", {}, "Stav"),
+    el("label", { for:"auEnabled" }, enCb, " Zapnuto"),
+  ));
+
+  // --- Nápověda pro placeholdery ---
+  form.appendChild(el("fieldset", {},
+    el("legend", {}, "Placeholdery pro texty"),
+    el("p", { class:"small" },
+      "V textových polích akcí (setTitle, setDescription, addComment, addToInbox, toast) lze použít: " +
+      "{{card.title}}, {{card.description}}, {{card.dueDate}}, {{card.dueRel}} (např. „za 3 dny“), " +
+      "{{card.labels}}, {{card.members}}, {{list.name}}, {{board.name}}, " +
+      "{{date}}, {{time}}, {{today}}, {{yesterday}}, {{tomorrow}}."),
+  ));
+
+  openModal({
+    title: isNew ? "Nová automatizace" : "Upravit automatizaci",
+    body: form,
+    size: "large",
+    footer: [
+      el("button", { class:"ghost", onclick: function() { this.closest(".modal-overlay").click(); } }, T("cancel")),
+      el("button", { class:"primary", onclick: function() {
+        au.name = nameInp.value.trim() || "(bez názvu)";
+        au.description = descInp.value.trim();
+        au.enabled = enCb.checked;
+        state.automations = state.automations || [];
+        if (isNew) {
+          state.automations.push(au);
+        } else {
+          const idx = state.automations.findIndex(x => x.id === au.id);
+          if (idx >= 0) state.automations[idx] = au;
+          else state.automations.push(au);
+        }
+        saveState();
+        this.closest(".modal-overlay").click();
+        sound.add();
+        toast(isNew ? "Automatizace vytvořena." : "Automatizace uložena.", "success");
+        announce(isNew ? "Automatizace vytvořena." : "Automatizace uložena.");
+        if (typeof onSave === "function") onSave();
+        renderAll();
+      } }, T("save")),
+    ],
+  });
+  setTimeout(() => nameInp.focus(), 60);
+}
+
+// Vykreslí řádek pro jeden parametr (label + vhodný input). `params` je objekt, do kterého píšeme hodnoty.
+function renderParamRow(paramDef, params, ctx) {
+  const row = el("div", { class:"field-row" });
+  const id = "auP_" + paramDef.key + "_" + uid("p_");
+  row.appendChild(el("label", { for: id }, paramDef.label + (paramDef.required ? " *" : "")));
+  if (params[paramDef.key] == null && paramDef.defaultValue != null) params[paramDef.key] = paramDef.defaultValue;
+  const inputEl = renderValueInput(paramDef.type, params[paramDef.key], (v) => { params[paramDef.key] = v; }, paramDef.options);
+  inputEl.id = id;
+  row.appendChild(inputEl);
+  return row;
+}
+
+// Vykreslí vhodný input podle typu hodnoty (text / number / date / select / label / member / list / cardType / textarea).
+function renderValueInput(valueType, currentValue, setValue, options) {
+  if (valueType === "textarea") {
+    const ta = el("textarea", { rows:"3" }, currentValue != null ? String(currentValue) : "");
+    ta.addEventListener("input", () => setValue(ta.value));
+    return ta;
+  }
+  if (valueType === "number") {
+    const inp = el("input", { type:"number", value: currentValue != null ? String(currentValue) : "" });
+    inp.addEventListener("input", () => setValue(inp.value === "" ? null : Number(inp.value)));
+    return inp;
+  }
+  if (valueType === "date") {
+    const inp = el("input", { type:"date", value: currentValue || "" });
+    inp.addEventListener("input", () => setValue(inp.value));
+    return inp;
+  }
+  if (valueType === "select" && Array.isArray(options)) {
+    const sel = el("select");
+    options.forEach(o => sel.appendChild(el("option", { value: o.value }, o.label)));
+    if (currentValue != null) sel.value = String(currentValue);
+    sel.addEventListener("change", () => setValue(sel.value));
+    // Propagate default initial value
+    if (currentValue == null && options.length) setValue(options[0].value);
+    return sel;
+  }
+  if (valueType === "label") {
+    const sel = el("select");
+    sel.appendChild(el("option", { value: "" }, "— vyberte štítek —"));
+    // Agregace všech štítků ze všech nástěnek
+    state.boards.filter(b => !b.archived).forEach(b => {
+      (b.labels || []).forEach(l => sel.appendChild(el("option", { value: l.id }, b.name + " / " + l.name)));
+    });
+    if (currentValue) sel.value = currentValue;
+    sel.addEventListener("change", () => setValue(sel.value));
+    return sel;
+  }
+  if (valueType === "member") {
+    const sel = el("select");
+    sel.appendChild(el("option", { value: "" }, "— vyberte člena —"));
+    state.members.forEach(m => sel.appendChild(el("option", { value: m.id }, m.name)));
+    if (currentValue) sel.value = currentValue;
+    sel.addEventListener("change", () => setValue(sel.value));
+    return sel;
+  }
+  if (valueType === "list") {
+    const sel = el("select");
+    sel.appendChild(el("option", { value: "" }, "— vyberte seznam —"));
+    state.boards.filter(b => !b.archived).forEach(b => {
+      const og = el("optgroup", { label: b.name });
+      (state.lists.filter(l => l.boardId === b.id && !l.archived) || []).forEach(l => og.appendChild(el("option", { value: l.id }, l.name)));
+      sel.appendChild(og);
+    });
+    if (currentValue) sel.value = currentValue;
+    sel.addEventListener("change", () => setValue(sel.value));
+    return sel;
+  }
+  if (valueType === "cardType") {
+    const sel = el("select");
+    [["normal","Běžná"],["habit","Návyk"],["note","Poznámka"]].forEach(([v,l]) => sel.appendChild(el("option", { value:v }, l)));
+    if (currentValue) sel.value = currentValue;
+    sel.addEventListener("change", () => setValue(sel.value));
+    return sel;
+  }
+  // default: text
+  const inp = el("input", { type:"text", value: currentValue != null ? String(currentValue) : "" });
+  inp.addEventListener("input", () => setValue(inp.value));
+  return inp;
+}
+//#endregion
+
+
 //#region ============= HELP =============
 function openHelp() {
   const body = el("div");
@@ -5202,6 +5714,17 @@ function openSettings() {
     } }, T("importJson")),
   );
   body.appendChild(impRow);
+
+  // --- Automatizace ---
+  body.appendChild(el("h3", {}, "Automatizace"));
+  body.appendChild(el("p", { class:"small muted" },
+    "Automatizace umožňují spouštět akce při událostech (změna stavu karty, přesun, termín se blíží) " +
+    "nebo ručně z detailu karty. Definuješ je globálně a u každé určíš, na kterých nástěnkách je aktivní."));
+  const aucount = (state.automations || []).length;
+  body.appendChild(el("button", { class:"primary", onclick: () => {
+    m.close();
+    openAutomationManager();
+  } }, `Spravovat automatizace${aucount ? " (" + aucount + ")" : ""}`));
   // Footer save
   const m = openModal({
     title: T("settingsTitle"), body, size:"large",
@@ -5272,6 +5795,573 @@ function exportIcs() {
   downloadBlob(out, "kanban-export.ics", "text/calendar");
 }
 //#endregion
+
+//#region ============= AUTOMATIONS =============
+// Popis ústředního konceptu:
+//   Automatizace = pojmenované pravidlo. Má trigger (co ho spouští), conditions (filtr — všechny musí platit),
+//   a sekvenci akcí, které se provedou. Automatizace jsou globální (v state.automations) a na úrovni nástěnky se
+//   rozhoduje, zda je konkrétní automatizace aktivní (activeBoardIds).
+//   Automatizace s trigger.type === "manual" se NESPOUŠTÍ automaticky — jen se zobrazí tlačítko v detailu karty,
+//   kde ji uživatel spustí ručně.
+//
+// Veřejné rozhraní:
+//   runAutomationsFor(eventType, context)    — volá se z míst, kde se věci dějí (po toggleCardComplete atd.)
+//   runAutomationManually(automationId, cardId) — volá se z tlačítka v detailu karty
+//   substituteTemplate(text, context)         — nahradí {{placeholdery}} v textu
+
+const AUTOMATION_MAX_DEPTH = 5;
+let _automationDepth = 0;
+
+// ---------- Placeholdery ----------
+function substituteTemplate(text, ctx) {
+  if (!text) return "";
+  const card = ctx.card || null;
+  const list = card ? getList(card.listId) : null;
+  const board = card ? getBoard(card.boardId) : null;
+  const now = new Date();
+  const map = {
+    "card.title": card ? card.title : "",
+    "card.description": card ? (card.description || "") : "",
+    "card.dueDate": card && card.dueDate ? formatDate(card.dueDate) : "",
+    "card.dueRel": card && card.dueDate ? (function() {
+      const d = daysFromNow(card.dueDate);
+      if (d == null) return "";
+      if (d === 0) return "dnes";
+      if (d === 1) return "zítra";
+      if (d === -1) return "včera";
+      if (d > 0) return "za " + d + " dní";
+      return "před " + (-d) + " dny";
+    })() : "",
+    "card.labels": card ? (card.labels || []).map(id => { const l = getLabel(card.boardId, id); return l ? l.name : ""; }).filter(Boolean).join(", ") : "",
+    "card.members": card ? (card.members || []).map(id => { const m = getMember(id); return m ? m.name : ""; }).filter(Boolean).join(", ") : "",
+    "card.cardType": card ? (card.cardType || "normal") : "",
+    "list.name": list ? list.name : "",
+    "board.name": board ? board.name : "",
+    "date": now.toLocaleDateString("cs-CZ"),
+    "time": now.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit" }),
+    "today": isoLocalDate(now),
+    "yesterday": isoLocalDate(addDays(now, -1)),
+    "tomorrow": isoLocalDate(addDays(now, 1)),
+    "now": now.toISOString(),
+  };
+  return String(text).replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (m, key) => {
+    return (key in map) ? map[key] : m;
+  });
+}
+
+// ---------- Evaluátor podmínek ----------
+// Každá podmínka je { field, op, value }.
+function evalCondition(cond, card) {
+  if (!card) return false;
+  const { field, op, value } = cond;
+  let actual;
+  switch (field) {
+    case "title":        actual = card.title || ""; break;
+    case "description":  actual = card.description || ""; break;
+    case "labels":       actual = card.labels || []; break;
+    case "members":      actual = card.members || []; break;
+    case "list":         actual = card.listId; break;
+    case "completed":    actual = !!card.completed; break;
+    case "archived":     actual = !!card.archived; break;
+    case "cardType":     actual = card.cardType || "normal"; break;
+    case "hasDue":       actual = !!card.dueDate; break;
+    case "due":          actual = card.dueDate; break;
+    case "dueWithinDays":{
+      if (!card.dueDate) return false;
+      const d = daysFromNow(card.dueDate);
+      return d != null && d <= Number(value) && d >= 0;
+    }
+    case "checklistPercent": {
+      const p = checklistProgress(card);
+      actual = p.total ? Math.round(p.done * 100 / p.total) : 0;
+      break;
+    }
+    case "commentCount":    actual = (card.comments || []).length; break;
+    case "attachmentCount": actual = (card.attachments || []).length; break;
+    default: return false;
+  }
+  switch (op) {
+    case "equals":      return String(actual) === String(value);
+    case "notEquals":   return String(actual) !== String(value);
+    case "contains":    return String(actual).toLowerCase().includes(String(value).toLowerCase());
+    case "notContains": return !String(actual).toLowerCase().includes(String(value).toLowerCase());
+    case "includes":    return Array.isArray(actual) && actual.includes(value);
+    case "notIncludes": return Array.isArray(actual) && !actual.includes(value);
+    case "isTrue":      return actual === true;
+    case "isFalse":     return actual === false;
+    case "isEmpty":     return Array.isArray(actual) ? actual.length === 0 : !actual;
+    case "notEmpty":    return Array.isArray(actual) ? actual.length > 0 : !!actual;
+    case "lessThan":    return Number(actual) < Number(value);
+    case "greaterThan": return Number(actual) > Number(value);
+    case "lessOrEqual": return Number(actual) <= Number(value);
+    case "greaterOrEqual": return Number(actual) >= Number(value);
+  }
+  return false;
+}
+function evalAllConditions(conditions, card) {
+  return !conditions || !conditions.length || conditions.every(c => evalCondition(c, card));
+}
+
+// ---------- Matcher triggerů ----------
+// Vrátí true, pokud trigger pravidla odpovídá eventu.
+function triggerMatches(trigger, eventType, eventContext) {
+  if (!trigger || trigger.type !== eventType) return false;
+  const p = trigger.params || {};
+  const c = eventContext || {};
+  switch (eventType) {
+    case "card.created":
+      if (p.inList && p.inList !== c.card?.listId) return false;
+      return true;
+    case "card.moved":
+      if (p.fromList && p.fromList !== c.fromListId) return false;
+      if (p.toList && p.toList !== c.toListId) return false;
+      return true;
+    case "card.completed":
+    case "card.uncompleted":
+    case "card.archived":
+    case "card.unarchived":
+      return true;
+    case "card.labelAdded":
+    case "card.labelRemoved":
+      if (p.labelId && p.labelId !== c.labelId) return false;
+      return true;
+    case "card.memberAdded":
+    case "card.memberRemoved":
+      if (p.memberId && p.memberId !== c.memberId) return false;
+      return true;
+    case "card.dueChanged":
+      return true;
+    case "card.checklistCompleted":
+      return true;
+    case "card.commentAdded":
+      if (p.contains && !String(c.commentText || "").toLowerCase().includes(String(p.contains).toLowerCase())) return false;
+      return true;
+    case "schedule.daily":
+    case "schedule.dueSoon":
+    case "schedule.overdue":
+    case "schedule.inactive":
+      // schedule triggery se kontrolují samostatně v automationScheduleTick
+      return false;
+    case "manual":
+      return false;  // manual se nespouští eventem
+  }
+  return false;
+}
+
+// ---------- Kontrola, zda je automatizace aktivní na dané nástěnce ----------
+function isAutomationActiveOnBoard(au, boardId) {
+  if (!au.enabled) return false;
+  if (!au.activeBoardIds || au.activeBoardIds.length === 0) return true;  // null/prázdné = aktivní všude
+  return au.activeBoardIds.includes(boardId);
+}
+
+// ---------- Hlavní dispatcher ----------
+// eventType: "card.moved", "card.completed", ...
+// context: { card, ...další parametry }
+function runAutomationsFor(eventType, context) {
+  if (!state.automations || !state.automations.length) return;
+  if (_automationDepth >= AUTOMATION_MAX_DEPTH) {
+    console.warn("Automation depth limit reached, skipping");
+    return;
+  }
+  const card = context.card;
+  const boardId = card ? card.boardId : null;
+  _automationDepth++;
+  try {
+    for (const au of state.automations) {
+      if (boardId && !isAutomationActiveOnBoard(au, boardId)) continue;
+      if (!boardId && !au.enabled) continue;
+      if (!triggerMatches(au.trigger, eventType, context)) continue;
+      if (!evalAllConditions(au.conditions || [], card)) continue;
+      runActions(au.actions || [], context);
+    }
+  } finally {
+    _automationDepth--;
+  }
+}
+
+// Ručně spuštěná automatizace z detailu karty
+function runAutomationManually(automationId, cardId) {
+  const au = (state.automations || []).find(a => a.id === automationId);
+  if (!au) return;
+  const card = getCard(cardId);
+  if (!card) return;
+  if (!evalAllConditions(au.conditions || [], card)) {
+    toast("Automatizace „" + au.name + "“ — podmínky nesplněny.", "warning");
+    return;
+  }
+  runActions(au.actions || [], { card });
+  saveState();
+  renderView();
+  toast("Automatizace „" + au.name + "“ provedena.", "success");
+  announce("Automatizace " + au.name + " provedena.");
+  sound.click();
+}
+
+// ---------- Executor akcí ----------
+function runActions(actions, context) {
+  for (const act of actions) {
+    try {
+      execAction(act, context);
+    } catch (e) {
+      console.error("Automatizace: chyba v akci", act, e);
+      toast("Chyba v akci " + act.type + ": " + e.message, "error");
+    }
+  }
+}
+function execAction(act, ctx) {
+  const card = ctx.card;
+  const p = act.params || {};
+  switch (act.type) {
+    case "setTitle": {
+      if (!card) return;
+      const newTitle = substituteTemplate(p.text || "", ctx);
+      card.title = newTitle;
+      card.updatedAt = Date.now();
+      logActivity(card, "Automatizace přejmenovala kartu na „" + newTitle + "“");
+      break;
+    }
+    case "setDescription": {
+      if (!card) return;
+      const text = substituteTemplate(p.text || "", ctx);
+      if (p.mode === "append") card.description = (card.description || "") + (card.description ? "\n\n" : "") + text;
+      else if (p.mode === "prepend") card.description = text + (card.description ? "\n\n" : "") + (card.description || "");
+      else card.description = text;
+      card.updatedAt = Date.now();
+      logActivity(card, "Automatizace upravila popis");
+      break;
+    }
+    case "addLabel": {
+      if (!card || !p.labelId) return;
+      if (!card.labels.includes(p.labelId)) {
+        card.labels.push(p.labelId);
+        const l = getLabel(card.boardId, p.labelId);
+        logActivity(card, "Automatizace přidala štítek „" + (l ? l.name : p.labelId) + "“");
+      }
+      break;
+    }
+    case "removeLabel": {
+      if (!card || !p.labelId) return;
+      card.labels = card.labels.filter(x => x !== p.labelId);
+      break;
+    }
+    case "removeAllLabels": {
+      if (!card) return;
+      card.labels = [];
+      break;
+    }
+    case "addMember": {
+      if (!card || !p.memberId) return;
+      if (!card.members.includes(p.memberId)) card.members.push(p.memberId);
+      break;
+    }
+    case "removeMember": {
+      if (!card || !p.memberId) return;
+      card.members = card.members.filter(x => x !== p.memberId);
+      break;
+    }
+    case "setDue": {
+      if (!card) return;
+      if (p.mode === "remove") card.dueDate = null;
+      else if (p.mode === "relative") {
+        const days = Number(p.days || 0);
+        card.dueDate = isoLocalDate(addDays(new Date(), days));
+      } else if (p.mode === "absolute" && p.date) {
+        card.dueDate = p.date;
+      }
+      card.updatedAt = Date.now();
+      break;
+    }
+    case "setCompleted": {
+      if (!card) return;
+      const target = !!p.completed;
+      if (card.completed !== target) {
+        card.completed = target;
+        card.completedAt = target ? Date.now() : null;
+        card.updatedAt = Date.now();
+        logActivity(card, target ? T("activityCompleted") : T("activityUncompleted"));
+        if (target) runAutomationsFor("card.completed", { card });
+        else runAutomationsFor("card.uncompleted", { card });
+      }
+      break;
+    }
+    case "archive": {
+      if (!card) return;
+      if (!card.archived) {
+        card.archived = true;
+        card.updatedAt = Date.now();
+        logActivity(card, T("activityArchived"));
+        runAutomationsFor("card.archived", { card });
+      }
+      break;
+    }
+    case "unarchive": {
+      if (!card) return;
+      if (card.archived) {
+        card.archived = false;
+        card.updatedAt = Date.now();
+        logActivity(card, T("activityUnarchived"));
+      }
+      break;
+    }
+    case "move": {
+      if (!card || !p.toList) return;
+      const fromListId = card.listId;
+      const newList = getList(p.toList);
+      if (!newList) return;
+      const oldName = getList(fromListId)?.name || "?";
+      card.listId = p.toList;
+      card.boardId = newList.boardId;
+      card.updatedAt = Date.now();
+      logActivity(card, T("activityMoved", oldName, newList.name));
+      runAutomationsFor("card.moved", { card, fromListId, toListId: p.toList });
+      break;
+    }
+    case "addComment": {
+      if (!card) return;
+      const text = substituteTemplate(p.text || "", ctx);
+      card.comments = card.comments || [];
+      card.comments.push({ id: uid("cm_"), text, createdAt: Date.now(), author: "Automatizace" });
+      logActivity(card, T("activityCommented"));
+      runAutomationsFor("card.commentAdded", { card, commentText: text });
+      break;
+    }
+    case "addToInbox": {
+      const text = substituteTemplate(p.text || "", ctx);
+      state.inbox.push({ id: uid("ib_"), text, createdAt: Date.now(), cardId: card ? card.id : null });
+      break;
+    }
+    case "toast": {
+      const text = substituteTemplate(p.text || "", ctx);
+      toast(text, p.kind || "info", 4000);
+      break;
+    }
+    case "playSound": {
+      const s = p.sound || "click";
+      if (sound[s]) sound[s]();
+      break;
+    }
+    case "archiveCompletedInList": {
+      if (!card) return;
+      const listId = p.listId || card.listId;
+      const cs = cardsInList(listId).filter(c => c.completed && !c.archived);
+      cs.forEach(c => { c.archived = true; c.updatedAt = Date.now(); });
+      if (cs.length) toast("Archivováno " + cs.length + " hotových karet.", "success");
+      break;
+    }
+    case "setEstimate": {
+      if (!card) return;
+      card.time = card.time || { estimateSec: 0, spentSec: 0, runningSince: null };
+      card.time.estimateSec = Math.round(Number(p.hours || 0) * 3600);
+      card.updatedAt = Date.now();
+      break;
+    }
+    default:
+      console.warn("Neznámý typ akce:", act.type);
+  }
+}
+
+// ---------- Časové automatizace ----------
+// Každých 30 minut kontrolujeme schedule triggery.
+// Každý den v xx:xx: schedule.daily
+// N dní před termínem: schedule.dueSoon
+// N dní po termínu:   schedule.overdue
+// N dní bez aktivity: schedule.inactive
+function automationScheduleTick() {
+  if (!state.automations || !state.automations.length) return;
+  const now = new Date();
+  const today = isoLocalDate(now);
+  for (const au of state.automations) {
+    if (!au.enabled) continue;
+    const t = au.trigger;
+    if (!t) continue;
+    if (t.type === "schedule.daily") {
+      // Spustit jednou denně, pokud čas už nastal a dnes ještě neběžel
+      const lastRun = au._lastRun || "";
+      const runHM = t.params?.atTime || "08:00";
+      const [hh, mm] = runHM.split(":").map(Number);
+      const triggerTime = new Date(now);
+      triggerTime.setHours(hh || 0, mm || 0, 0, 0);
+      if (now >= triggerTime && lastRun !== today) {
+        au._lastRun = today;
+        // Denní běh: akce bez konkrétní karty (např. toast / addToInbox)
+        runActions(au.actions || [], { card: null });
+        saveState();
+      }
+    } else if (t.type === "schedule.dueSoon") {
+      const daysBefore = Number(t.params?.daysBefore || 1);
+      state.cards.forEach(card => {
+        if (card.archived || card.completed || !card.dueDate) return;
+        const d = daysFromNow(card.dueDate);
+        if (d === daysBefore) {
+          const key = au.id + ":" + card.id + ":" + card.dueDate;
+          au._ran = au._ran || {};
+          if (au._ran[key]) return;
+          au._ran[key] = today;
+          if (!evalAllConditions(au.conditions || [], card)) return;
+          if (!isAutomationActiveOnBoard(au, card.boardId)) return;
+          runActions(au.actions || [], { card });
+        }
+      });
+    } else if (t.type === "schedule.overdue") {
+      const daysAfter = Number(t.params?.daysAfter || 1);
+      state.cards.forEach(card => {
+        if (card.archived || card.completed || !card.dueDate) return;
+        const d = daysFromNow(card.dueDate);
+        if (d === -daysAfter) {
+          const key = au.id + ":" + card.id + ":" + card.dueDate;
+          au._ran = au._ran || {};
+          if (au._ran[key]) return;
+          au._ran[key] = today;
+          if (!evalAllConditions(au.conditions || [], card)) return;
+          if (!isAutomationActiveOnBoard(au, card.boardId)) return;
+          runActions(au.actions || [], { card });
+        }
+      });
+    }
+  }
+  saveState();
+}
+
+// ---------- Metadata o typech triggerů, podmínek a akcí pro UI ----------
+// UI editoru je vygenerováno z těchto popisů.
+const AUTOMATION_TRIGGERS = [
+  { type:"manual",             label:"Ručně z detailu karty (tlačítko)", params:[
+    { key:"buttonLabel", label:"Název tlačítka", type:"text", required:true },
+  ]},
+  { type:"card.created",       label:"Karta byla vytvořena", params:[
+    { key:"inList", label:"V seznamu (nepovinné)", type:"list" },
+  ]},
+  { type:"card.moved",         label:"Karta byla přesunuta", params:[
+    { key:"fromList", label:"Ze seznamu (nepovinné)", type:"list" },
+    { key:"toList",   label:"Do seznamu (nepovinné)", type:"list" },
+  ]},
+  { type:"card.completed",     label:"Karta označena jako hotová", params:[] },
+  { type:"card.uncompleted",   label:"Karta odznačena z hotové", params:[] },
+  { type:"card.archived",      label:"Karta archivována", params:[] },
+  { type:"card.unarchived",    label:"Karta obnovena z archivu", params:[] },
+  { type:"card.labelAdded",    label:"Karta dostala štítek", params:[
+    { key:"labelId", label:"Konkrétní štítek (nepovinné)", type:"label" },
+  ]},
+  { type:"card.labelRemoved",  label:"Karta přišla o štítek", params:[
+    { key:"labelId", label:"Konkrétní štítek (nepovinné)", type:"label" },
+  ]},
+  { type:"card.dueChanged",    label:"Termín karty se změnil", params:[] },
+  { type:"card.checklistCompleted", label:"Všechny položky checklistu hotové", params:[] },
+  { type:"card.commentAdded",  label:"Karta dostala komentář", params:[
+    { key:"contains", label:"Komentář obsahuje text (nepovinné)", type:"text" },
+  ]},
+  { type:"schedule.daily",     label:"Pravidelně každý den", params:[
+    { key:"atTime", label:"Čas (HH:MM)", type:"text", defaultValue:"08:00", required:true },
+  ]},
+  { type:"schedule.dueSoon",   label:"N dní před termínem karty", params:[
+    { key:"daysBefore", label:"Kolik dní před termínem", type:"number", defaultValue:1, required:true },
+  ]},
+  { type:"schedule.overdue",   label:"N dní po termínu karty", params:[
+    { key:"daysAfter", label:"Kolik dní po termínu", type:"number", defaultValue:1, required:true },
+  ]},
+];
+
+const AUTOMATION_CONDITION_FIELDS = [
+  { key:"title",           label:"Název", ops:["contains","notContains","equals","notEquals","isEmpty","notEmpty"], valueType:"text" },
+  { key:"description",     label:"Popis", ops:["contains","notContains","isEmpty","notEmpty"], valueType:"text" },
+  { key:"labels",          label:"Štítky", ops:["includes","notIncludes","isEmpty","notEmpty"], valueType:"label" },
+  { key:"members",         label:"Členové", ops:["includes","notIncludes","isEmpty","notEmpty"], valueType:"member" },
+  { key:"list",            label:"Seznam", ops:["equals","notEquals"], valueType:"list" },
+  { key:"completed",       label:"Hotová", ops:["isTrue","isFalse"], valueType:"none" },
+  { key:"archived",        label:"Archivovaná", ops:["isTrue","isFalse"], valueType:"none" },
+  { key:"cardType",        label:"Typ karty", ops:["equals","notEquals"], valueType:"cardType" },
+  { key:"hasDue",          label:"Má termín", ops:["isTrue","isFalse"], valueType:"none" },
+  { key:"dueWithinDays",   label:"Termín je do … dnů", ops:["lessOrEqual"], valueType:"number" },
+  { key:"checklistPercent",label:"Procento hotových v checklistu", ops:["greaterOrEqual","lessOrEqual","equals"], valueType:"number" },
+  { key:"commentCount",    label:"Počet komentářů", ops:["greaterOrEqual","lessOrEqual","equals"], valueType:"number" },
+  { key:"attachmentCount", label:"Počet příloh", ops:["greaterOrEqual","lessOrEqual","equals"], valueType:"number" },
+];
+
+const OPERATOR_LABELS = {
+  equals:"je rovno", notEquals:"není rovno",
+  contains:"obsahuje", notContains:"neobsahuje",
+  includes:"obsahuje", notIncludes:"neobsahuje",
+  isTrue:"je pravda", isFalse:"je nepravda",
+  isEmpty:"je prázdné", notEmpty:"není prázdné",
+  lessThan:"je menší než", greaterThan:"je větší než",
+  lessOrEqual:"je nanejvýš", greaterOrEqual:"je aspoň",
+};
+
+const AUTOMATION_ACTIONS = [
+  { type:"setTitle",        label:"Nastavit název karty", params:[
+    { key:"text", label:"Nový název (lze použít {{placeholdery}})", type:"textarea", required:true },
+  ]},
+  { type:"setDescription",  label:"Upravit popis karty", params:[
+    { key:"mode", label:"Režim", type:"select", options:[
+      { value:"replace", label:"Nahradit" },
+      { value:"append",  label:"Připojit na konec" },
+      { value:"prepend", label:"Přidat na začátek" },
+    ], defaultValue:"replace", required:true },
+    { key:"text", label:"Text (lze použít {{placeholdery}})", type:"textarea", required:true },
+  ]},
+  { type:"addLabel",        label:"Přidat štítek", params:[{ key:"labelId", label:"Štítek", type:"label", required:true }] },
+  { type:"removeLabel",     label:"Odebrat štítek", params:[{ key:"labelId", label:"Štítek", type:"label", required:true }] },
+  { type:"removeAllLabels", label:"Odebrat všechny štítky", params:[] },
+  { type:"addMember",       label:"Přiřadit člena", params:[{ key:"memberId", label:"Člen", type:"member", required:true }] },
+  { type:"removeMember",    label:"Odebrat člena", params:[{ key:"memberId", label:"Člen", type:"member", required:true }] },
+  { type:"setDue",          label:"Nastavit termín", params:[
+    { key:"mode", label:"Režim", type:"select", options:[
+      { value:"relative", label:"Za N dní od dneška" },
+      { value:"absolute", label:"Konkrétní datum" },
+      { value:"remove",   label:"Odebrat termín" },
+    ], defaultValue:"relative", required:true },
+    { key:"days", label:"Počet dní (pro relativní)", type:"number", defaultValue:7 },
+    { key:"date", label:"Datum (pro absolutní)", type:"date" },
+  ]},
+  { type:"setCompleted",    label:"Označit/odznačit jako hotové", params:[
+    { key:"completed", label:"Nastavit na", type:"select", options:[
+      { value:"true",  label:"Hotové" },
+      { value:"false", label:"Nehotové" },
+    ], defaultValue:"true", required:true },
+  ]},
+  { type:"archive",         label:"Archivovat kartu", params:[] },
+  { type:"unarchive",       label:"Obnovit z archivu", params:[] },
+  { type:"move",            label:"Přesunout kartu do seznamu", params:[{ key:"toList", label:"Cílový seznam", type:"list", required:true }] },
+  { type:"addComment",      label:"Přidat komentář", params:[{ key:"text", label:"Text (lze použít {{placeholdery}})", type:"textarea", required:true }] },
+  { type:"addToInbox",      label:"Přidat položku do Inboxu", params:[{ key:"text", label:"Text (lze použít {{placeholdery}})", type:"textarea", required:true }] },
+  { type:"toast",           label:"Zobrazit notifikaci (toast)", params:[
+    { key:"text", label:"Zpráva (lze použít {{placeholdery}})", type:"text", required:true },
+    { key:"kind", label:"Styl", type:"select", options:[
+      { value:"info", label:"Informativní" },
+      { value:"success", label:"Úspěch (zelená)" },
+      { value:"warning", label:"Varování (žlutá)" },
+      { value:"error",   label:"Chyba (červená)" },
+    ], defaultValue:"info" },
+  ]},
+  { type:"playSound",       label:"Přehrát zvuk", params:[
+    { key:"sound", label:"Zvuk", type:"select", options:[
+      { value:"click",  label:"Klik" },
+      { value:"add",    label:"Přidáno" },
+      { value:"done",   label:"Hotovo" },
+      { value:"err",    label:"Chyba" },
+      { value:"warn",   label:"Varování" },
+      { value:"sync",   label:"Sync" },
+    ], defaultValue:"click", required:true },
+  ]},
+  { type:"archiveCompletedInList", label:"Archivovat všechny hotové v seznamu", params:[
+    { key:"listId", label:"Seznam (prázdné = seznam karty)", type:"list" },
+  ]},
+  { type:"setEstimate",     label:"Nastavit odhad času", params:[{ key:"hours", label:"Hodiny", type:"number", required:true }] },
+];
+
+function triggerLabel(trigger) {
+  if (!trigger) return "(bez triggeru)";
+  const def = AUTOMATION_TRIGGERS.find(t => t.type === trigger.type);
+  return def ? def.label : trigger.type;
+}
+function actionLabel(action) {
+  const def = AUTOMATION_ACTIONS.find(a => a.type === action.type);
+  return def ? def.label : action.type;
+}
+
+//#endregion
+
 
 //#region ============= APPLY THEME =============
 function applyTheme() {
@@ -5511,6 +6601,11 @@ async function init() {
       }
     });
   }, 60 * 1000);
+
+  // Automatizace: každé 2 minuty kontrola schedule triggerů (denně v HH:MM, N dní před termínem, …)
+  setInterval(automationScheduleTick, 2 * 60 * 1000);
+  // První kontrola po 5 sekundách (po načtení UI)
+  setTimeout(automationScheduleTick, 5000);
 }
 
 function openWorkspaceManager() {
