@@ -1242,6 +1242,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 <a href="#main" class="skip-link">Přeskočit na obsah</a>
 <header class="app-header" role="banner">
   <button class="icon-btn" id="sidebarToggleBtn" title="Skrýt/zobrazit postranní panel (H)" aria-label="Skrýt nebo zobrazit postranní panel" aria-pressed="false">☰</button>
+  <button class="icon-btn" id="ghSyncBtn" title="Synchronizovat s GitHubem (accesskey S)" aria-label="Synchronizovat s GitHubem" accesskey="s">⟳</button>
   <span class="app-brand" aria-hidden="true">mrello</span>
   <div class="header-divider"></div>
   <div class="ws-switcher">
@@ -2933,8 +2934,23 @@ function renderBoardView(container, board) {
       }, l.name));
     });
   }
+  // Přepínač pro skrytí hotových karet — vedle štítků
+  tb.appendChild(el("span", { style:{ width:"8px" } }));
+  const hideDone = !!(state.ui.boardFilter && state.ui.boardFilter.hideCompleted);
+  tb.appendChild(el("button", {
+    class: hideDone ? "primary" : "ghost",
+    "aria-pressed": hideDone ? "true" : "false",
+    title: hideDone ? "Hotové karty jsou skryté — kliknutím zobrazíš" : "Kliknutím skryješ hotové karty",
+    onclick: () => {
+      if (!state.ui.boardFilter) state.ui.boardFilter = { members:[], labels:[] };
+      state.ui.boardFilter.hideCompleted = !state.ui.boardFilter.hideCompleted;
+      saveState(); renderView();
+      announce(state.ui.boardFilter.hideCompleted ? "Hotové karty skryté." : "Hotové karty zobrazené.");
+    },
+  }, hideDone ? "☑ Skryté hotové" : "☐ Zobrazit vše"));
+
   if ((state.ui.boardFilter && (state.ui.boardFilter.members||[]).length + (state.ui.boardFilter.labels||[]).length) > 0) {
-    tb.appendChild(el("button", { class:"ghost", onclick: () => { state.ui.boardFilter = null; renderView(); } }, "Zrušit filtry"));
+    tb.appendChild(el("button", { class:"ghost", onclick: () => { if (state.ui.boardFilter) { state.ui.boardFilter.members = []; state.ui.boardFilter.labels = []; } renderView(); } }, "Zrušit filtry"));
   }
   container.appendChild(tb);
   // lists
@@ -2957,6 +2973,7 @@ function toggleBoardFilter(kind, id) {
 function passesBoardFilter(card) {
   const f = state.ui.boardFilter;
   if (!f) return true;
+  if (f.hideCompleted && card.completed) return false;
   if (f.members && f.members.length && !f.members.some(id => (card.members||[]).includes(id))) return false;
   if (f.labels && f.labels.length && !f.labels.some(id => (card.labels||[]).includes(id))) return false;
   return true;
@@ -3041,6 +3058,23 @@ function promptNewList(board) {
   inp.addEventListener("keydown", e => { if (e.key === "Enter") e.target.closest(".modal").querySelector("button.primary").click(); });
 }
 function openListMenu(board, list, ev) {
+  const doneInList = cardsInList(list.id).filter(c => c.completed && !c.archived);
+  const archiveCompletedBtn = el("button", {
+    class: doneInList.length ? "ghost" : "ghost",
+    disabled: !doneInList.length,
+    onclick: async () => {
+      if (!doneInList.length) return;
+      const ok = await confirm2(`Archivovat ${doneInList.length} hotových karet v seznamu „${list.name}"?`, { okLabel: "Archivovat" });
+      if (!ok) return;
+      doneInList.forEach(c => archiveCard(c.id));
+      saveState();
+      m.close();
+      renderView();
+      sound.click();
+      toast(`Archivováno ${doneInList.length} karet.`, "success");
+      announce(`Archivováno ${doneInList.length} hotových karet.`);
+    },
+  }, doneInList.length ? `Archivovat hotové (${doneInList.length})` : "Archivovat hotové (žádné)");
   const m = openModal({
     title: list.name,
     body: el("div", {},
@@ -3051,6 +3085,10 @@ function openListMenu(board, list, ev) {
       el("div", { class:"field-row" },
         el("label", {}, T("wipLimit")),
         el("input", { type:"number", min:"0", value: board.wipLimits[list.id] || "", id:"lnWip", placeholder: T("none") })
+      ),
+      el("div", { class:"field-row" },
+        el("label", {}, "Hromadné akce"),
+        archiveCompletedBtn
       )
     ),
     footer: [
@@ -4800,13 +4838,13 @@ function openHelp() {
   const globalItems = [
     ["N", "Nová karta / rychlý zápis (Quick Capture)"],
     ["M", "Nová poznámka (lepicí lístek) a skok do pohledu Poznámek"],
-    ["S", "Uložit do GitHubu (pokud je GitHub zapnutý)"],
     ["I", "Skok do Inboxu"],
     ["P", "Skok do Plánovače"],
     ["G", "Skok na libovolnou nástěnku (otevře výběr)"],
     ["B", "Přepnout na další nástěnku cyklicky"],
     ["T", "Přepnout téma (světlé/tmavé/auto)"],
     ["H", "Skrýt / zobrazit postranní panel"],
+    ["accesskey S", "Uložit do GitHubu (tlačítko ⟳ v headeru)"],
     ["/", "Skok do vyhledávání"],
     ["?", "Tato nápověda"],
     ["Esc", "Zrušit výběr karet / zavřít dialog"],
@@ -4849,7 +4887,9 @@ function openHelp() {
   body.appendChild(el("p", {}, "Členové jsou virtuální — neexistují jako uživatelé, neposílají se jim žádné notifikace. Slouží k vlastnímu rozdělení rolí, např. „já“, „klient“, „dodavatel“. Přiřaď je ke kartám pro filtrování a přehled."));
 
   body.appendChild(el("h3", {}, "GitHub synchronizace"));
-  body.appendChild(el("p", {}, "V nastavení zadej Personal Access Token a heslo. Token se uloží šifrovaně (AES-GCM). Při dalším použití se zeptá na heslo. Ukládání je ruční — přes tlačítko „Uložit do GitHubu“ v nastavení nebo klávesou S kdykoliv. Poslední zápis vyhraje (last-write-wins), takže pokud pracuješ na víc zařízeních, nejdřív načti nejnovější verzi."));
+  body.appendChild(el("p", {}, "Model: GitHub je jediný zdroj pravdy. URL mrello.html?gh=vlastník/repo/větev/cesta.json automaticky při otevření stránky stáhne aktuální verzi souboru a přepíše lokální data (bez dotazu). Lokální změny ukládej tlačítkem ⟳ v headeru (accesskey S) — pošle aktuální stav do GitHubu."));
+  body.appendChild(el("p", {}, "Postup pro více zařízení: otevři stejnou URL s parametrem ?gh=… na každém zařízení. Vždy před započetím práce URL refreshni — stáhne se nejnovější verze. Po skončení práce klikni ⟳ pro upload. Pokud refreshneš před upload-em, lokální nesynchronizované změny se ztratí, protože server má vždy přednost."));
+  body.appendChild(el("p", {}, "Autentizace: pro public repozitáře není třeba token — stahuje se přes raw.githubusercontent.com. Pro upload a pro privátní repa je potřeba Personal Access Token, který se nastaví v Nastavení a uloží šifrovaně (AES-GCM)."));
 
   body.appendChild(el("h3", {}, "O aplikaci"));
   body.appendChild(el("p", {}, "mrello je jednouživatelská aplikace pro správu úkolů. Data se ukládají lokálně do prohlížeče (IndexedDB). Všechny funkce fungují offline."));
@@ -5050,12 +5090,12 @@ async function tryLoadFromGhUrl() {
   if (!ghParam) return false;
   const info = parseGhParam(ghParam);
   if (!info) { toast("Neplatný parametr ?gh (formát: owner/repo/branch/path).", "error"); return false; }
-  // Potvrzení před přepsáním lokálních dat
-  const confirmMsg = `Načíst z GitHubu ${info.owner}/${info.repo} (větev ${info.branch})\nsoubor ${info.path}?\nLokální data budou přepsána.`;
-  const ok = await confirm2(confirmMsg, { okLabel: "Načíst", danger: true });
-  if (!ok) return false;
+  // Žádný potvrzovací dialog — URL parametr znamená "načti tohle teď a vždy".
+  // Pokud uživatel chce uložit lokální změny, musí kliknout na sync PŘED otevřením URL.
+  // Tímto je GitHub vždy single source of truth a konflikt mezi zařízeními nevzniká.
   try {
     toast("Načítám z GitHubu…", "info", 2000);
+    announce("Načítám data z GitHubu.");
     let text = null;
     // Pokus 1: raw.githubusercontent.com (veřejný obsah, bez tokenu)
     const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/${encodeURIComponent(info.branch)}/${info.path.split("/").map(encodeURIComponent).join("/")}`;
@@ -5082,13 +5122,16 @@ async function tryLoadFromGhUrl() {
     }
     const data = JSON.parse(text);
     state = mergeLoadedState(data);
-    // Nastav info v state pro pohodlí
-    state.github.owner = state.github.owner || info.owner;
-    state.github.repo = state.github.repo || info.repo;
-    state.github.branch = state.github.branch || info.branch;
-    state.github.path = state.github.path || info.path;
+    // URL má přednost: sync tlačítko bude vždy ukládat na stejné místo, odkud se načetlo.
+    state.github.owner = info.owner;
+    state.github.repo = info.repo;
+    state.github.branch = info.branch;
+    state.github.path = info.path;
+    state.github.enabled = true;  // umožní sync bez cesty do Nastavení
+    state.github.lastLoadAt = new Date().toISOString();
     await saveState();
     toast("Načteno z GitHubu.", "success", 4000);
+    announce("Data z GitHubu načtena.");
     sound.sync();
     return true;
   } catch (e) {
@@ -5134,6 +5177,39 @@ async function init() {
 
   // header buttons
   $("#sidebarToggleBtn").addEventListener("click", toggleSidebar);
+  $("#ghSyncBtn").addEventListener("click", async () => {
+    // Když není GitHub nakonfigurovaný, otevři nastavení a upozorni
+    if (!state.github.enabled || !state.github.owner || !state.github.repo || !state.github.path) {
+      toast("Nejdřív nastav GitHub v Nastavení (vlastník, repozitář, cesta).", "warning", 5000);
+      sound.err();
+      openSettings();
+      return;
+    }
+    const btn = $("#ghSyncBtn");
+    btn.disabled = true;
+    const origTitle = btn.getAttribute("title");
+    btn.setAttribute("title", "Probíhá synchronizace…");
+    btn.textContent = "⟳";
+    btn.style.opacity = "0.6";
+    announce("Synchronizuji s GitHubem.");
+    try {
+      await ghSave();
+      const ts = new Date();
+      state.github.lastSyncAt = ts.toISOString();
+      saveState();
+      btn.setAttribute("title", "Synchronizovat s GitHubem (accesskey S) — poslední synchronizace: " + formatDate(ts, true));
+    } catch (e) {
+      btn.setAttribute("title", origTitle + " — poslední pokus selhal: " + (e.message || ""));
+    } finally {
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+  // Reflektuj uložený čas poslední synchronizace v titulu tlačítka hned po načtení
+  if (state.github.lastSyncAt) {
+    const ts = new Date(state.github.lastSyncAt);
+    if (!isNaN(ts)) $("#ghSyncBtn").setAttribute("title", "Synchronizovat s GitHubem (accesskey S) — poslední synchronizace: " + formatDate(ts, true));
+  }
   $("#wsManage").addEventListener("click", openWorkspaceManager);
   $("#wsSelect").addEventListener("change", (e) => { state.ui.currentWorkspace = e.target.value; state.ui.currentView = { type:"welcome" }; saveState(); renderAll(); });
   $("#newBoardBtn").addEventListener("click", promptNewBoard);
@@ -5170,9 +5246,6 @@ async function init() {
       case "?":  e.preventDefault(); openHelp(); return;
       case "n": case "N":  e.preventDefault(); openQuickCapture(); return;
       case "m": case "M":  e.preventDefault(); createNewSticky(); return;
-      case "s": case "S":
-        if (state.github.enabled) { e.preventDefault(); ghSave(); }
-        return;
       case "g": case "G":  e.preventDefault(); pickBoardGoto(); return;
       case "b": case "B":  e.preventDefault(); cycleBoard(1); return;
       case "i": case "I":  e.preventDefault(); state.ui.currentView = { type:"inbox" }; renderAll(); return;
