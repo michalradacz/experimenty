@@ -245,12 +245,26 @@ header.app-header h1 {
 }
 
 /* Layout */
+.app-brand {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: .02em;
+  padding: 0 4px;
+}
 .app-layout {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
   height: calc(100vh - var(--header-h));
 }
 .app-layout.no-sidebar { grid-template-columns: 0 1fr; }
+.app-layout.no-sidebar .sidebar { display: none; }
+/* H1 názvu nástěnky v hlavní části */
+.view-h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg);
+}
 .sidebar {
   background: var(--bg-alt);
   border-right: 1px solid var(--border);
@@ -1227,7 +1241,8 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 <body>
 <a href="#main" class="skip-link">Přeskočit na obsah</a>
 <header class="app-header" role="banner">
-  <h1>mrello</h1>
+  <button class="icon-btn" id="sidebarToggleBtn" title="Skrýt/zobrazit postranní panel (H)" aria-label="Skrýt nebo zobrazit postranní panel" aria-pressed="false">☰</button>
+  <span class="app-brand" aria-hidden="true">mrello</span>
   <div class="header-divider"></div>
   <div class="ws-switcher">
     <label for="wsSelect" class="sr-only" data-i18n="workspace">Pracovní prostor</label>
@@ -2036,7 +2051,19 @@ function mdRender(src) {
   s = s.replace(/^---+$/gm, "<hr>");
   // blockquote
   s = s.replace(/^&gt; (.*)$/gm, "<blockquote>$1</blockquote>");
-  // bold/italic
+  // Seznamy MUSÍ být zpracovány PŘED kurzivou (italic), jinak by `* položka` bylo chybně
+  // matchováno jako otevírací hvězdička italic. Podporujeme obě značky: `-` i `*`.
+  // Nečíslovaný seznam
+  s = s.replace(/(?:^[-*] .*(?:\n|$))+/gm, (m) => {
+    const items = m.trim().split("\n").map(l => l.replace(/^[-*] /, "")).map(t => `<li>${t}</li>`).join("");
+    return `<ul>${items}</ul>`;
+  });
+  // Číslovaný seznam
+  s = s.replace(/(?:^\d+\. .*(?:\n|$))+/gm, (m) => {
+    const items = m.trim().split("\n").map(l => l.replace(/^\d+\. /, "")).map(t => `<li>${t}</li>`).join("");
+    return `<ol>${items}</ol>`;
+  });
+  // bold/italic — AŽ po seznamech, aby nepřebila ukazatele seznamu
   s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
   s = s.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
@@ -2045,16 +2072,6 @@ function mdRender(src) {
   s = s.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   // auto-link bare URLs
   s = s.replace(/(^|[^"=\(>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
-  // unordered list
-  s = s.replace(/(?:^- .*(?:\n|$))+/gm, (m) => {
-    const items = m.trim().split("\n").map(l => l.replace(/^- /, "")).map(t => `<li>${t}</li>`).join("");
-    return `<ul>${items}</ul>`;
-  });
-  // ordered list
-  s = s.replace(/(?:^\d+\. .*(?:\n|$))+/gm, (m) => {
-    const items = m.trim().split("\n").map(l => l.replace(/^\d+\. /, "")).map(t => `<li>${t}</li>`).join("");
-    return `<ol>${items}</ol>`;
-  });
   // paragraphs (split by blank lines)
   s = s.split(/\n{2,}/).map(p => {
     if (/^\s*<(h\d|ul|ol|pre|blockquote|hr)/.test(p)) return p;
@@ -2748,6 +2765,9 @@ function renderView() {
   const c = $("#viewContainer");
   clear(c);
   const v = state.ui.currentView;
+  // H1 v hlavní části – název aktuálního pohledu (pro screen reader + vizuální hierarchii)
+  const h1Text = viewHeadlineText(v);
+  if (h1Text) c.appendChild(el("h1", { class:"view-h1", id:"mainH1" }, h1Text));
   if (v.type === "welcome") return renderWelcome(c);
   if (v.type === "board") {
     const b = getBoard(v.boardId);
@@ -2766,14 +2786,60 @@ function renderView() {
   if (v.type === "stickies") return renderStickiesView(c);
   if (v.type === "members") return renderMembersView(c);
   if (v.type === "filter") return renderFilterView(c, v.filterId);
+  if (v.type === "search") return renderSearchView(c, v.query);
+}
+// Vrátí text h1 pro aktuální pohled. Pokud pohled má vlastní h1 uvnitř, vracíme "".
+function viewHeadlineText(v) {
+  if (v.type === "welcome") return "";  // welcome má vlastní h2
+  if (v.type === "board") {
+    const b = getBoard(v.boardId);
+    if (!b) return "";
+    const t = v.viewType || "board";
+    const suffix = { board:"", table:" – tabulka", calendar:" – kalendář", timeline:" – časová osa", dashboard:" – přehled", eisenhower:" – matice priorit" }[t] || "";
+    return b.name + suffix;
+  }
+  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
+  if (v.type === "inbox") return T("inbox");
+  if (v.type === "planner") return T("planner");
+  if (v.type === "stickies") return T("stickies");
+  if (v.type === "members") return T("members");
+  if (v.type === "filter") { const f = (state.savedFilters || []).find(x => x.id === v.filterId); return f ? f.name : "Filtr"; }
+  if (v.type === "search") return 'Hledání: "' + (v.query || "") + '"';
+  return "";
 }
 function renderAll() {
   applyTheme();
   applyI18n();
+  // Postranní panel — aplikuj uložený stav
+  const layout = document.querySelector(".app-layout");
+  if (layout) layout.classList.toggle("no-sidebar", !!state.ui.sidebarCollapsed);
+  const toggleBtn = $("#sidebarToggleBtn");
+  if (toggleBtn) toggleBtn.setAttribute("aria-pressed", state.ui.sidebarCollapsed ? "true" : "false");
   renderHeader();
   renderSidebar();
   renderView();
   setGhStatus("", "GitHub");
+  updateDocumentTitle();
+}
+function toggleSidebar() {
+  state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed;
+  saveState();
+  renderAll();
+  announce(state.ui.sidebarCollapsed ? "Postranní panel skryt." : "Postranní panel zobrazen.");
+  sound.click();
+}
+function updateDocumentTitle() {
+  const v = state.ui.currentView;
+  let name = "";
+  if (v.type === "board") { const b = getBoard(v.boardId); if (b) name = b.name; }
+  else if (v.type === "smart") name = { today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart] || "";
+  else if (v.type === "inbox") name = T("inbox");
+  else if (v.type === "planner") name = T("planner");
+  else if (v.type === "stickies") name = T("stickies");
+  else if (v.type === "members") name = T("members");
+  else if (v.type === "search") name = "Vyhledávání";
+  else if (v.type === "filter") { const f = (state.savedFilters || []).find(x => x.id === v.filterId); if (f) name = f.name; }
+  document.title = name ? (name + " – mrello") : "mrello";
 }
 function renderWelcome(c) {
   c.appendChild(el("div", { style:{ padding:"40px 24px", maxWidth:"640px", margin:"0 auto" } },
@@ -3143,11 +3209,25 @@ function renderCard(card, list, position) {
     ind.appendChild(el("span", { class:"subcards-badge", title:"Podkarty" }, `↳ ${done}/${subs.length}`));
   }
   if (eff.dependencies) {
-    if (eff.dependencies.blocks.length) ind.appendChild(el("span", { class:"dep-badge", title:"Blokuje X karet" }, "→ " + eff.dependencies.blocks.length));
-    if (eff.dependencies.blockedBy.length) ind.appendChild(el("span", { class:"dep-badge", style:{ background:"var(--warning-bg)", color:"var(--warning)" }, title:"Blokována" }, "⊘ " + eff.dependencies.blockedBy.length));
+    const blCount = (eff.dependencies.blocks || []).length;
+    const byCount = (eff.dependencies.blockedBy || []).length;
+    const relCount = (eff.dependencies.related || []).length;
+    // Spočítej kolik z blokujících karet je ještě otevřených (reálně blokuje)
+    const openBlocking = (eff.dependencies.blockedBy || []).filter(id => {
+      const o = getCard(id); return o && !o.completed && !o.archived && !o.deleted;
+    }).length;
+    if (blCount) ind.appendChild(el("span", { class:"dep-badge", title: `Tato karta blokuje ${blCount} dalších` }, "🚧 blokuje " + blCount));
+    if (byCount) {
+      const stillOpen = openBlocking > 0;
+      ind.appendChild(el("span", {
+        class:"dep-badge",
+        style:{ background: stillOpen ? "var(--danger-bg)" : "var(--success-bg)", color: stillOpen ? "var(--danger)" : "var(--success)" },
+        title: stillOpen ? `Blokována ${openBlocking} otevřenými kartami` : "Všechny blokující karty jsou hotové"
+      }, stillOpen ? ("⛔ čeká na " + openBlocking) : ("✅ odblokována")));
+    }
+    if (relCount) ind.appendChild(el("span", { class:"dep-badge", title:"Souvisí s jinou kartou" }, "🔗 " + relCount));
   }
-  if (isMirror) ind.appendChild(el("span", { class:"mirror-badge", title:"Zrcadlená kopie" }, "↪ mirror"));
-  if (blockedByOpen) ind.appendChild(el("span", { class:"dep-badge", style:{ background:"var(--danger-bg)", color:"var(--danger)" }, title:"Blokována otevřenou závislostí" }, "blokována"));
+  if (isMirror) ind.appendChild(el("span", { class:"mirror-badge", title:"Zrcadlená kopie" }, "↪ zrcadlo"));
   if (ind.children.length) node.appendChild(ind);
   return node;
 }
@@ -3164,6 +3244,14 @@ function cardAriaLabel(card, eff) {
   if (eff.labels && eff.labels.length) parts.push("štítky: " + eff.labels.map(id => { const l = getLabel(eff.boardId, id); return l ? l.name : ""; }).filter(Boolean).join(", "));
   const prog = checklistProgress(eff);
   if (prog.total) parts.push("checklist " + prog.done + " z " + prog.total);
+  if (eff.dependencies) {
+    const openBlocking = (eff.dependencies.blockedBy || []).filter(id => {
+      const o = getCard(id); return o && !o.completed && !o.archived && !o.deleted;
+    }).length;
+    if (openBlocking > 0) parts.push("blokována " + openBlocking + " otevřenými kartami");
+    else if ((eff.dependencies.blockedBy || []).length > 0) parts.push("všechny blokující karty jsou hotové, připraveno");
+    if ((eff.dependencies.blocks || []).length > 0) parts.push("blokuje " + eff.dependencies.blocks.length + " dalších karet");
+  }
   return parts.join(", ");
 }
 function formatHours(seconds) {
@@ -3746,22 +3834,85 @@ function openCardDetail(cardId) {
   const aSec = el("section", { "aria-label": T("attachments") });
   aSec.appendChild(el("h4", {}, T("attachments")));
   const aList = el("ul", { class:"attachments" });
+  function formatBytes(b) {
+    if (b < 1024) return b + " B";
+    if (b < 1024*1024) return (b/1024).toFixed(1) + " kB";
+    return (b/1024/1024).toFixed(2) + " MB";
+  }
   function refreshAttachments() {
     clear(aList);
     (real.attachments || []).forEach(at => {
       const li = el("li");
-      const a = el("a", { href: at.url, target:"_blank", rel:"noopener" }, at.name || at.url);
-      const rm = el("button", { class:"ghost small", onclick: () => {
+      // Dvě možnosti: URL příloha (href na externí zdroj) nebo soubor (dataUrl = base64)
+      const href = at.dataUrl || at.url || "#";
+      const linkAttrs = { href, target:"_blank", rel:"noopener" };
+      // Pokud je to soubor, nabídni download atribut (aby se stáhl, ne zobrazil)
+      if (at.dataUrl && at.name) linkAttrs.download = at.name;
+      const link = el("a", linkAttrs, at.name || at.url || "(bez názvu)");
+      const meta = el("span", { class:"muted small" },
+        at.dataUrl ? " " + (at.type || "soubor") + ", " + formatBytes(at.size || 0) : " (URL)"
+      );
+      const rm = el("button", { class:"ghost small", "aria-label":"Smazat přílohu", onclick: () => {
         real.attachments = real.attachments.filter(x => x.id !== at.id);
         saveState();
         refreshAttachments();
+        sound.remove();
       } }, "×");
-      li.append(a, " ", rm);
+      li.append(link, meta, " ", rm);
       aList.appendChild(li);
     });
+    if (!(real.attachments || []).length) aList.appendChild(el("li", { class:"muted small" }, "(žádné)"));
   }
   refreshAttachments();
   aSec.appendChild(aList);
+
+  // Nahrání souborů — čteme je přes FileReader do base64 DataURL a ukládáme do stavu.
+  // Varovat při velkých souborech (IndexedDB to přežije, ale soubor nad ~5 MB znatelně zvětšuje stav).
+  const WARN_SIZE = 5 * 1024 * 1024;  // 5 MB
+  const fileInp = el("input", { type:"file", multiple:true, "aria-label":"Nahrát soubory" });
+  fileInp.addEventListener("change", async () => {
+    const files = Array.from(fileInp.files || []);
+    if (!files.length) return;
+    let totalSize = 0;
+    for (const f of files) totalSize += f.size;
+    if (totalSize > WARN_SIZE) {
+      const mb = (totalSize / 1024 / 1024).toFixed(1);
+      const ok = await confirm2(
+        `Opravdu nahrát soubory o celkové velikosti ${mb} MB?\nBinární data se ukládají přímo do lokálního stavu prohlížeče (base64) a synchronizují se i do GitHubu. Pro velké soubory raději použij URL odkaz.`,
+        { danger: true, okLabel: "Nahrát" }
+      );
+      if (!ok) { fileInp.value = ""; return; }
+    }
+    if (!real.attachments) real.attachments = [];
+    for (const f of files) {
+      try {
+        const dataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = () => rej(r.error);
+          r.readAsDataURL(f);
+        });
+        real.attachments.push({
+          id: uid("at_"),
+          name: f.name,
+          type: f.type || "application/octet-stream",
+          size: f.size,
+          dataUrl,
+          createdAt: Date.now(),
+        });
+      } catch (e) {
+        toast("Chyba při čtení souboru " + f.name + ": " + e.message, "error");
+      }
+    }
+    fileInp.value = "";
+    saveState();
+    refreshAttachments();
+    sound.add();
+    announce("Nahráno souborů: " + files.length);
+  });
+  aSec.appendChild(el("div", { style:{ marginTop:"8px" } }, el("label", {}, "Nahrát soubor(y): "), fileInp));
+
+  // URL příloha (externí odkaz) — zachováno
   const aUrl = el("input", { type:"url", placeholder: T("attachmentUrl") });
   const aName = el("input", { type:"text", placeholder: T("attachmentName") });
   const aAdd = el("button", { class:"ghost", onclick: () => {
@@ -3772,8 +3923,8 @@ function openCardDetail(cardId) {
     saveState();
     refreshAttachments();
     sound.add();
-  } }, "+ " + T("addAttachment"));
-  aSec.append(aUrl, aName, aAdd);
+  } }, "+ URL");
+  aSec.append(el("div", { style:{ marginTop:"8px" } }, aUrl, aName, aAdd));
   right.appendChild(aSec);
 
   // Time tracking
@@ -3812,15 +3963,19 @@ function openCardDetail(cardId) {
   function depRow(kind, label) {
     const row = el("div", { class:"dep-row" });
     const list = el("ul");
-    (real[kind] || []).forEach(otherId => {
+    const deps = (real.dependencies && real.dependencies[kind]) || [];
+    deps.forEach(otherId => {
       const oc = getCard(otherId);
       if (!oc) return;
       const li = el("li");
-      const link = el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(otherId); } }, oc.title);
-      const rm = el("button", { class:"ghost small", onclick: () => { setDep(real.id, otherId, kind, false); refreshDeps(); } }, "×");
+      const blockedFlag = kind === "blockedBy" && !oc.completed ? "⛔ " : "";
+      const doneFlag = oc.completed ? "✓ " : "";
+      const link = el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(otherId); } }, blockedFlag + doneFlag + oc.title);
+      const rm = el("button", { class:"ghost small", "aria-label": "Odebrat závislost", onclick: () => { setDep(real.id, otherId, kind, false); refreshDeps(); } }, "×");
       li.append(link, " ", rm);
       list.appendChild(li);
     });
+    if (!deps.length) list.appendChild(el("li", { class:"muted small" }, "(žádné)"));
     const addBtn = el("button", { class:"ghost", onclick: async () => {
       const oid = await pickCard();
       if (oid && oid !== real.id) {
@@ -4051,7 +4206,6 @@ function instantiateCardTemplate(tplId, listId) {
 function renderTableView(container, board) {
   const cards = cardsInBoard(board.id).filter(c => !c.archived);
   const wrap = el("div", { class:"view-wrap table-view" });
-  wrap.appendChild(el("h2", {}, board.name + " — " + T("tableView")));
   const table = el("table", { class:"data-table", "aria-label": board.name });
   const thead = el("thead");
   const headerRow = el("tr");
@@ -4129,7 +4283,7 @@ function renderCalendarView(container, board) {
   const prev = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() - 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "‹");
   const next = el("button", { class:"ghost", onclick: () => { cur.setMonth(cur.getMonth() + 1); state.ui.calCursor = cur.toISOString(); saveState(); renderView(); } }, "›");
   const todayBtn = el("button", { class:"ghost", onclick: () => { state.ui.calCursor = new Date().toISOString(); saveState(); renderView(); } }, T("today"));
-  headBar.append(prev, el("h2", {}, mn[cur.getMonth()] + " " + cur.getFullYear()), next, todayBtn);
+  headBar.append(prev, el("h3", { style:{ margin:"0 8px" } }, mn[cur.getMonth()] + " " + cur.getFullYear()), next, todayBtn);
   wrap.appendChild(headBar);
 
   const grid = el("div", { class:"cal-grid", role:"grid" });
@@ -4162,7 +4316,6 @@ function renderCalendarView(container, board) {
 //#region ============= TIMELINE VIEW =============
 function renderTimelineView(container, board) {
   const wrap = el("div", { class:"view-wrap timeline-view" });
-  wrap.appendChild(el("h2", {}, board.name + " — " + T("timelineView")));
   const cards = cardsInBoard(board.id).filter(c => !c.archived && (c.startDate || c.dueDate));
   if (!cards.length) { wrap.appendChild(el("p", { class:"muted" }, "Karty bez termínů. Přidej startDate/dueDate.")); container.appendChild(wrap); return; }
   let minD = null, maxD = null;
@@ -4201,7 +4354,6 @@ function renderTimelineView(container, board) {
 //#region ============= DASHBOARD VIEW =============
 function renderDashboardView(container, board) {
   const wrap = el("div", { class:"view-wrap dashboard-view" });
-  wrap.appendChild(el("h2", {}, board.name + " — " + T("dashboardView")));
   const cards = cardsInBoard(board.id).filter(c => !c.archived);
   const lists = listsInBoard(board.id);
   // Tile: kartu na list
@@ -4254,7 +4406,6 @@ function renderDashboardView(container, board) {
 //#region ============= EISENHOWER MATRIX =============
 function renderEisenhowerView(container, board) {
   const wrap = el("div", { class:"view-wrap eis-view" });
-  wrap.appendChild(el("h2", {}, board.name + " — " + T("eisenhowerView")));
   wrap.appendChild(el("p", { class:"muted" }, "Karty se třídí podle štítků „Urgentní“ a „Důležité“."));
   const findLabel = (n) => board.labels.find(l => l.name.toLowerCase().includes(n));
   const lUrgent = findLabel("urgent");
@@ -4291,7 +4442,6 @@ function renderEisenhowerView(container, board) {
 function renderSmartView(container, smart) {
   const wrap = el("div", { class:"view-wrap smart-view" });
   const titles = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
-  wrap.appendChild(el("h2", {}, titles[smart] || smart));
   let cards = [];
   if (smart === "today") cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && isoLocalDate(new Date()) === c.dueDate);
   else if (smart === "week") {
@@ -4342,7 +4492,6 @@ function renderSmartView(container, smart) {
 //#region ============= INBOX VIEW =============
 function renderInboxView(container) {
   const wrap = el("div", { class:"view-wrap inbox-view" });
-  wrap.appendChild(el("h2", {}, T("inbox")));
   const addRow = el("div", { class:"add-row" });
   const inp = el("input", { type:"text", placeholder: T("addInbox"), "aria-label": T("addInbox") });
   const btn = el("button", { class:"primary", onclick: () => {
@@ -4385,7 +4534,6 @@ function renderInboxView(container) {
 //#region ============= PLANNER VIEW =============
 function renderPlannerView(container) {
   const wrap = el("div", { class:"view-wrap planner-view" });
-  wrap.appendChild(el("h2", {}, T("planner")));
   const today = dateOnly(new Date());
   for (let i = 0; i < 7; i++) {
     const day = addDays(today, i);
@@ -4412,7 +4560,6 @@ function renderPlannerView(container) {
 //#region ============= STICKIES VIEW =============
 function renderStickiesView(container) {
   const wrap = el("div", { class:"view-wrap stickies-view" });
-  wrap.appendChild(el("h2", {}, T("stickies")));
   const addBtn = el("button", { class:"primary", onclick: () => {
     state.stickyNotes.push({ id: uid("sn_"), text:"", color:"--label-c2", x: 20 + Math.floor(Math.random()*200), y: 20 + Math.floor(Math.random()*100), w: 220, h: 160, createdAt: Date.now() });
     saveState(); renderView(); sound.add();
@@ -4445,7 +4592,6 @@ function renderStickiesView(container) {
 //#region ============= MEMBERS VIEW =============
 function renderMembersView(container) {
   const wrap = el("div", { class:"view-wrap members-view" });
-  wrap.appendChild(el("h2", {}, T("members")));
   wrap.appendChild(el("p", { class:"muted" }, "Virtuální členové. Lze je přiřadit deskám i kartám. Bez notifikací."));
   const addRow = el("div", { class:"add-row" });
   const ni = el("input", { type:"text", placeholder: T("memberName"), "aria-label": T("memberName") });
@@ -4498,7 +4644,6 @@ function renderFilterView(container, filterId) {
   const f = state.savedFilters.find(x => x.id === filterId);
   const wrap = el("div", { class:"view-wrap" });
   if (!f) { wrap.appendChild(el("p", {}, "Filtr nenalezen.")); container.appendChild(wrap); return; }
-  wrap.appendChild(el("h2", {}, "Filtr: " + f.name));
   const cards = applyFilter(f);
   if (!cards.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
   const ul = el("ul", { class:"smart-list" });
@@ -4529,7 +4674,6 @@ function applyFilter(f) {
 function renderSearchView(container, query) {
   const q = (query || "").toLowerCase().trim();
   const wrap = el("div", { class:"view-wrap" });
-  wrap.appendChild(el("h2", {}, 'Vyhledávání: "' + query + '"'));
   if (!q) { container.appendChild(wrap); return; }
   const cards = state.cards.filter(c => !c.archived && (c.title.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q) || (c.comments || []).some(cm => cm.text.toLowerCase().includes(q))));
   wrap.appendChild(el("p", { class:"muted" }, "Nalezeno: " + cards.length));
@@ -4662,6 +4806,7 @@ function openHelp() {
     ["G", "Skok na libovolnou nástěnku (otevře výběr)"],
     ["B", "Přepnout na další nástěnku cyklicky"],
     ["T", "Přepnout téma (světlé/tmavé/auto)"],
+    ["H", "Skrýt / zobrazit postranní panel"],
     ["/", "Skok do vyhledávání"],
     ["?", "Tato nápověda"],
     ["Esc", "Zrušit výběr karet / zavřít dialog"],
@@ -4873,6 +5018,95 @@ function applyTheme() {
 }
 //#endregion
 
+//#region ============= GITHUB URL LOADER =============
+// Parse `?gh=owner/repo/branch/path` nebo `?gh=owner/repo/path` (default branch = main)
+// Pokud je repo veřejné, stáhne přes raw.githubusercontent.com bez tokenu.
+// Pokud selže (404/401), zkusí přes GitHub API s tokenem (pokud je nastaven).
+function parseGhParam(param) {
+  if (!param) return null;
+  // povolené znaky: písmena, čísla, pomlčky, podtržítka, tečky, lomítka
+  const parts = param.split("/").filter(Boolean);
+  if (parts.length < 3) return null;
+  const owner = parts[0];
+  const repo = parts[1];
+  // Heuristika: druhý segment může být větev (pokud je to jedno slovo a následuje cesta)
+  // Pokud má třetí segment tečku / příponu a další segmenty neexistují, pak je cesta jedna část.
+  // Zkusíme nejběžnější tvar: owner/repo/branch/file.json  → branch = parts[2], path = parts[3..]
+  // Alternativně owner/repo/file.json → branch = "main", path = parts[2..]
+  let branch, path;
+  if (parts.length === 3) {
+    branch = "main";
+    path = parts[2];
+  } else {
+    branch = parts[2];
+    path = parts.slice(3).join("/");
+  }
+  return { owner, repo, branch, path };
+}
+
+async function tryLoadFromGhUrl() {
+  const qs = new URLSearchParams(location.search);
+  const ghParam = qs.get("gh");
+  if (!ghParam) return false;
+  const info = parseGhParam(ghParam);
+  if (!info) { toast("Neplatný parametr ?gh (formát: owner/repo/branch/path).", "error"); return false; }
+  // Potvrzení před přepsáním lokálních dat
+  const confirmMsg = `Načíst z GitHubu ${info.owner}/${info.repo} (větev ${info.branch})\nsoubor ${info.path}?\nLokální data budou přepsána.`;
+  const ok = await confirm2(confirmMsg, { okLabel: "Načíst", danger: true });
+  if (!ok) return false;
+  try {
+    toast("Načítám z GitHubu…", "info", 2000);
+    let text = null;
+    // Pokus 1: raw.githubusercontent.com (veřejný obsah, bez tokenu)
+    const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/${encodeURIComponent(info.branch)}/${info.path.split("/").map(encodeURIComponent).join("/")}`;
+    try {
+      const r = await fetch(rawUrl, { cache: "no-cache" });
+      if (r.ok) text = await r.text();
+    } catch {}
+    // Pokus 2: GitHub API s tokenem (pokud veřejný raw selhal a máme token)
+    if (!text) {
+      try {
+        const tok = state.github.token || (await getGhTokenAsync());
+        if (!tok) throw new Error("Token není nastaven (repo asi privátní).");
+        const apiUrl = `https://api.github.com/repos/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/contents/${info.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(info.branch)}`;
+        const r = await fetch(apiUrl, { headers: { "Authorization": "token " + tok, "Accept": "application/vnd.github+json" }});
+        if (!r.ok) throw new Error("GitHub API vrátil " + r.status);
+        const j = await r.json();
+        if (!j.content) throw new Error("Odpověď neobsahuje content.");
+        text = atob(j.content.replace(/\s+/g, ""));
+        // base64 → UTF-8
+        try { text = decodeURIComponent(escape(text)); } catch {}
+      } catch (e) {
+        throw new Error("Stažení selhalo: " + e.message);
+      }
+    }
+    const data = JSON.parse(text);
+    state = mergeLoadedState(data);
+    // Nastav info v state pro pohodlí
+    state.github.owner = state.github.owner || info.owner;
+    state.github.repo = state.github.repo || info.repo;
+    state.github.branch = state.github.branch || info.branch;
+    state.github.path = state.github.path || info.path;
+    await saveState();
+    toast("Načteno z GitHubu.", "success", 4000);
+    sound.sync();
+    return true;
+  } catch (e) {
+    toast("Chyba při načítání: " + e.message, "error", 6000);
+    sound.err();
+    return false;
+  }
+}
+// Pomocná funkce: vyžádá si token (pokud je uložený zašifrovaný)
+async function getGhTokenAsync() {
+  if (state.github.token) return state.github.token;
+  // TODO: zde by se dal dešifrovat encrypted token přes heslo uživatele;
+  // momentálně v této verzi ho ale ukládáme jen rovnou do stavu (ne zašifrovaný),
+  // takže stačí to co je výše.
+  return null;
+}
+//#endregion
+
 //#region ============= INIT =============
 async function init() {
   // load state
@@ -4891,10 +5125,15 @@ async function init() {
   applyI18n();
   renderAll();
 
+  // Pokud je v URL parametr ?gh=owner/repo/branch/path, nabídne načtení po vykreslení UI
+  // (modální dialog s potvrzením, protože přepíše lokální data)
+  tryLoadFromGhUrl().then(loaded => { if (loaded) renderAll(); });
+
   // resume Pomodoro?
   if (state.pomodoro && state.pomodoro.active) scheduleNextPomo();
 
   // header buttons
+  $("#sidebarToggleBtn").addEventListener("click", toggleSidebar);
   $("#wsManage").addEventListener("click", openWorkspaceManager);
   $("#wsSelect").addEventListener("change", (e) => { state.ui.currentWorkspace = e.target.value; state.ui.currentView = { type:"welcome" }; saveState(); renderAll(); });
   $("#newBoardBtn").addEventListener("click", promptNewBoard);
@@ -4944,6 +5183,7 @@ async function init() {
         applyTheme(); saveState();
         announce("Téma: " + state.settings.theme);
         return;
+      case "h": case "H":  e.preventDefault(); toggleSidebar(); return;
       case "Escape":
         if (state.ui.focusCardId) { state.ui.focusCardId = null; document.body.classList.remove("focus-mode"); renderAll(); }
         else if (state.ui.selectedCards && state.ui.selectedCards.length) { state.ui.selectedCards = []; renderView(); }
