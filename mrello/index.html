@@ -4962,9 +4962,14 @@ function renderCalendarView(container, board) {
   dow.forEach(d => grid.appendChild(el("div", { class:"cal-dow", role:"columnheader" }, d)));
 
   const start = startOfWeek(new Date(cur));
-  const cards = (board ? cardsInBoard(board.id) : state.cards).filter(c => !c.archived && c.dueDate);
+  const cards = (board ? cardsInBoard(board.id) : state.cards).filter(c => !c.deleted && !c.archived && c.dueDate);
   const byDay = {};
-  cards.forEach(c => { (byDay[c.dueDate] = byDay[c.dueDate] || []).push(c); });
+  // Klíč normalizujeme přes isoLocalDate — funguje stejně pro dueDate uložené jako "YYYY-MM-DD"
+  // i pro stará data s časovou složkou (např. "YYYY-MM-DDTHH:MM:SSZ" z importu).
+  cards.forEach(c => {
+    const key = isoLocalDate(c.dueDate);
+    (byDay[key] = byDay[key] || []).push(c);
+  });
 
   for (let i = 0; i < 42; i++) {
     const day = addDays(start, i);
@@ -5114,19 +5119,25 @@ function renderSmartView(container, smart) {
   const wrap = el("div", { class:"view-wrap smart-view" });
   const titles = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
   let cards = [];
-  if (smart === "today") cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && isoLocalDate(new Date()) === c.dueDate);
-  else if (smart === "week") {
-    const today = dateOnly(new Date());
-    const end = addDays(today, 7);
-    cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) >= today && new Date(c.dueDate) <= end);
+  // Filtry jsou sjednocené s countSmart() — musí platit: pokud počítáme N karet v sidebaru,
+  // vidíme jich přesně N v zobrazení. Používáme date-object porovnání (isToday, new Date < new Date),
+  // ne string-srovnání, aby to fungovalo i pro termíny uložené včetně časové části.
+  if (smart === "today") {
+    cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.dueDate && isToday(c.dueDate));
   }
-  else if (smart === "overdue") cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) < dateOnly(new Date()));
-  else if (smart === "nodate") cards = state.cards.filter(c => !c.archived && !c.completed && !c.dueDate);
-  else if (smart === "completed") cards = state.cards.filter(c => !c.archived && c.completed);
-  else if (smart === "archive") cards = state.cards.filter(c => c.archived);
+  else if (smart === "week") {
+    const start = startOfWeek();
+    const end = addDays(start, 7);
+    cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.dueDate &&
+      new Date(c.dueDate) >= start && new Date(c.dueDate) < end);
+  }
+  else if (smart === "overdue") cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) < dateOnly(new Date()));
+  else if (smart === "nodate") cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && !c.dueDate && c.cardType !== "mirror");
+  else if (smart === "completed") cards = state.cards.filter(c => !c.deleted && !c.archived && c.completed);
+  else if (smart === "archive") cards = state.cards.filter(c => !c.deleted && c.archived);
   else if (smart === "trash") {
-    // trash z karet a nástěnek
-    const cs = state.cards.filter(c => state.trash.includes(c.id));
+    // Smazané karty přes pole c.deleted (konzistentní s countSmart)
+    const cs = state.cards.filter(c => c.deleted);
     const trashUl = el("ul", { class:"smart-list" });
     if (!cs.length) trashUl.appendChild(el("li", { class:"muted" }, T("nothingHere")));
     cs.forEach(c => {
@@ -5145,12 +5156,24 @@ function renderSmartView(container, smart) {
   }
   if (!cards.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
   else {
+    // Seřadit: podle termínu (nejbližší první), pak podle názvu
+    cards.sort((a, b) => {
+      if (a.dueDate && b.dueDate) return new Date(a.dueDate) - new Date(b.dueDate);
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+      return (a.title || "").localeCompare(b.title || "", "cs");
+    });
     const ul = el("ul", { class:"smart-list" });
     cards.forEach(c => {
       const li = el("li");
       const b = getBoard(c.boardId);
+      const l = getList(c.listId);
       const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title);
-      const meta = el("span", { class:"muted" }, " — " + (b ? b.name : "") + (c.dueDate ? ", " + formatDate(c.dueDate) : ""));
+      const metaParts = [];
+      if (b) metaParts.push(b.name);
+      if (l) metaParts.push(l.name);
+      if (c.dueDate) metaParts.push(formatDate(c.dueDate));
+      const meta = el("span", { class:"muted" }, " — " + metaParts.join(", "));
       li.append(btn, meta);
       ul.appendChild(li);
     });
@@ -5211,7 +5234,9 @@ function renderPlannerView(container) {
     const iso = isoLocalDate(day);
     const sec = el("section", { class:"planner-day" });
     sec.appendChild(el("h3", {}, formatDate(iso)));
-    const cards = state.cards.filter(c => !c.archived && !c.completed && c.dueDate === iso);
+    const cards = state.cards.filter(c =>
+      !c.deleted && !c.archived && !c.completed && c.dueDate && isoLocalDate(c.dueDate) === iso
+    );
     const ul = el("ul");
     if (!cards.length) ul.appendChild(el("li", { class:"muted" }, T("nothingHere")));
     cards.forEach(c => {
