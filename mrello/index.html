@@ -348,6 +348,37 @@ main.app-main {
   flex-direction: column;
   max-height: calc(100vh - var(--header-h) - 110px);
 }
+/* Skrytý sloupec — úzký proužek s názvem seznamu, klikni pro zobrazení */
+.list.list-collapsed {
+  width: 36px;
+  min-width: 36px;
+  background: var(--bg-list);
+  border: 1px dashed var(--border);
+  align-items: stretch;
+  padding: 0;
+}
+.list.list-collapsed .list-expand-btn {
+  flex: 1;
+  width: 100%;
+  min-height: 100%;
+  background: transparent;
+  border: none;
+  padding: 10px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  color: var(--fg);
+  text-align: left;
+  white-space: nowrap;
+}
+.list.list-collapsed .list-expand-btn:hover,
+.list.list-collapsed .list-expand-btn:focus {
+  background: var(--bg-alt);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .list-header {
   padding: 10px 12px 6px;
   display: flex;
@@ -1249,6 +1280,11 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
   width: auto;
   height: auto;
 }
+#ghSyncBtn.sync-error {
+  background: var(--danger-bg, #fee);
+  color: var(--danger, #c00);
+  border-color: var(--danger, #c00);
+}
 
 /* Zaškrtávátko pro hromadný výběr v kartě */
 .card-select-row {
@@ -1922,6 +1958,8 @@ const initialState = {
     currentWorkspace: null,
     currentView: { type:"welcome" },
     sidebarCollapsed: false,
+    hiddenLists: {},
+    checklistHideDone: {},
   },
   pomodoro: { active:false, cardId:null, startedAt:null, type:"work", completed:0 },
 };
@@ -1958,7 +1996,13 @@ function syncButtonLabel() {
   const g = state.github || {};
   const loadAt = g.lastLoadAt ? new Date(g.lastLoadAt).getTime() : 0;
   const syncAt = g.lastSyncAt ? new Date(g.lastSyncAt).getTime() : 0;
+  const errAt = g.lastErrorAt ? new Date(g.lastErrorAt).getTime() : 0;
   const dirtyAt = g.dirtySince ? new Date(g.dirtySince).getTime() : 0;
+  // Pokud poslední událost byla chyba, ukaž "Chyba synchronizace"
+  const lastSuccess = Math.max(loadAt, syncAt);
+  if (errAt > lastSuccess) {
+    return "⟳ Chyba synchronizace " + formatRelTime(errAt);
+  }
   let label;
   if (!loadAt && !syncAt) {
     label = "Synchronizace";
@@ -1968,8 +2012,7 @@ function syncButtonLabel() {
     label = "Načteno, nesynchronizováno";
   }
   // Indikátor * když máme neuložené lokální změny od posledního sync/load
-  const lastRef = Math.max(loadAt, syncAt);
-  if (dirtyAt > lastRef) label += " *";
+  if (dirtyAt > lastSuccess) label += " *";
   return "⟳ " + label;
 }
 function updateSyncButtonLabel() {
@@ -1977,9 +2020,22 @@ function updateSyncButtonLabel() {
   if (!btn) return;
   const label = syncButtonLabel();
   btn.textContent = label;
-  // Aria-label zopakuje text, plus explicitní zmínku o neuložených změnách pro čtečku.
-  if (label.endsWith(" *")) btn.setAttribute("aria-label", label.slice(2, -2) + " — jsou neuložené lokální změny");
-  else btn.setAttribute("aria-label", label.slice(2));
+  // Vizuální zvýraznění chyby
+  const isErr = label.includes("Chyba");
+  btn.classList.toggle("sync-error", isErr);
+  // Aria-label zopakuje text, plus explicitní zmínku o neuložených změnách pro čtečku
+  const g = state.github || {};
+  if (isErr) {
+    const errMsg = g.lastErrorMessage || "neznámá chyba";
+    btn.setAttribute("aria-label", label.slice(2) + " — " + errMsg);
+    btn.setAttribute("title", label.slice(2) + " — " + errMsg + ". Kliknutím zkusíš znovu.");
+  } else if (label.endsWith(" *")) {
+    btn.setAttribute("aria-label", label.slice(2, -2) + " — jsou neuložené lokální změny");
+    btn.setAttribute("title", "Synchronizovat s GitHubem (accesskey S)");
+  } else {
+    btn.setAttribute("aria-label", label.slice(2));
+    btn.setAttribute("title", "Synchronizovat s GitHubem (accesskey S)");
+  }
 }
 function setGhStatus(kind, text) {
   const e = $("#ghStatus");
@@ -3144,10 +3200,15 @@ function renderBoardView(container, board) {
   // toolbar
   const tb = el("div", { class:"board-bar" });
   tb.appendChild(el("button", { class:"icon-btn", onclick: () => editBoardSettings(board), title:"Nastavení nástěnky" }, "⚙"));
-  // filter chips: members
-  if (state.members.length) {
+  // filter chips: members (jen ti, kdo mají přiřazenu aspoň jednu kartu na této nástěnce — šetří místo v toolbaru)
+  const assignedMemberIds = new Set();
+  state.cards.forEach(c => {
+    if (c.boardId === board.id && !c.deleted) (c.members || []).forEach(mid => assignedMemberIds.add(mid));
+  });
+  const boardMembers = state.members.filter(m => assignedMemberIds.has(m.id));
+  if (boardMembers.length) {
     const filterMembers = state.ui.boardFilter && state.ui.boardFilter.members || [];
-    state.members.forEach(m => {
+    boardMembers.forEach(m => {
       const active = filterMembers.includes(m.id);
       const b = el("button", {
         class:"icon-btn", style:{ opacity: active ? "1" : ".55", border: active ? "2px solid var(--accent)" : "1px solid var(--border)" },
@@ -3205,6 +3266,21 @@ function renderBoardView(container, board) {
   if ((state.ui.boardFilter && (state.ui.boardFilter.members||[]).length + (state.ui.boardFilter.labels||[]).length) > 0) {
     tb.appendChild(el("button", { class:"ghost", onclick: () => { if (state.ui.boardFilter) { state.ui.boardFilter.members = []; state.ui.boardFilter.labels = []; } renderView(); } }, "Zrušit filtry"));
   }
+  // Pokud jsou na této nástěnce skryté sloupce, nabídni tlačítko pro hromadné zobrazení
+  const listIdsOnBoard = listsInBoard(board.id).map(l => l.id);
+  const hiddenHereCount = listIdsOnBoard.filter(id => state.ui.hiddenLists && state.ui.hiddenLists[id]).length;
+  if (hiddenHereCount) {
+    tb.appendChild(el("button", {
+      class: "ghost",
+      title: "Zobrazit všechny skryté sloupce na této nástěnce",
+      onclick: () => {
+        listIdsOnBoard.forEach(id => { if (state.ui.hiddenLists) state.ui.hiddenLists[id] = false; });
+        saveState();
+        renderView();
+        announce(`Zobrazeno ${hiddenHereCount} sloupců.`);
+      },
+    }, `Zobrazit ${hiddenHereCount} skrytých`));
+  }
   container.appendChild(tb);
   // lists
   const lc = el("div", { class:"lists-container", role:"list", "aria-label":"Seznamy nástěnky" });
@@ -3232,18 +3308,58 @@ function passesBoardFilter(card) {
   return true;
 }
 function renderListColumn(board, list, idx) {
+  // Skrytý sloupec se renderuje jako úzký vertikální proužek s názvem seznamu.
+  // Kliknutím / Enterem se opět rozbalí. Stav se ukládá v state.ui.hiddenLists (per-list).
+  const isHidden = !!(state.ui.hiddenLists && state.ui.hiddenLists[list.id]);
+  if (isHidden) {
+    const cnt = cardsInList(list.id).length;
+    const col = el("section", {
+      class: "list list-collapsed",
+      role: "listitem",
+      "aria-label": `Skrytý seznam „${list.name}“, ${cnt} karet. Kliknutím nebo Enterem zobrazíš.`,
+      dataset: { listId: list.id },
+    });
+    const btn = el("button", {
+      class: "list-expand-btn",
+      "aria-label": `Zobrazit seznam „${list.name}“`,
+      title: `Zobrazit seznam „${list.name}“ (${cnt} karet)`,
+      onclick: () => {
+        state.ui.hiddenLists[list.id] = false;
+        saveState();
+        renderView();
+        announce(`Seznam „${list.name}“ zobrazen.`);
+        sound.click();
+      },
+    }, list.name + " (" + cnt + ")");
+    col.appendChild(btn);
+    return col;
+  }
   const col = el("section", { class:"list", role:"listitem", "aria-labelledby": "lname_" + list.id, dataset:{ listId: list.id } });
   const wip = board.wipLimits[list.id] || 0;
   const cards = cardsInList(list.id);
   const cnt = cards.length;
   const overWip = wip && cnt > wip;
   const head = el("div", { class:"list-header" });
-  const nameInp = el("input", { class:"list-name", type:"text", value: list.name, id:"lname_" + list.id, "aria-label":"Název seznamu" });
-  nameInp.addEventListener("change", () => { list.name = nameInp.value; saveState(); renderHeader(); renderSidebar(); });
-  head.appendChild(nameInp);
+  const nameHeading = el("h3", { class:"list-name", id:"lname_" + list.id }, list.name);
+  head.appendChild(nameHeading);
   head.appendChild(el("span", { class:"list-count " + (overWip ? "over-wip" : ""), title: wip ? `WIP ${cnt}/${wip}` : `${cnt}` }, wip ? `${cnt}/${wip}` : String(cnt)));
-  // list menu
-  const menuBtn = el("button", { class:"icon-btn", "aria-label":"Menu seznamu", onclick: (e) => openListMenu(board, list, e) }, "···");
+  // Tlačítko pro skrytí sloupce
+  const hideBtn = el("button", {
+    class: "icon-btn",
+    "aria-label": `Skrýt seznam „${list.name}“`,
+    title: "Skrýt seznam (kliknutím na proužek ho zobrazíš)",
+    onclick: () => {
+      state.ui.hiddenLists = state.ui.hiddenLists || {};
+      state.ui.hiddenLists[list.id] = true;
+      saveState();
+      renderView();
+      announce(`Seznam „${list.name}“ skryt.`);
+      sound.click();
+    },
+  }, "−");
+  head.appendChild(hideBtn);
+  // list menu — zde se schovává přejmenování (otevře se při kliknutí na · · ·)
+  const menuBtn = el("button", { class:"icon-btn", "aria-label":"Menu seznamu „" + list.name + "“ (přejmenovat, WIP limit, archivovat hotové, smazat)", onclick: (e) => openListMenu(board, list, e) }, "···");
   head.appendChild(menuBtn);
   col.appendChild(head);
   const cardsEl = el("div", { class:"list-cards", dataset:{ listDrop:"1", listId: list.id } });
@@ -3263,7 +3379,7 @@ function renderListColumn(board, list, idx) {
     moveCard(cardId, list.id, insertAt);
     sound.drop();
     renderView();
-    announce(`Karta přesunuta do listu ${list.name}.`);
+    announce(`Karta přesunuta do seznamu ${list.name}.`);
   });
   cards.filter(passesBoardFilter).forEach((card, i) => cardsEl.appendChild(renderCard(card, list, i)));
   col.appendChild(cardsEl);
@@ -3285,7 +3401,9 @@ function addCardInline(list, addArea, cardsEl) {
     sound.add();
     cardsEl.appendChild(renderCard(card, list, cardsInList(list.id).length - 1));
     announce("Karta přidána.");
-    inp.value = ""; inp.focus();
+    inp.value = "";
+    // Focus zpět na input pro rychlé psaní další karty (setTimeout pro spolehlivost napříč prohlížeči)
+    setTimeout(() => inp.focus(), 10);
     // Pokud vložený text byl URL, zkusíme dohledat titulek a přidat přílohu
     if (looksLikeUrl(t)) enhanceCardIfUrl(card.id);
   }
@@ -3293,7 +3411,8 @@ function addCardInline(list, addArea, cardsEl) {
     addArea.replaceChildren(el("button", { onclick: () => addCardInline(list, addArea, cardsEl) }, T("addCard")));
   }
   addArea.replaceChildren(inp, el("div", { style:{ display:"flex", gap:"4px", marginTop:"4px" } }, ok, cancel));
-  inp.focus();
+  // Při prvním zobrazení inputu nastavit focus (některé prohlížeče vyžadují setTimeout po DOM mutaci)
+  setTimeout(() => inp.focus(), 10);
   inp.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); doAdd(); }
     if (e.key === "Escape") cleanup();
@@ -3539,7 +3658,7 @@ function renderCard(card, list, position) {
     meta.appendChild(el("span", { class:"meta-chip", title:"Strávený čas" }, "⏱ " + formatHours(sec)));
   }
   const prog = checklistProgress(eff);
-  if (prog.total) meta.appendChild(el("span", { class:"meta-chip", title:"Checklist" }, `☑ ${prog.done}/${prog.total}`));
+  if (prog.total) meta.appendChild(el("span", { class:"meta-chip", title:"Checklist" }, `☑ ${prog.done}/${prog.total} (${prog.pct} %)`));
   if (eff.comments && eff.comments.length) meta.appendChild(el("span", { class:"meta-chip", title:"Komentáře: " + eff.comments.length, "aria-label":"Komentáře: " + eff.comments.length }, `💬 ${eff.comments.length}`));
   if (eff.attachments && eff.attachments.length) meta.appendChild(el("span", { class:"meta-chip", title:"Přílohy: " + eff.attachments.length, "aria-label":"Přílohy: " + eff.attachments.length }, `📎 ${eff.attachments.length}`));
   if (eff.cardType === "habit" && eff.habit) {
@@ -3810,14 +3929,8 @@ function openCardDetail(cardId) {
   const list = getList(real.listId);
   if (!board || !list) return;
 
-  const titleInput = el("input", { type:"text", value: real.title, class:"card-title-input", "aria-label": T("cardName") });
-  titleInput.addEventListener("change", () => {
-    const old = real.title;
-    setCardField(real.id, "title", titleInput.value || T("untitled"));
-    logActivity(real, T("activityRenamed", old, titleInput.value));
-    announce("Název změněn.");
-    saveState();
-  });
+  // Nadpis karty = čistý text (bez editace). Přejmenování se dělá z Akcí (tlačítko níže).
+  const titleDisplay = el("span", { class:"card-title-display" }, real.title);
 
   const body = el("div", { class:"card-detail" });
   const left = el("div", { class:"card-detail-main" });
@@ -3919,48 +4032,64 @@ function openCardDetail(cardId) {
   const clSection = el("section", { "aria-label": T("checklists") });
   clSection.appendChild(el("h3", {}, T("checklists")));
   const clContainer = el("div");
+  // Perzistentní stav skrytí hotových (per karta, v UI)
+  state.ui.checklistHideDone = state.ui.checklistHideDone || {};
+  function isHidingDone() { return !!state.ui.checklistHideDone[real.id]; }
   function refreshChecklists() {
     clear(clContainer);
+    const hideDone = isHidingDone();
     (real.checklists || []).forEach(cl => {
       const wrap = el("div", { class:"checklist" });
       const head = el("div", { class:"checklist-head" });
       const name = el("input", { type:"text", value: cl.name, "aria-label":"Název checklistu" });
       name.addEventListener("change", () => { cl.name = name.value; saveState(); });
-      const prog = checklistProgress(real);
-      const progSpan = el("span", { class:"muted" }, `${cl.items.filter(i => i.done).length}/${cl.items.length}`);
-      const delBtn = el("button", { class:"ghost danger", onclick: async () => {
+      const done = cl.items.filter(i => i.completed).length;
+      const total = cl.items.length;
+      const pct = total ? Math.round(done * 100 / total) : 0;
+      const progSpan = el("span", { class:"muted checklist-progress" }, `${done}/${total}${total ? ` (${pct} %)` : ""}`);
+      const hideBtn = el("button", {
+        class: hideDone ? "primary small" : "ghost small",
+        "aria-pressed": hideDone ? "true" : "false",
+        title: hideDone ? "Zobrazit i hotové položky" : "Skrýt hotové položky",
+        onclick: () => {
+          state.ui.checklistHideDone[real.id] = !state.ui.checklistHideDone[real.id];
+          saveState();
+          refreshChecklists();
+          announce(state.ui.checklistHideDone[real.id] ? "Hotové položky skryté." : "Hotové položky zobrazené.");
+        },
+      }, hideDone ? "☑ Skryté hotové" : "☐ Skrýt hotové");
+      const delBtn = el("button", { class:"ghost danger small", onclick: async () => {
         if (await confirm2("Smazat checklist?", { danger:true })) {
           real.checklists = real.checklists.filter(x => x.id !== cl.id);
           saveState();
           refreshChecklists();
         }
       } }, T("delete"));
-      head.append(name, progSpan, delBtn);
+      head.append(name, progSpan, hideBtn, delBtn);
       wrap.appendChild(head);
       const items = el("ul", { class:"checklist-items" });
       cl.items.forEach(item => {
-        const li = el("li");
-        const cb = el("input", { type:"checkbox", checked: item.done, id:`it_${item.id}`, "aria-label": item.text });
+        if (hideDone && item.completed) return;  // skryj hotové
+        const li = el("li", { class:"checklist-item" + (item.completed ? " done" : "") });
+        const cb = el("input", { type:"checkbox", checked: !!item.completed, id:`it_${item.id}`, "aria-label": item.text });
         cb.addEventListener("change", () => {
           toggleChecklistItem(real.id, cl.id, item.id);
-          li.querySelector(".item-text").classList.toggle("done", cb.checked);
-          progSpan.textContent = `${cl.items.filter(i => i.done).length}/${cl.items.length}`;
+          refreshChecklists();
           sound.click();
         });
-        const lbl = el("label", { for:`it_${item.id}`, class:"item-text" + (item.done ? " done" : "") }, item.text);
-        const editBtn = el("button", { class:"ghost small", onclick: () => {
-          const inp = el("input", { type:"text", value:item.text });
+        const lbl = el("label", { for:`it_${item.id}`, class:"item-text" + (item.completed ? " done" : "") }, item.text);
+        const editBtn = el("button", { class:"ghost small", "aria-label":"Upravit položku", onclick: () => {
+          const inp = el("input", { type:"text", value: item.text });
           li.replaceChild(inp, lbl);
           inp.focus();
           inp.addEventListener("blur", () => {
             item.text = inp.value || item.text;
-            lbl.textContent = item.text;
-            li.replaceChild(lbl, inp);
             saveState();
+            refreshChecklists();
           });
-          inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+          inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
         } }, T("edit"));
-        const rmBtn = el("button", { class:"ghost small", onclick: () => {
+        const rmBtn = el("button", { class:"ghost small", "aria-label":"Smazat položku", onclick: () => {
           cl.items = cl.items.filter(x => x.id !== item.id);
           saveState();
           refreshChecklists();
@@ -3970,15 +4099,22 @@ function openCardDetail(cardId) {
       });
       wrap.appendChild(items);
       const addRow = el("div", { class:"add-row" });
-      const newItem = el("input", { type:"text", placeholder: T("addItem") + "…" });
-      const addBtn = el("button", { class:"ghost", onclick: () => {
-        if (!newItem.value.trim()) return;
-        addChecklistItem(real.id, cl.id, newItem.value.trim());
+      const newItem = el("input", { type:"text", placeholder: T("addItem") + "…", "aria-label":"Nová položka checklistu" });
+      const addItemFn = () => {
+        const txt = newItem.value.trim();
+        if (!txt) return;
+        addChecklistItem(real.id, cl.id, txt);
         newItem.value = "";
         refreshChecklists();
         sound.add();
-      } }, "+");
-      newItem.addEventListener("keydown", e => { if (e.key === "Enter") addBtn.click(); });
+        // Focus zpět na input — umožňuje rychlé zadávání dalších položek
+        setTimeout(() => {
+          const all = wrap.querySelectorAll(".add-row input[type=text]");
+          if (all.length) all[all.length - 1].focus();
+        }, 10);
+      };
+      const addBtn = el("button", { class:"ghost", onclick: addItemFn }, "+");
+      newItem.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addItemFn(); } });
       addRow.append(newItem, addBtn);
       wrap.appendChild(addRow);
       clContainer.appendChild(wrap);
@@ -4349,10 +4485,27 @@ function openCardDetail(cardId) {
   // Akce
   const actBox = el("section", { class:"card-actions", "aria-label": T("actions") });
   actBox.appendChild(el("h4", {}, T("actions")));
+  const renameBtn = el("button", { class:"ghost", onclick: async () => {
+    const nm = prompt("Nový název karty:", real.title);
+    if (nm == null) return;  // Cancel
+    const trimmed = nm.trim();
+    if (!trimmed || trimmed === real.title) return;
+    const old = real.title;
+    setCardField(real.id, "title", trimmed);
+    logActivity(real, T("activityRenamed", old, trimmed));
+    saveState();
+    // update viditelný nadpis v tomto otevřeném detailu
+    titleDisplay.textContent = trimmed;
+    // Aktualizuj aria-label modalu
+    const overlay = actBox.closest(".modal-overlay");
+    if (overlay) overlay.setAttribute("aria-label", trimmed);
+    announce("Karta přejmenována na " + trimmed);
+    sound.click();
+  } }, "Přejmenovat");
   const moveBtn = el("button", { class:"ghost", onclick: async () => {
     const tgt = await pickList();
     if (tgt) { moveCard(real.id, tgt); close(); renderAll(); sound.drop(); }
-  } }, "Přesunout do listu…");
+  } }, "Přesunout do seznamu…");
   const mirrorBtn = el("button", { class:"ghost", onclick: async () => {
     const tgt = await pickList();
     if (tgt) { mirrorCard(real.id, tgt); toast("Vytvořeno zrcadlo.", "success"); sound.add(); }
@@ -4379,7 +4532,7 @@ function openCardDetail(cardId) {
       toast(T("sentToTrash"), "success"); sound.remove();
     }
   } }, T("delete"));
-  actBox.append(moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, delBtn);
+  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, delBtn);
   right.appendChild(actBox);
 
   // --- Ruční automatizace: tlačítka pro každé manual pravidlo aktivní na této nástěnce ---
@@ -4406,7 +4559,7 @@ function openCardDetail(cardId) {
   body.append(left, right);
 
   const m = openModal({
-    title: titleInput,
+    title: titleDisplay,
     body,
     size: "large",
     onClose: () => {
@@ -5525,11 +5678,17 @@ function renderValueInput(valueType, currentValue, setValue, options) {
   if (valueType === "label") {
     const sel = el("select");
     sel.appendChild(el("option", { value: "" }, "— vyberte štítek —"));
-    // Agregace všech štítků ze všech nástěnek
+    // Unikátní názvy štítků napříč všemi nástěnkami (abstrahujeme přes jméno,
+    // takže „Hotovo“ na nástěnce A a B je v automatizaci jeden štítek)
+    const names = new Set();
     state.boards.filter(b => !b.archived).forEach(b => {
-      (b.labels || []).forEach(l => sel.appendChild(el("option", { value: l.id }, b.name + " / " + l.name)));
+      (b.labels || []).forEach(l => { if (l.name) names.add(l.name); });
     });
-    if (currentValue) sel.value = currentValue;
+    const sorted = Array.from(names).sort((a, b) => a.localeCompare(b, "cs"));
+    sorted.forEach(n => sel.appendChild(el("option", { value: n }, n)));
+    // Zpětná kompatibilita: pokud currentValue je staré ID, převedeme na jméno
+    const resolved = resolveAutomationLabelName(currentValue);
+    if (resolved) sel.value = resolved;
     sel.addEventListener("change", () => setValue(sel.value));
     return sel;
   }
@@ -5851,9 +6010,33 @@ function substituteTemplate(text, ctx) {
 
 // ---------- Evaluátor podmínek ----------
 // Každá podmínka je { field, op, value }.
+// Štítky se v automatizacích ukládají jako NÁZEV, aby fungovaly napříč všemi nástěnkami.
+// Pro zpětnou kompatibilitu (staré automatizace ukládaly label ID) podporujeme oba tvary:
+// pokud hodnota vypadá jako label ID ("l_..."), převedeme ji na název. Jinak se bere jako název.
+function resolveAutomationLabelName(ref) {
+  if (!ref) return "";
+  if (typeof ref === "string" && /^l_[a-z0-9]+/i.test(ref)) {
+    for (const b of state.boards || []) {
+      const l = (b.labels || []).find(x => x.id === ref);
+      if (l) return l.name;
+    }
+  }
+  return ref;
+}
 function evalCondition(cond, card) {
   if (!card) return false;
   const { field, op, value } = cond;
+  // Speciální handling pro štítky: v automatizacích se ukládá NÁZEV štítku, ne ID
+  // (štítek „Hotovo“ existuje na více nástěnkách jako různá ID, ale pro automatizace se
+  // s ním pracuje jednotně přes jméno). Pro zpětnou kompatibilitu tolerujeme i stará ID.
+  if (field === "labels" && (op === "includes" || op === "notIncludes")) {
+    const targetName = resolveAutomationLabelName(value);
+    const has = (card.labels || []).some(lid => {
+      const l = getLabel(card.boardId, lid);
+      return l && l.name === targetName;
+    });
+    return op === "includes" ? has : !has;
+  }
   let actual;
   switch (field) {
     case "title":        actual = card.title || ""; break;
@@ -5923,7 +6106,12 @@ function triggerMatches(trigger, eventType, eventContext) {
       return true;
     case "card.labelAdded":
     case "card.labelRemoved":
-      if (p.labelId && p.labelId !== c.labelId) return false;
+      if (p.labelId) {
+        // p.labelId je název štítku. c.labelId je skutečné ID — dohledáme jeho název na boardu karty
+        const targetName = resolveAutomationLabelName(p.labelId);
+        const actualLabel = c.card ? getLabel(c.card.boardId, c.labelId) : null;
+        if (!actualLabel || actualLabel.name !== targetName) return false;
+      }
       return true;
     case "card.memberAdded":
     case "card.memberRemoved":
@@ -6033,16 +6221,33 @@ function execAction(act, ctx) {
     }
     case "addLabel": {
       if (!card || !p.labelId) return;
-      if (!card.labels.includes(p.labelId)) {
-        card.labels.push(p.labelId);
-        const l = getLabel(card.boardId, p.labelId);
-        logActivity(card, "Automatizace přidala štítek „" + (l ? l.name : p.labelId) + "“");
+      // p.labelId je NÁZEV štítku (globální napříč nástěnkami). Najdi nebo vytvoř na boardu karty.
+      const labelName = resolveAutomationLabelName(p.labelId);
+      const board = getBoard(card.boardId);
+      if (!board) return;
+      let lbl = (board.labels || []).find(l => l.name === labelName);
+      if (!lbl) {
+        // Vytvoř na této nástěnce nový štítek s tímto jménem (výchozí barva)
+        lbl = addLabel(card.boardId, labelName, labelColors[0]);
+      }
+      if (lbl && !card.labels.includes(lbl.id)) {
+        card.labels.push(lbl.id);
+        logActivity(card, "Automatizace přidala štítek „" + lbl.name + "“");
       }
       break;
     }
     case "removeLabel": {
       if (!card || !p.labelId) return;
-      card.labels = card.labels.filter(x => x !== p.labelId);
+      // Odebere všechny štítky s daným názvem (pokud jich je víc se stejným jménem na jedné nástěnce)
+      const labelName = resolveAutomationLabelName(p.labelId);
+      const board = getBoard(card.boardId);
+      if (!board) return;
+      const toRemove = (board.labels || []).filter(l => l.name === labelName).map(l => l.id);
+      const before = card.labels.length;
+      card.labels = card.labels.filter(x => !toRemove.includes(x));
+      if (card.labels.length !== before) {
+        logActivity(card, "Automatizace odebrala štítek „" + labelName + "“");
+      }
       break;
     }
     case "removeAllLabels": {
@@ -6458,6 +6663,10 @@ async function tryLoadFromGhUrl() {
     return true;
   } catch (e) {
     toast("Chyba při načítání: " + e.message, "error", 6000);
+    state.github.lastErrorAt = new Date().toISOString();
+    state.github.lastErrorMessage = "Načítání: " + e.message;
+    saveState();
+    updateSyncButtonLabel();
     sound.err();
     return false;
   }
@@ -6509,26 +6718,30 @@ async function init() {
     }
     const btn = $("#ghSyncBtn");
     btn.disabled = true;
-    const origLabel = btn.textContent;
     btn.textContent = "⟳ Synchronizuji…";
     btn.style.opacity = "0.6";
     announce("Synchronizuji s GitHubem.");
     try {
       await ghSave();
-      const ts = new Date();
-      state.github.lastSyncAt = ts.toISOString();
+      state.github.lastSyncAt = new Date().toISOString();
+      state.github.lastErrorAt = null;
+      state.github.lastErrorMessage = null;
       state.github.dirtySince = null;
       _skipNextDirty = true;  // systémová změna, neoznačovat jako dirty
       saveState();
-      updateSyncButtonLabel();
       announce("Synchronizováno.");
+      sound.sync();
     } catch (e) {
-      btn.textContent = origLabel;
-      btn.setAttribute("title", "Poslední pokus o sync selhal: " + (e.message || "chyba"));
-      announce("Synchronizace selhala.");
+      state.github.lastErrorAt = new Date().toISOString();
+      state.github.lastErrorMessage = e.message || "neznámá chyba";
+      saveState();
+      announce("Chyba synchronizace: " + (e.message || "neznámá chyba"));
+      toast("Chyba synchronizace: " + (e.message || "neznámá chyba"), "error", 6000);
+      sound.err();
     } finally {
       btn.disabled = false;
       btn.style.opacity = "";
+      updateSyncButtonLabel();
     }
   });
   // Hned při startu nastav popisek podle uložených časů (a pravidelně ho aktualizuj)
