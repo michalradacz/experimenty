@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-time-tracking-view-and-unassigned";
+const MRELLO_BUILD = "2026-04-23-timer-popup-stop-creates-entry";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2442,16 +2442,29 @@ function syncButtonLabel() {
   if (errAt > lastSuccess) {
     return "⟳ Chyba synchronizace " + formatRelTime(errAt);
   }
-  let label;
+  // Nikdy jsme nenačetli ani neuložili
   if (!loadAt && !syncAt) {
-    label = "Synchronizace";
-  } else if (syncAt >= loadAt) {
-    label = "Synchronizováno " + formatRelTime(syncAt);
-  } else {
-    label = "Načteno, nesynchronizováno";
+    return "⟳ Synchronizace";
   }
-  // Indikátor * když máme neuložené lokální změny od posledního sync/load
-  if (dirtyAt > lastSuccess) label += " *";
+  // Klíčová otázka: MÁME lokální změny, které ještě nejsou na GitHubu?
+  // Dirty je „modifikace po posledním sync nebo load". Jen na něm záleží, ne na kombinaci load/sync.
+  const hasDirty = dirtyAt > lastSuccess;
+  // Poslední úspěšná akce — čas, podle kterého ukazujeme "před N minutami"
+  const refTime = Math.max(loadAt, syncAt);
+  const refRel = formatRelTime(refTime);
+  let label;
+  if (hasDirty) {
+    // Máme lokální změny. Label říká „máte lokální změny" plus čas posledního úspěšného sync/load.
+    // Cíl: uživatel vidí, kdy naposledy bylo vše čisté a že teď něco leží.
+    label = "Máte lokální změny (od " + refRel + ")";
+  } else {
+    // Vše je synchronizováno — ať už naposledy byl sync nebo load, stav je čistý.
+    if (syncAt >= loadAt) {
+      label = "Synchronizováno " + refRel;
+    } else {
+      label = "Aktuální, načteno " + refRel;
+    }
+  }
   return "⟳ " + label;
 }
 // Vrátí pole běžících časovačů napříč všemi kartami.
@@ -2504,16 +2517,19 @@ function openRunningTimersDialog() {
         class:"ghost small",
         "aria-label": `Zastavit časovač na kartě „${c.title}“`,
         onclick: () => {
-          const addedSec = Math.round((Date.now() - c.time.runningSince) / 1000);
-          c.time.spentSec = (c.time.spentSec || 0) + addedSec;
-          c.time.runningSince = null;
-          logActivity(c, "Časovač zastaven, přidáno " + formatHours(addedSec) + " (celkem " + formatHours(c.time.spentSec) + ")");
-          saveState();
+          // Používáme centralizovaný helper — vytvoří správný entry do time.entries a zapíše activity.
+          // (Před touto úpravou to tu bylo inline a entries se nevytvářely, což vedlo k prázdnému seznamu
+          // záznamů i když v kartě byl strávený čas.)
+          const r = stopCardTimer(c.id);
           updateRunningTimersChip();
           // Překreslit seznam v modalu
           m.close();
           openRunningTimersDialog();
-          announce("Časovač zastaven na kartě " + c.title + ".");
+          if (r && r.stopped) {
+            announce("Časovač zastaven na kartě " + c.title + ", přidáno " + formatHours(r.addedSec) + ".");
+          } else {
+            announce("Časovač zastaven na kartě " + c.title + ".");
+          }
         },
       }, "⏹ Stop");
       li.append(link, meta, elapsedSpan, " ", stopBtn);
