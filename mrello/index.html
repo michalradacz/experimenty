@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-suppress-dirty-robust";
+const MRELLO_BUILD = "2026-04-23-preserve-token-idb-first";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2907,9 +2907,18 @@ async function ghSave() {
 }
 function mergeLoadedState(data) {
   // Replace state with loaded; preserve runtime ui if missing
+  // Zachovat lokální token (uživatelský credential pro GitHub) — v JSON souboru na GitHubu typicky
+  // token není (bylo by to riskantní ho tam pushovat). Takže při načtení z GitHubu musíme token
+  // převzít z aktuálního lokálního stavu, aby následné volání API měla k dispozici auth.
+  const oldToken = state && state.github ? state.github.token : null;
+  const oldTokenEnc = state && state.github ? state.github.tokenEnc : null;
   const newState = Object.assign(deepClone(initialState), data);
   if (!newState.ui) newState.ui = deepClone(initialState.ui);
   if (!newState.pomodoro) newState.pomodoro = deepClone(initialState.pomodoro);
+  if (!newState.github) newState.github = deepClone(initialState.github);
+  // Pokud načtená data neobsahují token (obvyklé pro GH sync), obnov z lokálního stavu.
+  if (!newState.github.token && oldToken) newState.github.token = oldToken;
+  if (!newState.github.tokenEnc && oldTokenEnc) newState.github.tokenEnc = oldTokenEnc;
   return newState;
 }
 //#endregion
@@ -9738,57 +9747,45 @@ async function init() {
   const qs = new URLSearchParams(location.search);
   const hasGhUrl = qs.has("gh");
 
-  if (!hasGhUrl) {
-    // Bez URL parametru: standardní offline flow — načíst z IDB
+  // VŽDY nejdřív načíst z IDB (pokud existuje) — potřebujeme přístup k tokenu i GH konfiguraci,
+  // abychom uměli stáhnout data přes GitHub API (pro privátní repa a >1 MB soubory).
+  // Pokud je `?gh=` v URL, stažené GH data přepíšou obsah, ale credentials z IDB zůstanou.
+  try {
+    const data = await idbLoad();
+    if (data) state = mergeLoadedState(data);
+  } catch (e) {
     try {
-      const data = await idbLoad();
-      if (data) state = mergeLoadedState(data);
-    } catch (e) {
-      try {
-        const ls = localStorage.getItem(STORAGE_KEY);
-        if (ls) state = mergeLoadedState(JSON.parse(ls));
-      } catch {}
-    }
-    if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
-    if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
-    applyTheme();
-    applyI18n();
+      const ls = localStorage.getItem(STORAGE_KEY);
+      if (ls) state = mergeLoadedState(JSON.parse(ls));
+    } catch {}
+  }
+  if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
+  if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
+  applyTheme();
+  applyI18n();
+
+  if (!hasGhUrl) {
+    // Bez URL parametru: IDB je jediný zdroj, vykresli co máme
     renderAll();
   } else {
-    // URL load — má přednost před IDB. Celý blok zabalen do _suppressDirty, aby jakýkoliv vedlejší
-    // saveState (během mergu / renderu / ensure funkcí) nenastavil dirtySince.
+    // S URL parametrem: načti z GitHubu (může trvat sekundy, IDB data zatím vidíme jako placeholder).
+    // Celý blok obalen do _suppressDirty, aby jakýkoliv saveState během loadu/renderu nenastavil dirty.
     _suppressDirty = true;
     try {
       setGhBusy("Načítám z GitHubu…");
-      // Připrav minimum state aby UI mohlo vykreslit (bez dat — to dotáhne tryLoadFromGhUrl)
-      if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
-      if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
-      applyTheme();
-      applyI18n();
-      renderAll();
-      // Skutečné načtení z GitHubu
+      renderAll();  // prvotní render s IDB daty + load indikátor
       const loaded = await tryLoadFromGhUrl();
       if (!loaded) {
-        // GitHub selhal — fallback na IDB
-        try {
-          const data = await idbLoad();
-          if (data) {
-            state = mergeLoadedState(data);
-            toast("GitHub nedostupný, používám lokální stav.", "warning", 6000);
-          }
-        } catch {}
-        if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
-        if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
+        toast("GitHub nedostupný, zůstávám u lokálního stavu z IDB.", "warning", 6000);
       }
-      // Přerender s novými daty
-      renderAll();
+      renderAll();  // přerender s novými daty (pokud load prošel) nebo s IDB daty
     } finally {
-      // Explicitní cleanup: dirtySince = null, ať label ukazuje čistý stav.
-      // Tím řešíme i situace, kdy během renderu/ensure kódu proběhl saveState s dirty.
+      // Explicitní cleanup: dirtySince = null, ať label ukazuje čistý stav — řešíme i situace,
+      // kdy během renderu/ensure kódu proběhl saveState a nastavil by dirty.
       if (state.github) state.github.dirtySince = null;
       _suppressDirty = false;
       _skipNextDirty = true;
-      saveState();  // zapíše čistý stav do IDB
+      saveState();
       setGhBusy(null);
       updateSyncButtonLabel();
     }
