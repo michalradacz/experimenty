@@ -301,6 +301,79 @@ header.app-header h1 {
 }
 .sidebar-item:hover { background: var(--bg-hover); }
 .sidebar-item.active { background: var(--bg-active); font-weight: 600; }
+/* Řádek v sidebaru s nástěnkou — samotné tlačítko + tlačítko menu ··· */
+.sidebar-board-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-board-item .sidebar-item {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-board-menu {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidebar-board-item:hover .sidebar-board-menu,
+.sidebar-board-item:focus-within .sidebar-board-menu,
+.sidebar-board-menu:focus {
+  opacity: 1;
+}
+.sidebar-board-menu:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* Pořadí seznamů v nastavení nástěnky */
+.list-order-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.list-order-item {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Chip běžících časovačů v headeru — výrazný, aby byl okamžitě vidět */
+#runningTimersBtn {
+  background: var(--warn-bg, #fef3c7);
+  color: var(--warn, #92400e);
+  border-color: var(--warn, #92400e);
+  width: auto;
+  padding: 4px 10px;
+  font-weight: 600;
+}
+.running-timers-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.running-timer-item {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.running-timer-item:last-child { border-bottom: none; }
+.timer-elapsed {
+  font-weight: 600;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
 .sidebar-item .badge {
   margin-left: auto;
   font-size: 11px;
@@ -1384,6 +1457,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
   <div class="view-tabs" id="viewTabs" role="tablist" aria-label="Pohledy"></div>
   <div class="header-actions">
     <span id="pomoIndicator" aria-live="polite"></span>
+    <button class="icon-btn" id="runningTimersBtn" hidden title="Běžící časovače" aria-label="Žádné běžící časovače">⏱</button>
     <span id="ghStatus" class="gh-status" hidden></span>
     <input type="search" id="globalSearch" class="header-search" placeholder="Hledat (/)" data-i18n-placeholder="searchPlaceholder" aria-label="Globální hledání">
     <button class="icon-btn" id="quickCaptureBtn" title="Nová karta / rychlý zápis (N)" data-i18n-title="quickCapture">+</button>
@@ -2250,6 +2324,80 @@ function syncButtonLabel() {
   if (dirtyAt > lastSuccess) label += " *";
   return "⟳ " + label;
 }
+// Vrátí pole běžících časovačů napříč všemi kartami.
+function getRunningTimers() {
+  return state.cards.filter(c => !c.deleted && c.time && c.time.runningSince);
+}
+// Aktualizuje chip s běžícími časovači v headeru.
+function updateRunningTimersChip() {
+  const btn = (typeof document !== "undefined") ? document.getElementById("runningTimersBtn") : null;
+  if (!btn) return;
+  const running = getRunningTimers();
+  if (!running.length) {
+    btn.hidden = true;
+    btn.setAttribute("aria-label", "Žádné běžící časovače");
+    return;
+  }
+  btn.hidden = false;
+  // Součet aktuálně uplynulých vteřin
+  const totalSec = running.reduce((s, c) => s + Math.round((Date.now() - c.time.runningSince) / 1000), 0);
+  const label = running.length === 1 ? "⏱ " + formatHours(totalSec) : "⏱ " + running.length + " běží";
+  btn.textContent = label;
+  btn.setAttribute("aria-label", running.length === 1
+    ? `Běžící časovač na kartě „${running[0].title}“, uplynulo ${formatHours(totalSec)}.`
+    : `Běží ${running.length} časovačů, celkem uplynulo ${formatHours(totalSec)}.`);
+  btn.setAttribute("title", running.length === 1
+    ? `Běží časovač: ${running[0].title} (${formatHours(totalSec)})`
+    : `${running.length} běžících časovačů. Kliknutím zobrazíš seznam.`);
+}
+// Otevře modal se seznamem běžících časovačů.
+function openRunningTimersDialog() {
+  const running = getRunningTimers();
+  const body = el("div");
+  if (!running.length) {
+    body.appendChild(el("p", { class:"muted" }, "Žádné časovače neběží."));
+  } else {
+    const ul = el("ul", { class:"running-timers-list" });
+    running.forEach(c => {
+      const board = getBoard(c.boardId);
+      const list = getList(c.listId);
+      const elapsed = Math.round((Date.now() - c.time.runningSince) / 1000);
+      const li = el("li", { class:"running-timer-item" });
+      const link = el("button", {
+        class:"link-btn",
+        onclick: () => { m.close(); openCardDetail(c.id); },
+      }, c.title);
+      const meta = el("span", { class:"muted small" },
+        " — " + (board ? board.name : "") + (list ? " / " + list.name : ""));
+      const elapsedSpan = el("span", { class:"timer-elapsed" }, " ⏱ " + formatHours(elapsed));
+      const stopBtn = el("button", {
+        class:"ghost small",
+        "aria-label": `Zastavit časovač na kartě „${c.title}“`,
+        onclick: () => {
+          const addedSec = Math.round((Date.now() - c.time.runningSince) / 1000);
+          c.time.spentSec = (c.time.spentSec || 0) + addedSec;
+          c.time.runningSince = null;
+          logActivity(c, "Časovač zastaven, přidáno " + formatHours(addedSec) + " (celkem " + formatHours(c.time.spentSec) + ")");
+          saveState();
+          updateRunningTimersChip();
+          // Překreslit seznam v modalu
+          m.close();
+          openRunningTimersDialog();
+          announce("Časovač zastaven na kartě " + c.title + ".");
+        },
+      }, "⏹ Stop");
+      li.append(link, meta, elapsedSpan, " ", stopBtn);
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }
+  const m = openModal({
+    title: "Běžící časovače",
+    body,
+    size:"small",
+    footer: [el("button", { class:"primary", onclick: () => m.close() }, T("close"))],
+  });
+}
 function updateSyncButtonLabel() {
   const btn = (typeof document !== "undefined") ? document.getElementById("ghSyncBtn") : null;
   if (!btn) return;
@@ -3070,6 +3218,7 @@ function renderSidebar() {
     ["week", T("thisWeek")],
     ["overdue", T("overdue")],
     ["nodate", T("noDate")],
+    ["openChecklists", "Nedokončené checklisty"],
     ["completed", T("completed")],
     ["archive", T("archive")],
     ["trash", T("trash")],
@@ -3084,14 +3233,28 @@ function renderSidebar() {
     const li = el("li", {}, btn); sv.appendChild(li);
   });
   const bl = $("#boardsList"); clear(bl);
-  boardsInWorkspace().forEach(b => {
+  // Nástěnky seřazené abecedně, case-insensitive, dle českého locale
+  const sortedBoards = boardsInWorkspace().slice().sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", "cs", { sensitivity: "base" })
+  );
+  sortedBoards.forEach(b => {
     const isActive = state.ui.currentView.type === "board" && state.ui.currentView.boardId === b.id;
+    const li = el("li", { class: "sidebar-board-item" });
     const btn = el("button", {
       class:"sidebar-item " + (isActive ? "active" : ""),
       onclick: () => { state.ui.currentView = { type:"board", boardId: b.id, viewType: state.ui.currentView.viewType || "board" }; saveState(); renderAll(); }
     }, b.name, el("span", { class:"badge" }, String(cardsInBoard(b.id).length)));
     btn.addEventListener("contextmenu", (e) => { e.preventDefault(); openBoardMenu(b, e); });
-    const li = el("li", {}, btn); bl.appendChild(li);
+    // Menu tlačítko · · · — přejmenovat, archivovat, smazat
+    const menuBtn = el("button", {
+      class: "sidebar-board-menu",
+      "aria-label": "Menu nástěnky „" + b.name + "“ (přejmenovat, smazat)",
+      title: "Přejmenovat nebo smazat",
+      onclick: (e) => { e.stopPropagation(); openBoardMenu(b, e); },
+    }, "···");
+    li.appendChild(btn);
+    li.appendChild(menuBtn);
+    bl.appendChild(li);
   });
   const sf = $("#savedFiltersList"); clear(sf);
   state.savedFilters.forEach(f => {
@@ -3112,6 +3275,14 @@ function countSmart(key) {
   }
   if (key === "overdue") return all.filter(c => c.dueDate && new Date(c.dueDate) < dateOnly(new Date()) && !c.completed && !c.archived).length;
   if (key === "nodate") return all.filter(c => !c.dueDate && !c.archived && !c.completed && c.cardType !== "mirror").length;
+  if (key === "openChecklists") {
+    // Nehotové karty s aspoň jedním nedokončeným prvkem v nějakém checklistu
+    return all.filter(c => {
+      if (c.archived || c.completed) return false;
+      if (!c.checklists || !c.checklists.length) return false;
+      return c.checklists.some(cl => (cl.items || []).some(it => !it.completed));
+    }).length;
+  }
   if (key === "completed") return all.filter(c => c.completed && !c.archived).length;
   if (key === "archive") return all.filter(c => c.archived).length;
   if (key === "trash") return state.cards.filter(c => c.deleted).length;
@@ -3341,7 +3512,7 @@ function viewHeadlineText(v) {
     const suffix = { board:"", table:" – tabulka", calendar:" – kalendář", timeline:" – časová osa", dashboard:" – přehled", eisenhower:" – matice priorit" }[t] || "";
     return b.name + suffix;
   }
-  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
+  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
   if (v.type === "inbox") return T("inbox");
   if (v.type === "planner") return T("planner");
   if (v.type === "stickies") return T("stickies");
@@ -3565,6 +3736,20 @@ function renderBoardView(container, board) {
     },
   }, hideDone ? "☑ Skryté hotové" : "☐ Zobrazit vše"));
 
+  // Přepínač: Zobrazit jen karty s nedokončenými checklisty
+  const openCl = !!(state.ui.boardFilter && state.ui.boardFilter.openChecklistsOnly);
+  tb.appendChild(el("button", {
+    class: openCl ? "primary" : "ghost",
+    "aria-pressed": openCl ? "true" : "false",
+    title: openCl ? "Zobrazeny jen karty s nedokončeným checklistem" : "Zobrazit jen karty s nedokončeným checklistem",
+    onclick: () => {
+      if (!state.ui.boardFilter) state.ui.boardFilter = { members:[], labels:[] };
+      state.ui.boardFilter.openChecklistsOnly = !state.ui.boardFilter.openChecklistsOnly;
+      saveState(); renderView();
+      announce(state.ui.boardFilter.openChecklistsOnly ? "Filtr nedokončené checklisty zapnut." : "Filtr vypnut.");
+    },
+  }, openCl ? "☑ Nedokončené checklisty" : "☐ Nedokončené checklisty"));
+
   // Přepínač výběrového režimu — ukáže u každé karty zaškrtávátko pro hromadné vybírání myší.
   const selMode = !!state.ui.selectionMode;
   tb.appendChild(el("button", {
@@ -3620,6 +3805,13 @@ function passesBoardFilter(card) {
   const f = state.ui.boardFilter;
   if (!f) return true;
   if (f.hideCompleted && card.completed) return false;
+  if (f.openChecklistsOnly) {
+    // Karta projde jen pokud je nehotová a má aspoň jeden nedokončený prvek v nějakém checklistu
+    if (card.completed) return false;
+    if (!card.checklists || !card.checklists.length) return false;
+    const anyOpen = card.checklists.some(cl => (cl.items || []).some(it => !it.completed));
+    if (!anyOpen) return false;
+  }
   if (f.members && f.members.length && !f.members.some(id => (card.members||[]).includes(id))) return false;
   if (f.labels && f.labels.length && !f.labels.some(id => (card.labels||[]).includes(id))) return false;
   return true;
@@ -3855,6 +4047,34 @@ function renderBoardSettingsBody(board) {
     el("label", {}, T("backgroundColor")),
     el("input", { type:"color", value: board.background.value || "#ffffff", oninput: (e) => { board.background = { type:"color", value:e.target.value }; saveState(); } })
   ));
+  // Pořadí sloupců — seznam seznamů s tlačítky ↑ / ↓ pro přesun
+  wrap.appendChild(el("h3", {}, "Pořadí sloupců"));
+  wrap.appendChild(el("p", { class:"small muted" }, "Pomocí šipek přesuneš seznam v pořadí. Změna se projeví ihned na nástěnce."));
+  const colList = el("ul", { class:"list-order-list" });
+  function refreshColumnOrder() {
+    clear(colList);
+    const lists = listsInBoard(board.id);
+    lists.forEach((list, idx) => {
+      const cnt = cardsInList(list.id).length;
+      const li = el("li", { class:"list-order-item" });
+      const upBtn = el("button", {
+        class:"ghost small",
+        disabled: idx === 0,
+        "aria-label": `Posunout „${list.name}“ nahoru`,
+        onclick: () => { moveList(list.id, idx - 1); saveState(); refreshColumnOrder(); renderView(); },
+      }, "↑");
+      const dnBtn = el("button", {
+        class:"ghost small",
+        disabled: idx === lists.length - 1,
+        "aria-label": `Posunout „${list.name}“ dolů`,
+        onclick: () => { moveList(list.id, idx + 1); saveState(); refreshColumnOrder(); renderView(); },
+      }, "↓");
+      li.append(upBtn, " ", dnBtn, " ", el("strong", {}, list.name), " ", el("span", { class:"muted small" }, "(" + cnt + " karet)"));
+      colList.appendChild(li);
+    });
+  }
+  refreshColumnOrder();
+  wrap.appendChild(colList);
   // labels
   wrap.appendChild(el("h3", {}, T("labels")));
   const lblList = el("div", { class:"tag-row" });
@@ -4210,6 +4430,9 @@ function renderBulkBar() {
     el("button", { class:"ghost", onclick: () => bulkAction("archive") }, T("bulkArchive")),
     el("button", { class:"ghost", onclick: () => bulkAction("move") }, T("bulkMove")),
     el("button", { class:"ghost", onclick: () => bulkAction("label") }, T("bulkLabel")),
+    el("button", { class:"ghost", onclick: () => bulkAction("due") }, "Termín…"),
+    el("button", { class:"ghost", onclick: () => bulkAction("subcardsOf") }, "Jako podkarty…"),
+    el("button", { class:"ghost", onclick: () => bulkAction("dependency") }, "Závislost…"),
     el("button", { class:"danger", onclick: () => bulkAction("delete") }, T("bulkDelete")),
     el("button", { class:"ghost", onclick: () => { state.ui.selectedCards = []; renderView(); } }, T("deselect")),
   );
@@ -4235,8 +4458,110 @@ async function bulkAction(action) {
     const lid = await pickLabel(board);
     if (lid) sel.forEach(id => { const c = getCard(id); if (c && !c.labels.includes(lid)) toggleCardLabel(id, lid); });
   }
+  if (action === "due") {
+    // Textové pole s přirozeným jazykem — "dnes", "zítra", "pondělí", "2d", "23.4."…
+    const text = prompt("Zadej termín přirozeným textem (např. „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“):", "");
+    if (text === null) { return; }
+    const trimmed = (text || "").trim();
+    if (!trimmed) {
+      // Prázdný text = odebrat termín
+      if (!await confirm2("Odebrat termín u " + sel.length + " karet?")) return;
+      sel.forEach(id => setCardField(id, "dueDate", null));
+      toast("Termín odebrán u " + sel.length + " karet.", "success");
+      announce("Termín odebrán u " + sel.length + " karet.");
+    } else {
+      const parsed = parseNaturalDate(trimmed);
+      if (!parsed) {
+        toast("Termín „" + trimmed + "“ nerozpoznán. Zkus „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“.", "error", 5000);
+        sound.err();
+        return;
+      }
+      sel.forEach(id => {
+        const c = getCard(id);
+        if (c) {
+          setCardField(c.id, "dueDate", parsed.date);
+          logActivity(c, T("activityDueSet", formatDate(parsed.date)) + " (hromadně)");
+        }
+      });
+      toast("Termín nastaven na " + formatDate(parsed.date) + " u " + sel.length + " karet.", "success");
+      announce("Termín nastaven na " + formatDate(parsed.date) + " u " + sel.length + " karet.");
+    }
+  }
+  if (action === "subcardsOf") {
+    // Vybrat jednu rodičovskou kartu; všechny vybrané se stanou jejími podkartami
+    const parentId = await pickCard();
+    if (!parentId) return;
+    if (sel.includes(parentId)) {
+      toast("Nelze přidat kartu jako podkartu sama sebe.", "warning");
+      return;
+    }
+    const parent = getCard(parentId);
+    if (!parent) return;
+    let applied = 0;
+    sel.forEach(id => {
+      const c = getCard(id);
+      if (!c || c.id === parentId) return;
+      if (c.parentCardId === parentId) return;
+      setCardField(c.id, "parentCardId", parentId);
+      logActivity(c, "Nastavena jako podkarta „" + parent.title + "“ (hromadně)");
+      logActivity(parent, "Přidána podkarta „" + c.title + "“ (hromadně)");
+      applied++;
+    });
+    if (applied) {
+      toast(applied + " karet nastaveno jako podkarty „" + parent.title + "“.", "success");
+      announce(applied + " karet nastaveno jako podkarty karty " + parent.title + ".");
+    } else {
+      toast("Nic se nezměnilo.", "info");
+    }
+  }
+  if (action === "dependency") {
+    // Vybrat typ závislosti + druhou kartu. Vybrané karty dostanou vztah k vybrané cílové.
+    const kind = await pickDependencyKind();
+    if (!kind) return;
+    const otherId = await pickCard();
+    if (!otherId) return;
+    if (sel.includes(otherId)) {
+      toast("Cílová karta nesmí být mezi vybranými.", "warning");
+      return;
+    }
+    const other = getCard(otherId);
+    if (!other) return;
+    let applied = 0, cycles = 0;
+    sel.forEach(id => {
+      if (id === otherId) return;
+      if (setDep(id, otherId, kind, true)) applied++;
+      else cycles++;
+    });
+    const kindLabel = { blocks:"blokuje", blockedBy:"je blokována kartou", related:"souvisí s kartou" }[kind];
+    if (applied) {
+      toast(applied + " karet nyní " + kindLabel + " „" + other.title + "“.", "success");
+      announce(applied + " karet — nastavena závislost na kartu " + other.title + ".");
+    }
+    if (cycles) toast(cycles + " závislostí přeskočeno (cyklus).", "warning");
+  }
   state.ui.selectedCards = [];
   renderView();
+}
+// Dialog pro výběr typu závislosti.
+function pickDependencyKind() {
+  return new Promise(resolve => {
+    const sel = el("select", { id:"depKindSel", "aria-label":"Typ závislosti" });
+    [
+      ["blocks",    "Vybrané karty blokují cílovou kartu"],
+      ["blockedBy", "Vybrané karty jsou blokovány cílovou kartou"],
+      ["related",   "Vybrané karty souvisejí s cílovou kartou"],
+    ].forEach(([v, l]) => sel.appendChild(el("option", { value:v }, l)));
+    const m = openModal({
+      title: "Typ závislosti",
+      body: el("div", { class:"field-row" }, el("label", { for:"depKindSel" }, "Zvol typ: "), sel),
+      footer: [
+        el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("cancel")),
+        el("button", { class:"primary", onclick: () => { const v = sel.value; m.close(); resolve(v); } }, T("save")),
+      ],
+      size:"small",
+    });
+    setTimeout(() => sel.focus(), 50);
+  });
 }
 function pickList() {
   return new Promise(resolve => {
@@ -4877,24 +5202,43 @@ function openCardDetail(cardId) {
   tSec.appendChild(el("h4", {}, T("timeTracking")));
   if (!real.time) real.time = { estimateSec:0, spentSec:0, runningSince:null };
   const estInp = el("input", { type:"number", min:"0", step:"0.25", value: (real.time.estimateSec || 0) / 3600, "aria-label": T("estimate") + " (h)" });
-  estInp.addEventListener("change", () => { real.time.estimateSec = Math.round(parseFloat(estInp.value || "0") * 3600); saveState(); });
+  estInp.addEventListener("change", () => {
+    const old = real.time.estimateSec || 0;
+    real.time.estimateSec = Math.round(parseFloat(estInp.value || "0") * 3600);
+    if (old !== real.time.estimateSec) logActivity(real, "Odhad nastaven na " + formatHours(real.time.estimateSec));
+    saveState();
+    refreshActivity();
+  });
   const spentLabel = el("span", {}, formatHours(real.time.spentSec || 0));
   const runBtn = el("button", { class:"ghost" }, real.time.runningSince ? "Stop" : "Start");
   runBtn.addEventListener("click", () => {
     if (real.time.runningSince) {
-      real.time.spentSec = (real.time.spentSec || 0) + Math.round((Date.now() - real.time.runningSince) / 1000);
+      const addedSec = Math.round((Date.now() - real.time.runningSince) / 1000);
+      real.time.spentSec = (real.time.spentSec || 0) + addedSec;
       real.time.runningSince = null;
       runBtn.textContent = "Start";
+      logActivity(real, "Časovač zastaven, přidáno " + formatHours(addedSec) + " (celkem " + formatHours(real.time.spentSec) + ")");
+      announce("Časovač zastaven.");
     } else {
       real.time.runningSince = Date.now();
       runBtn.textContent = "Stop";
+      logActivity(real, "Časovač spuštěn");
+      announce("Časovač spuštěn.");
     }
     spentLabel.textContent = formatHours(real.time.spentSec || 0);
     saveState();
+    refreshActivity();
   });
   const addManual = el("button", { class:"ghost", onclick: () => {
     const h = parseFloat(prompt("Přidat strávené hodiny:", "0.25") || "0");
-    if (h > 0) { real.time.spentSec = (real.time.spentSec || 0) + Math.round(h * 3600); spentLabel.textContent = formatHours(real.time.spentSec); saveState(); }
+    if (h > 0) {
+      const sec = Math.round(h * 3600);
+      real.time.spentSec = (real.time.spentSec || 0) + sec;
+      spentLabel.textContent = formatHours(real.time.spentSec);
+      logActivity(real, "Ručně přidáno " + formatHours(sec) + " (celkem " + formatHours(real.time.spentSec) + ")");
+      saveState();
+      refreshActivity();
+    }
   } }, "+ Hodiny");
   tSec.append(
     el("label", {}, T("estimate") + " (h): ", estInp),
@@ -5060,6 +5404,43 @@ function openCardDetail(cardId) {
     setTimeout(() => titleInp.focus(), 50);
   } }, "+ Přidat podkartu");
   subSec.appendChild(addSubBtn);
+  // Druhé tlačítko: existující kartu jako podkartu — pickCard dialog
+  const linkExistingBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Přidat existující kartu jako podkartu této karty",
+    onclick: async () => {
+      const pickedId = await pickCard();
+      if (!pickedId) return;
+      if (pickedId === real.id) {
+        toast("Kartu nelze nastavit jako podkartu sebe sama.", "warning");
+        return;
+      }
+      const picked = getCard(pickedId);
+      if (!picked) return;
+      if (picked.parentCardId === real.id) {
+        toast("Tato karta už je podkartou.", "info");
+        return;
+      }
+      // Detekce cyklu: pokud by se real stal transitivním předkem picked
+      // (sub-of-sub-of...), neměli bychom to dovolit
+      let p = real;
+      while (p) {
+        if (p.id === pickedId) {
+          toast("Nelze přidat — vytvořil by se cyklus (tato karta je už potomkem vybrané).", "error");
+          return;
+        }
+        p = p.parentCardId ? getCard(p.parentCardId) : null;
+      }
+      setCardField(picked.id, "parentCardId", real.id);
+      logActivity(picked, "Nastavena jako podkarta „" + real.title + "“");
+      logActivity(real, "Přidána podkarta „" + picked.title + "“");
+      saveState();
+      refreshSubcards();
+      sound.add();
+      announce("Karta „" + picked.title + "“ nastavena jako podkarta.");
+    },
+  }, "+ Existující kartu");
+  subSec.appendChild(linkExistingBtn);
   right.appendChild(subSec);
 
   // Akce
@@ -5594,6 +5975,14 @@ function renderSmartView(container, smart) {
   }
   else if (smart === "overdue") cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.dueDate && new Date(c.dueDate) < dateOnly(new Date()));
   else if (smart === "nodate") cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && !c.dueDate && c.cardType !== "mirror");
+  else if (smart === "openChecklists") {
+    // Nehotové karty, které mají checklist s aspoň jednou nedokončenou položkou
+    cards = state.cards.filter(c => {
+      if (c.deleted || c.archived || c.completed) return false;
+      if (!c.checklists || !c.checklists.length) return false;
+      return c.checklists.some(cl => (cl.items || []).some(it => !it.completed));
+    });
+  }
   else if (smart === "completed") cards = state.cards.filter(c => !c.deleted && !c.archived && c.completed);
   else if (smart === "archive") cards = state.cards.filter(c => !c.deleted && c.archived);
   else if (smart === "trash") {
@@ -7391,6 +7780,10 @@ async function init() {
   // Hned při startu nastav popisek podle uložených časů (a pravidelně ho aktualizuj)
   updateSyncButtonLabel();
   setInterval(updateSyncButtonLabel, 30 * 1000);  // přepočet textu „před N min" každých 30 s
+  // Běžící časovače — chip v headeru, přepočet každých 10 sekund kvůli čitelnosti uplynulého času
+  updateRunningTimersChip();
+  setInterval(updateRunningTimersChip, 10 * 1000);
+  $("#runningTimersBtn").addEventListener("click", openRunningTimersDialog);
   $("#wsManage").addEventListener("click", openWorkspaceManager);
   $("#wsSelect").addEventListener("change", (e) => { state.ui.currentWorkspace = e.target.value; state.ui.currentView = { type:"welcome" }; saveState(); renderAll(); });
   $("#newBoardBtn").addEventListener("click", promptNewBoard);
