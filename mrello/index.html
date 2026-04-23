@@ -301,34 +301,6 @@ header.app-header h1 {
 }
 .sidebar-item:hover { background: var(--bg-hover); }
 .sidebar-item.active { background: var(--bg-active); font-weight: 600; }
-/* Řádek v sidebaru s nástěnkou — samotné tlačítko + tlačítko menu ··· */
-.sidebar-board-item {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.sidebar-board-item .sidebar-item {
-  flex: 1;
-  min-width: 0;
-}
-.sidebar-board-menu {
-  flex-shrink: 0;
-  background: transparent;
-  border: none;
-  padding: 4px 8px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  color: var(--fg-muted);
-  font-size: 14px;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.sidebar-board-item:hover .sidebar-board-menu,
-.sidebar-board-item:focus-within .sidebar-board-menu,
-.sidebar-board-menu:focus {
-  opacity: 1;
-}
-.sidebar-board-menu:hover { background: var(--bg-hover); color: var(--fg); }
 
 /* Pořadí seznamů v nastavení nástěnky */
 .list-order-list {
@@ -3239,22 +3211,11 @@ function renderSidebar() {
   );
   sortedBoards.forEach(b => {
     const isActive = state.ui.currentView.type === "board" && state.ui.currentView.boardId === b.id;
-    const li = el("li", { class: "sidebar-board-item" });
     const btn = el("button", {
       class:"sidebar-item " + (isActive ? "active" : ""),
       onclick: () => { state.ui.currentView = { type:"board", boardId: b.id, viewType: state.ui.currentView.viewType || "board" }; saveState(); renderAll(); }
     }, b.name, el("span", { class:"badge" }, String(cardsInBoard(b.id).length)));
-    btn.addEventListener("contextmenu", (e) => { e.preventDefault(); openBoardMenu(b, e); });
-    // Menu tlačítko · · · — přejmenovat, archivovat, smazat
-    const menuBtn = el("button", {
-      class: "sidebar-board-menu",
-      "aria-label": "Menu nástěnky „" + b.name + "“ (přejmenovat, smazat)",
-      title: "Přejmenovat nebo smazat",
-      onclick: (e) => { e.stopPropagation(); openBoardMenu(b, e); },
-    }, "···");
-    li.appendChild(btn);
-    li.appendChild(menuBtn);
-    bl.appendChild(li);
+    const li = el("li", {}, btn); bl.appendChild(li);
   });
   const sf = $("#savedFiltersList"); clear(sf);
   state.savedFilters.forEach(f => {
@@ -4030,12 +3991,12 @@ function openListMenu(board, list, ev) {
 function editBoardSettings(board) {
   const m = openModal({
     title: T("settings") + " – " + board.name,
-    body: renderBoardSettingsBody(board),
+    body: renderBoardSettingsBody(board, () => m.close()),
     footer: [el("button", { class:"primary", onclick: () => m.close() }, T("close"))],
     size:"large",
   });
 }
-function renderBoardSettingsBody(board) {
+function renderBoardSettingsBody(board, closeModal) {
   const wrap = el("div", {});
   // name
   wrap.appendChild(el("div", { class:"field-row" },
@@ -4153,6 +4114,34 @@ function renderBoardSettingsBody(board) {
     });
   }
   wrap.appendChild(auList);
+
+  // --- Nebezpečná zóna: smazání nástěnky ---
+  wrap.appendChild(el("h3", { style:{ marginTop:"24px", color:"var(--danger, #c00)" } }, "Nebezpečná zóna"));
+  wrap.appendChild(el("p", { class:"small muted" },
+    "Smazání nástěnky pošle nástěnku a všechny její karty do koše. Obnovit je lze v Koši v postranním panelu."));
+  const deleteBtn = el("button", {
+    class: "danger",
+    "aria-label": "Smazat nástěnku „" + board.name + "“ a všechny její karty",
+    onclick: async () => {
+      const ok = await confirm2(
+        "Opravdu smazat nástěnku „" + board.name + "“?\n\nVšechny karty, seznamy a štítky této nástěnky se přesunou do koše.",
+        { danger: true }
+      );
+      if (!ok) return;
+      deleteBoard(board.id);
+      // Pokud byla zobrazena tato nástěnka, přepni na welcome
+      if (state.ui.currentView && state.ui.currentView.type === "board" && state.ui.currentView.boardId === board.id) {
+        state.ui.currentView = { type: "welcome" };
+      }
+      saveState();
+      if (closeModal) closeModal();
+      renderAll();
+      toast("Nástěnka „" + board.name + "“ smazána.", "success");
+      announce("Nástěnka smazána.");
+      sound.remove();
+    },
+  }, "Smazat nástěnku");
+  wrap.appendChild(deleteBtn);
 
   return wrap;
 }
@@ -4620,6 +4609,229 @@ function memberCards(memberId, opts={}) {
 //#endregion
 
 //#region ============= CARD DETAIL MODAL =============
+// Vygeneruje Markdown report karty podle šablony report.md.
+// Používá se tlačítkem „Report“ v detailu karty — výstup se zkopíruje do schránky.
+function generateCardReport(card) {
+  if (!card) return "";
+  const board = getBoard(card.boardId);
+  const list = getList(card.listId);
+  const lines = [];
+
+  lines.push("# Report úkolu: " + (card.title || "(bez názvu)"));
+  lines.push("");
+  const now = new Date();
+  const genStr = now.toLocaleDateString("cs-CZ") + " " + now.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit" });
+  lines.push("Vygenerovalo Mrello " + genStr);
+  lines.push("");
+
+  // --- Základní informace ---
+  lines.push("## Základní informace");
+  lines.push("");
+  lines.push("**Nástěnka:** " + (board ? board.name : "(neznámá)"));
+  lines.push("");
+  lines.push("**Seznam:** " + (list ? list.name : "(neznámý)"));
+  lines.push("");
+  // Členové
+  const memberNames = (card.members || [])
+    .map(id => { const m = getMember(id); return m ? m.name : null; })
+    .filter(Boolean);
+  lines.push("**Členové:** " + (memberNames.length ? memberNames.join(", ") : "(žádní)"));
+  lines.push("");
+  // Datumy
+  if (card.startDate) {
+    lines.push("**Začátek:** " + formatDate(card.startDate));
+    lines.push("");
+  }
+  if (card.dueDate) {
+    lines.push("**Termín:** " + formatDate(card.dueDate));
+    lines.push("");
+  }
+  if (card.snoozeUntil) {
+    lines.push("**Odloženo do:** " + formatDate(card.snoozeUntil));
+    lines.push("");
+  }
+  // Štítky
+  const labelNames = (card.labels || [])
+    .map(id => { const l = getLabel(card.boardId, id); return l ? l.name : null; })
+    .filter(Boolean);
+  lines.push("**Štítky:** " + (labelNames.length ? labelNames.join(", ") : "(žádné)"));
+  lines.push("");
+  // Stav
+  lines.push(card.completed ? "**Je hotové**" : "**Není hotové**");
+  lines.push("");
+  if (card.archived) {
+    lines.push("**Archivováno**");
+    lines.push("");
+  }
+  // Čas
+  if (card.time && (card.time.estimateSec || card.time.spentSec || card.time.runningSince)) {
+    const parts = [];
+    if (card.time.estimateSec) parts.push("Odhad: " + formatHours(card.time.estimateSec));
+    let spentSec = card.time.spentSec || 0;
+    if (card.time.runningSince) spentSec += Math.round((Date.now() - card.time.runningSince) / 1000);
+    if (spentSec) parts.push("Stráveno: " + formatHours(spentSec));
+    if (card.time.runningSince) parts.push("(časovač běží)");
+    lines.push("**Čas:** " + parts.join(", "));
+    lines.push("");
+  }
+  // Vlastní pole
+  if (board && board.customFields && board.customFields.length) {
+    const cf = card.customFieldValues || {};
+    board.customFields.forEach(field => {
+      const val = cf[field.id];
+      if (val === undefined || val === null || val === "") return;
+      let display = val;
+      if (field.type === "checkbox") display = val ? "✓ Ano" : "✗ Ne";
+      else if (field.type === "date" && val) display = formatDate(val);
+      lines.push("**" + field.name + ":** " + display);
+      lines.push("");
+    });
+  }
+
+  // --- Popis ---
+  lines.push("## Popis");
+  lines.push("");
+  lines.push(card.description && card.description.trim() ? card.description : "(bez popisu)");
+  lines.push("");
+
+  // --- Checklisty ---
+  lines.push("## Checklisty");
+  lines.push("");
+  if (!card.checklists || !card.checklists.length) {
+    lines.push("(žádné)");
+    lines.push("");
+  } else {
+    card.checklists.forEach(cl => {
+      const done = (cl.items || []).filter(i => i.completed).length;
+      const total = (cl.items || []).length;
+      const pct = total ? Math.round(done * 100 / total) : 0;
+      lines.push("### " + (cl.name || "Checklist") + " (" + done + "/" + total + (total ? ", " + pct + " %" : "") + ")");
+      lines.push("");
+      if (!total) {
+        lines.push("(prázdný)");
+      } else {
+        cl.items.forEach(it => {
+          lines.push("- [" + (it.completed ? "x" : " ") + "] " + (it.text || ""));
+        });
+      }
+      lines.push("");
+    });
+  }
+
+  // --- Přílohy ---
+  lines.push("## Přílohy");
+  lines.push("");
+  if (!card.attachments || !card.attachments.length) {
+    lines.push("(žádné)");
+    lines.push("");
+  } else {
+    card.attachments.forEach(a => {
+      if (a.url) {
+        lines.push("- [" + (a.name || a.url) + "](" + a.url + ")");
+      } else {
+        const sizeKb = a.size ? " (" + Math.round(a.size / 1024) + " kB)" : "";
+        lines.push("- " + (a.name || "soubor") + sizeKb + (a.type ? " — " + a.type : ""));
+      }
+    });
+    lines.push("");
+  }
+
+  // --- Komentáře (od nejstaršího po nejnovější) ---
+  lines.push("## Komentáře");
+  lines.push("");
+  if (!card.comments || !card.comments.length) {
+    lines.push("(žádné)");
+    lines.push("");
+  } else {
+    // Komentáře jsou uloženy s nejnovějším nahoře (unshift), takže slice().reverse() dá chronologický pořádek
+    const sorted = card.comments.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    sorted.forEach(c => {
+      const ts = c.createdAt ? formatDate(c.createdAt, true) : "";
+      const author = c.author ? " — " + c.author : "";
+      lines.push("### " + ts + author);
+      lines.push("");
+      lines.push(c.text || "");
+      lines.push("");
+    });
+  }
+
+  // --- Podkarty ---
+  lines.push("## Podkarty");
+  lines.push("");
+  const subs = getSubcards(card.id);
+  if (!subs.length) {
+    lines.push("(žádné)");
+    lines.push("");
+  } else {
+    subs.forEach(s => {
+      const mark = s.completed ? "x" : " ";
+      const sList = getList(s.listId);
+      const loc = sList ? " — " + sList.name : "";
+      lines.push("- [" + mark + "] " + (s.title || "") + loc);
+    });
+    lines.push("");
+  }
+
+  // --- Závislosti ---
+  lines.push("## Závislosti");
+  lines.push("");
+  const deps = card.dependencies || {};
+  const depBlocks = (deps.blocks || []).map(id => getCard(id)).filter(Boolean);
+  const depBlockedBy = (deps.blockedBy || []).map(id => getCard(id)).filter(Boolean);
+  const depRelated = (deps.related || []).map(id => getCard(id)).filter(Boolean);
+  if (!depBlocks.length && !depBlockedBy.length && !depRelated.length) {
+    lines.push("(žádné)");
+    lines.push("");
+  } else {
+    if (depBlockedBy.length) {
+      lines.push("**Blokují tuto kartu:**");
+      lines.push("");
+      depBlockedBy.forEach(o => {
+        lines.push("- " + (o.completed ? "✓ " : "⛔ ") + o.title);
+      });
+      lines.push("");
+    }
+    if (depBlocks.length) {
+      lines.push("**Tato karta blokuje:**");
+      lines.push("");
+      depBlocks.forEach(o => {
+        lines.push("- " + (o.completed ? "✓ " : "") + o.title);
+      });
+      lines.push("");
+    }
+    if (depRelated.length) {
+      lines.push("**Souvisí:**");
+      lines.push("");
+      depRelated.forEach(o => {
+        lines.push("- " + o.title);
+      });
+      lines.push("");
+    }
+  }
+
+  // --- Aktivita (od nejstaršího po nejnovější) ---
+  lines.push("## Aktivita");
+  lines.push("");
+  const activity = (card.activity || []).slice().sort((a, b) => {
+    const ta = a.timestamp || a.at || 0;
+    const tb = b.timestamp || b.at || 0;
+    return ta - tb;
+  });
+  if (!activity.length) {
+    lines.push("(žádná)");
+    lines.push("");
+  } else {
+    activity.forEach(a => {
+      const ts = a.timestamp || a.at;
+      const msg = a.action || a.msg || "";
+      lines.push("- " + (ts ? formatDate(ts, true) + ": " : "") + msg);
+    });
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 function openCardDetail(cardId) {
   const card = getCard(cardId);
   if (!card) return;
@@ -5516,7 +5728,34 @@ function openCardDetail(cardId) {
       toast(T("sentToTrash"), "success"); sound.remove();
     }
   } }, T("delete"));
-  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, delBtn);
+  // Tlačítko Report — vygeneruje markdown report karty podle šablony a zkopíruje do schránky.
+  const reportBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Vygenerovat report karty a zkopírovat do schránky (Markdown)",
+    title: "Vygeneruje kompletní report karty v Markdown a zkopíruje ho do schránky.",
+    onclick: async () => {
+      const md = generateCardReport(real);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(md);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = md;
+          ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        toast("Report zkopírován do schránky.", "success");
+        announce("Report zkopírován do schránky.");
+        sound.click();
+      } catch (e) {
+        toast("Nepodařilo se zkopírovat: " + e.message, "error");
+      }
+    },
+  }, "📄 Report");
+  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, reportBtn, delBtn);
   right.appendChild(actBox);
 
   // --- Ruční automatizace: tlačítka pro každé manual pravidlo aktivní na této nástěnce ---
