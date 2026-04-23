@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-preserve-token-idb-first";
+const MRELLO_BUILD = "2026-04-23-sync-label-asterisk";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2461,18 +2461,18 @@ function syncButtonLabel() {
   if (!loadAt && !syncAt) {
     return "⟳ Synchronizace";
   }
-  // Klíčová otázka: máme lokální změny od posledního úspěšného sync / load?
-  const hasDirty = dirtyAt > lastSuccess;
-  const refTime = Math.max(loadAt, syncAt);
-  const refRel = formatRelTime(refTime);
-  if (hasDirty) {
-    return "⟳ Uložit lokální změny (od " + formatRelTime(dirtyAt) + ")";
-  }
-  // Nic neleží lokálně
+  // Základní label — podle toho, zda bylo naposledy syncováno nebo jen načteno.
+  // Tj. „Synchronizováno před X" uvidíš po úspěšném uploadu, „Načteno před X" po čerstvém stažení z GH.
+  let label;
   if (syncAt >= loadAt) {
-    return "⟳ Synchronizováno " + refRel;
+    label = "Synchronizováno " + formatRelTime(syncAt);
+  } else {
+    label = "Načteno " + formatRelTime(loadAt);
   }
-  return "⟳ Načteno " + refRel;
+  // Pokud jsou lokální změny neposlané na GitHub, přidej hvězdičku — diskrétní indikátor.
+  const hasDirty = dirtyAt > lastSuccess;
+  if (hasDirty) label += " *";
+  return "⟳ " + label;
 }
 // Vrátí pole běžících časovačů napříč všemi kartami.
 function getRunningTimers() {
