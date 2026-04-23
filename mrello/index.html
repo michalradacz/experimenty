@@ -346,6 +346,61 @@ header.app-header h1 {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
+/* Smart view Přílohy — dvě sekce s vnořenými seznamy */
+.smart-section {
+  font-size: 16px;
+  margin: 8px 0 6px;
+  color: var(--fg);
+}
+.attachments-list {
+  list-style: none;
+  padding: 0;
+}
+.attachments-list > li {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.attachments-list > li:last-child { border-bottom: none; }
+.att-inner {
+  list-style: none;
+  padding-left: 18px;
+  margin: 4px 0 0;
+}
+.att-inner li {
+  padding: 2px 0;
+  font-size: 13px;
+}
+/* Tlačítko „Vazby" na kartě v seznamu */
+.card-relations-btn {
+  margin-top: 4px;
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.card-relations-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.relations-popup-body h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+.relations-popup-body h4:first-child { margin-top: 0; }
+.relations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.relations-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.relations-list li:last-child { border-bottom: none; }
 .sidebar-item .badge {
   margin-left: auto;
   font-size: 11px;
@@ -1437,7 +1492,6 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
     <button class="icon-btn" id="plannerBtn" title="Plánovač (P)" data-i18n-title="planner">Pl</button>
     <button class="icon-btn" id="stickyBtn" title="Poznámky (M vytvoří novou)" data-i18n-title="stickies">Lp</button>
     <button class="icon-btn" id="membersBtn" title="Členové" data-i18n-title="members">Čl</button>
-    <button class="icon-btn" id="themeBtn" title="Přepnout téma (T)" data-i18n-title="theme">Té</button>
     <button class="icon-btn" id="helpBtn" title="Nápověda (?)" data-i18n-title="help">?</button>
     <button class="icon-btn" id="settingsBtn" title="Nastavení" data-i18n-title="settings">Na</button>
   </div>
@@ -1478,7 +1532,6 @@ const I18N_CS = {
   stickies: "Poznámky",
   newSticky: "Nová poznámka (M)",
   members: "Členové",
-  theme: "Přepnout téma (T)",
   help: "Nápověda (?)",
   settings: "Nastavení",
   today: "Dnes",
@@ -3033,6 +3086,38 @@ function toggleCardComplete(cardId) {
   saveState();
   runAutomationsFor(c.completed ? "card.completed" : "card.uncompleted", { card: c });
 }
+// Posune termín karty o jeden den dopředu.
+// Pokud karta termín nemá, nastaví ho na zítra (dnes + 1 den).
+// Vrátí objekt { oldDate, newDate, wasEmpty } pro případné použití UI (aria-oznámení, toast atd.).
+function bumpCardDue(cardId) {
+  const c = getCard(cardId); if (!c) return null;
+  const oldDate = c.dueDate;
+  let newDate;
+  if (!oldDate) {
+    newDate = isoLocalDate(addDays(new Date(), 1));
+  } else {
+    // Zkus to parsovat jako datum (ať už je to "YYYY-MM-DD" nebo ISO s časem)
+    const d = new Date(oldDate);
+    if (isNaN(d.getTime())) newDate = isoLocalDate(addDays(new Date(), 1));
+    else newDate = isoLocalDate(addDays(d, 1));
+  }
+  c.dueDate = newDate;
+  c.updatedAt = Date.now();
+  logActivity(c, oldDate
+    ? "Termín posunut z " + formatDate(oldDate) + " na " + formatDate(newDate)
+    : T("activityDueSet", formatDate(newDate)) + " (posun klávesou T)");
+  saveState();
+  return { oldDate, newDate, wasEmpty: !oldDate };
+}
+// Přepne stav oblíbená. Vrátí nový stav (true/false).
+function toggleCardFavorite(cardId) {
+  const c = getCard(cardId); if (!c) return false;
+  c.favorite = !c.favorite;
+  c.updatedAt = Date.now();
+  logActivity(c, c.favorite ? "Označeno jako oblíbené" : "Odebráno z oblíbených");
+  saveState();
+  return c.favorite;
+}
 function setCardField(cardId, field, value) {
   const c = getCard(cardId); if (!c) return;
   c[field] = value; c.updatedAt = Date.now();
@@ -3273,6 +3358,8 @@ function renderSidebar() {
     ["overdue", T("overdue")],
     ["nodate", T("noDate")],
     ["openChecklists", "Nedokončené checklisty"],
+    ["attachments", "Přílohy"],
+    ["favorites", "Oblíbené"],
     ["completed", T("completed")],
     ["archive", T("archive")],
     ["trash", T("trash")],
@@ -3325,6 +3412,14 @@ function countSmart(key) {
       if (!c.checklists || !c.checklists.length) return false;
       return c.checklists.some(cl => (cl.items || []).some(it => !it.completed));
     }).length;
+  }
+  if (key === "attachments") {
+    // Nearchivované karty s aspoň jednou přílohou
+    return all.filter(c => !c.archived && c.attachments && c.attachments.length > 0).length;
+  }
+  if (key === "favorites") {
+    // Všechny oblíbené (i archivované/hotové — oblíbené je napříč stavem)
+    return all.filter(c => c.favorite && !c.archived).length;
   }
   if (key === "completed") return all.filter(c => c.completed && !c.archived).length;
   if (key === "archive") return all.filter(c => c.archived).length;
@@ -3555,7 +3650,7 @@ function viewHeadlineText(v) {
     const suffix = { board:"", table:" – tabulka", calendar:" – kalendář", timeline:" – časová osa", dashboard:" – přehled", eisenhower:" – matice priorit" }[t] || "";
     return b.name + suffix;
   }
-  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
+  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", attachments:"Přílohy", favorites:"Oblíbené", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
   if (v.type === "inbox") return T("inbox");
   if (v.type === "planner") return T("planner");
   if (v.type === "stickies") return T("stickies");
@@ -4282,7 +4377,10 @@ function renderCard(card, list, position) {
   }
   // title (skip if shown in cover)
   if (!(eff.cover && eff.cover.full && eff.cover.value)) {
-    node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + eff.title));
+    // Oblíbené karty mají hvězdičku na začátku názvu (pro vizuální rozpoznání ve čtečce je aria-label karty
+    // doplněn v cardAriaLabel o zmínku "oblíbená").
+    const favMark = eff.favorite ? "⭐ " : "";
+    node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + favMark + eff.title));
   }
   // meta
   const meta = el("div", { class:"card-meta" });
@@ -4355,10 +4453,115 @@ function renderCard(card, list, position) {
   }
   if (isMirror) ind.appendChild(el("span", { class:"mirror-badge", title:"Zrcadlená kopie" }, "↪ zrcadlo"));
   if (ind.children.length) node.appendChild(ind);
+
+  // Tlačítko „Vazby“ — otevře popup s podkartami a závislostmi.
+  // Zobrazuje se, jen pokud karta má podkarty nebo nějaké závislosti.
+  const hasSubcards = getSubcards(eff.id).length > 0;
+  const hasDeps = eff.dependencies && (
+    (eff.dependencies.blocks || []).length > 0 ||
+    (eff.dependencies.blockedBy || []).length > 0 ||
+    (eff.dependencies.related || []).length > 0
+  );
+  if (hasSubcards || hasDeps) {
+    const relBtn = el("button", {
+      class:"card-relations-btn",
+      "aria-label": "Zobrazit vazby karty „" + eff.title + "“ (podkarty a závislosti)",
+      title: "Vazby (podkarty, závislosti)",
+      onclick: (e) => {
+        e.stopPropagation();
+        openRelationsPopup(eff);
+      },
+      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); },
+    }, "🔗 Vazby");
+    node.appendChild(relBtn);
+  }
   return node;
+}
+// Popup okno s podkartami a závislostmi karty. Každá položka klikatelná → otevře detail.
+function openRelationsPopup(card) {
+  const body = el("div", { class:"relations-popup-body" });
+  const subs = getSubcards(card.id);
+  if (subs.length) {
+    body.appendChild(el("h4", {}, "↳ Podkarty (" + subs.length + ")"));
+    const ul = el("ul", { class:"relations-list" });
+    subs.forEach(s => {
+      const li = el("li");
+      const mark = s.completed ? "✓ " : "";
+      const subList = getList(s.listId);
+      const btn = el("button", {
+        class:"link-btn",
+        onclick: () => { m.close(); openCardDetail(s.id); },
+      }, mark + s.title);
+      li.append(btn);
+      if (subList) li.append(el("span", { class:"muted small" }, " — " + subList.name));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }
+  const deps = card.dependencies || {};
+  const blocks = (deps.blocks || []).map(getCard).filter(Boolean);
+  const blockedBy = (deps.blockedBy || []).map(getCard).filter(Boolean);
+  const related = (deps.related || []).map(getCard).filter(Boolean);
+  if (blockedBy.length) {
+    body.appendChild(el("h4", {}, "⛔ Blokují tuto kartu (" + blockedBy.length + ")"));
+    const ul = el("ul", { class:"relations-list" });
+    blockedBy.forEach(o => {
+      const li = el("li");
+      const mark = o.completed ? "✓ " : "";
+      const ol = getList(o.listId);
+      const btn = el("button", {
+        class:"link-btn",
+        onclick: () => { m.close(); openCardDetail(o.id); },
+      }, mark + o.title);
+      li.append(btn);
+      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }
+  if (blocks.length) {
+    body.appendChild(el("h4", {}, "🚧 Tato karta blokuje (" + blocks.length + ")"));
+    const ul = el("ul", { class:"relations-list" });
+    blocks.forEach(o => {
+      const li = el("li");
+      const mark = o.completed ? "✓ " : "";
+      const ol = getList(o.listId);
+      const btn = el("button", {
+        class:"link-btn",
+        onclick: () => { m.close(); openCardDetail(o.id); },
+      }, mark + o.title);
+      li.append(btn);
+      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }
+  if (related.length) {
+    body.appendChild(el("h4", {}, "🔗 Souvisí (" + related.length + ")"));
+    const ul = el("ul", { class:"relations-list" });
+    related.forEach(o => {
+      const li = el("li");
+      const ol = getList(o.listId);
+      const btn = el("button", {
+        class:"link-btn",
+        onclick: () => { m.close(); openCardDetail(o.id); },
+      }, o.title);
+      li.append(btn);
+      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }
+  const m = openModal({
+    title: "Vazby karty „" + card.title + "“",
+    body,
+    size:"small",
+    footer: [el("button", { class:"primary", onclick: () => m.close() }, T("close"))],
+  });
 }
 function cardAriaLabel(card, eff) {
   const parts = [eff.title];
+  if (eff.favorite) parts.push("oblíbená");
   if (eff.completed) parts.push("hotovo");
   if (eff.dueDate) {
     const days = daysFromNow(eff.dueDate);
@@ -4418,6 +4621,31 @@ function onCardKey(e, card) {
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
     // 'h' — toggle hotovo (dříve Ctrl+Enter)
     if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleCardComplete(card.id); renderView(); _refocusCard(card.id); return; }
+    // 't' — posun termínu o jeden den dopředu
+    if (e.key === "t" || e.key === "T") {
+      e.preventDefault();
+      const r = bumpCardDue(card.id);
+      if (r) {
+        renderView();
+        _refocusCard(card.id);
+        sound.click();
+        const msg = r.wasEmpty
+          ? "Termín nastaven na " + formatDate(r.newDate) + "."
+          : "Termín posunut z " + formatDate(r.oldDate) + " na " + formatDate(r.newDate) + ".";
+        announce(msg);
+      }
+      return;
+    }
+    // 's' — přepnout oblíbené
+    if (e.key === "s" || e.key === "S") {
+      e.preventDefault();
+      const isFav = toggleCardFavorite(card.id);
+      renderView();
+      _refocusCard(card.id);
+      sound.click();
+      announce(isFav ? "Označeno jako oblíbené." : "Odebráno z oblíbených.");
+      return;
+    }
     // 'e' — přejmenovat kartu
     if (e.key === "e" || e.key === "E") {
       e.preventDefault();
@@ -5479,14 +5707,32 @@ function openCardDetail(cardId) {
       // Pokud je to soubor, nabídni download atribut (aby se stáhl, ne zobrazil)
       if (at.dataUrl && at.name) linkAttrs.download = at.name;
       const link = el("a", linkAttrs, at.name || at.url || "(bez názvu)");
+      // U souborů zalogujeme do aktivity stažení (kliknutí na odkaz)
+      if (at.dataUrl) {
+        link.addEventListener("click", () => {
+          logActivity(real, "Stažena příloha „" + (at.name || "soubor") + "“"
+            + (at.size ? " (" + formatBytes(at.size) + ")" : ""));
+          saveState();
+          if (typeof refreshActivity === "function") refreshActivity();
+        });
+      }
       const meta = el("span", { class:"muted small" },
         at.dataUrl ? " " + (at.type || "soubor") + ", " + formatBytes(at.size || 0) : " (URL)"
       );
-      const rm = el("button", { class:"ghost small", "aria-label":"Smazat přílohu", onclick: () => {
+      const rm = el("button", { class:"ghost small", "aria-label":"Smazat přílohu", onclick: async () => {
+        if (!await confirm2("Smazat přílohu „" + (at.name || at.url || "?") + "“?", { danger:true })) return;
+        const name = at.name || at.url || "(bez názvu)";
+        const isFile = !!at.dataUrl;
+        const size = at.size;
         real.attachments = real.attachments.filter(x => x.id !== at.id);
+        logActivity(real, "Smazána příloha „" + name + "“"
+          + (isFile && size ? " (" + formatBytes(size) + ")" : "")
+          + (isFile ? " — soubor byl odstraněn" : " — odkaz"));
         saveState();
         refreshAttachments();
+        if (typeof refreshActivity === "function") refreshActivity();
         sound.remove();
+        announce("Příloha „" + name + "“ smazána.");
       } }, "×");
       li.append(link, meta, " ", rm);
       aList.appendChild(li);
@@ -5941,7 +6187,44 @@ function openCardDetail(cardId) {
       }
     },
   }, "📄 Report");
-  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, reportBtn, delBtn);
+  // Tlačítko Posunout termín +1 den
+  const bumpBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Posunout termín karty o jeden den dopředu",
+    title: "Posune termín o jeden den dopředu. Pokud nemá termín, nastaví zítra.",
+    onclick: () => {
+      const r = bumpCardDue(real.id);
+      if (!r) return;
+      sound.click();
+      const msg = r.wasEmpty
+        ? "Termín nastaven na " + formatDate(r.newDate) + "."
+        : "Termín posunut z " + formatDate(r.oldDate) + " na " + formatDate(r.newDate) + ".";
+      announce(msg);
+      toast(msg, "success");
+      const dueInput = actBox.closest(".modal-overlay")?.querySelector(".date-row input[type=date][aria-label='" + T("dueDate") + "']");
+      if (dueInput) {
+        dueInput.value = r.newDate;
+        const clr = dueInput.closest(".date-row")?.querySelector("button");
+        if (clr) clr.hidden = false;
+      }
+      if (typeof refreshActivity === "function") refreshActivity();
+    },
+  }, "📅+1 Posunout termín");
+  // Tlačítko Oblíbené (přepínač)
+  const favBtn = el("button", {
+    class: "ghost",
+    "aria-label": real.favorite ? "Odebrat z oblíbených" : "Označit jako oblíbené",
+    dataset: { favBtn: "1" },
+    onclick: () => {
+      const isFav = toggleCardFavorite(real.id);
+      favBtn.textContent = isFav ? "⭐ Oblíbené (odebrat)" : "☆ Označit jako oblíbené";
+      favBtn.setAttribute("aria-label", isFav ? "Odebrat z oblíbených" : "Označit jako oblíbené");
+      sound.click();
+      announce(isFav ? "Označeno jako oblíbené." : "Odebráno z oblíbených.");
+      if (typeof refreshActivity === "function") refreshActivity();
+    },
+  }, real.favorite ? "⭐ Oblíbené (odebrat)" : "☆ Označit jako oblíbené");
+  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, bumpBtn, favBtn, reportBtn, delBtn);
   right.appendChild(actBox);
 
   // --- Ruční automatizace: tlačítka pro každé manual pravidlo aktivní na této nástěnce ---
@@ -6011,6 +6294,40 @@ function openCardDetail(cardId) {
     if (k === "r") { e.preventDefault(); openMoveCardDialog(real.id); return; }
     // 'h' — toggle hotovo. Kliknu za tebe na tlačítko (má správnou logiku vč. logování)
     if (k === "h") { e.preventDefault(); completeBtn.click(); return; }
+    // 't' — posun termínu o jeden den dopředu
+    if (k === "t") {
+      e.preventDefault();
+      const r = bumpCardDue(real.id);
+      if (r) {
+        sound.click();
+        const msg = r.wasEmpty
+          ? "Termín nastaven na " + formatDate(r.newDate) + "."
+          : "Termín posunut z " + formatDate(r.oldDate) + " na " + formatDate(r.newDate) + ".";
+        announce(msg);
+        // Aktualizuj dueDate input v date-row pokud je v DOM
+        const dueInput = m.overlay.querySelector(".date-row input[type=date][aria-label='" + T("dueDate") + "']");
+        if (dueInput) {
+          dueInput.value = r.newDate;
+          const clr = dueInput.closest(".date-row")?.querySelector("button");
+          if (clr) clr.hidden = false;
+        }
+        if (typeof refreshActivity === "function") refreshActivity();
+      }
+      return;
+    }
+    // 's' — přepnout oblíbené. Zavolá tlačítko v akcích (pokud existuje), jinak přímo toggle.
+    if (k === "s") {
+      e.preventDefault();
+      const isFav = toggleCardFavorite(real.id);
+      // Aktualizuj tlačítko Oblíbené, pokud je v DOM
+      const favBtn = Array.from(m.overlay.querySelectorAll("button"))
+        .find(b => b.dataset && b.dataset.favBtn === "1");
+      if (favBtn) favBtn.textContent = isFav ? "⭐ Oblíbené (odebrat)" : "☆ Označit jako oblíbené";
+      sound.click();
+      announce(isFav ? "Označeno jako oblíbené." : "Odebráno z oblíbených.");
+      if (typeof refreshActivity === "function") refreshActivity();
+      return;
+    }
     // 'e' — přejmenovat kartu. Najdu tlačítko Přejmenovat (aria-label) a simuluji klik
     if (k === "e") {
       e.preventDefault();
@@ -6417,6 +6734,89 @@ function renderEisenhowerView(container, board) {
 //#endregion
 
 //#region ============= SMART VIEWS =============
+// Formátuje velikost přílohy (bajty → „123 B / 12.3 kB / 1.2 MB").
+function formatAttachmentSize(bytes) {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " kB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+// Render smart view „Přílohy" — dvě sekce:
+//   1) Souborové přílohy — karty, které mají soubor v attachments (base64 dataUrl), s velikostí
+//   2) Odkazové přílohy — karty, které mají URL odkazy, s klikatelnými odkazy
+// Karty, které mají oba typy, se objeví v obou sekcích.
+function renderAttachmentsSmartView(wrap) {
+  const candidates = state.cards.filter(c => !c.deleted && !c.archived && c.attachments && c.attachments.length > 0);
+  // Rozdělení příloh podle typu: soubor = má size/type nebo dataUrl bez url; odkaz = má url
+  const fileCards = [];  // [{ card, files: [attachment, ...] }]
+  const linkCards = [];  // [{ card, links: [attachment, ...] }]
+  candidates.forEach(c => {
+    const files = (c.attachments || []).filter(a => !a.url || a.dataUrl);
+    const links = (c.attachments || []).filter(a => a.url && !a.dataUrl);
+    if (files.length) fileCards.push({ card: c, files });
+    if (links.length) linkCards.push({ card: c, links });
+  });
+  // Sekce 1: Souborové přílohy
+  wrap.appendChild(el("h2", { class:"smart-section" }, "Souborové přílohy"));
+  if (!fileCards.length) {
+    wrap.appendChild(el("p", { class:"muted" }, "Žádné karty se souborovými přílohami."));
+  } else {
+    fileCards.sort((a, b) => (a.card.title || "").localeCompare(b.card.title || "", "cs"));
+    const ul = el("ul", { class:"smart-list attachments-list" });
+    fileCards.forEach(({ card, files }) => {
+      const li = el("li");
+      const board = getBoard(card.boardId);
+      const list = getList(card.listId);
+      const cardBtn = el("button", { class:"link-btn", onclick: () => openCardDetail(card.id) }, card.title);
+      const meta = el("span", { class:"muted small" }, " — " + [board?.name, list?.name].filter(Boolean).join(", "));
+      li.append(cardBtn, meta);
+      // Podseznam souborů
+      const inner = el("ul", { class:"att-inner" });
+      files.forEach(f => {
+        const liF = el("li");
+        const name = f.name || "(bez názvu)";
+        const size = f.size ? formatAttachmentSize(f.size) : "";
+        const type = f.type ? " · " + f.type : "";
+        liF.textContent = "📎 " + name + (size ? " (" + size + ")" : "") + type;
+        inner.appendChild(liF);
+      });
+      li.appendChild(inner);
+      ul.appendChild(li);
+    });
+    wrap.appendChild(ul);
+  }
+  // Sekce 2: Odkazové přílohy
+  wrap.appendChild(el("h2", { class:"smart-section", style:{ marginTop:"20px" } }, "Odkazové přílohy"));
+  if (!linkCards.length) {
+    wrap.appendChild(el("p", { class:"muted" }, "Žádné karty s odkazovými přílohami."));
+  } else {
+    linkCards.sort((a, b) => (a.card.title || "").localeCompare(b.card.title || "", "cs"));
+    const ul = el("ul", { class:"smart-list attachments-list" });
+    linkCards.forEach(({ card, links }) => {
+      const li = el("li");
+      const board = getBoard(card.boardId);
+      const list = getList(card.listId);
+      const cardBtn = el("button", { class:"link-btn", onclick: () => openCardDetail(card.id) }, card.title);
+      const meta = el("span", { class:"muted small" }, " — " + [board?.name, list?.name].filter(Boolean).join(", "));
+      li.append(cardBtn, meta);
+      // Podseznam odkazů — každý klikatelný
+      const inner = el("ul", { class:"att-inner" });
+      links.forEach(ln => {
+        const liL = el("li");
+        const a = el("a", { href: ln.url, target:"_blank", rel:"noopener noreferrer" }, "🔗 " + (ln.name || ln.url));
+        liL.append(a);
+        if (ln.name && ln.name !== ln.url) {
+          liL.append(el("span", { class:"muted small" }, " — " + ln.url));
+        }
+        inner.appendChild(liL);
+      });
+      li.appendChild(inner);
+      ul.appendChild(li);
+    });
+    wrap.appendChild(ul);
+  }
+}
+
 function renderSmartView(container, smart) {
   const wrap = el("div", { class:"view-wrap smart-view" });
   const titles = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
@@ -6442,6 +6842,15 @@ function renderSmartView(container, smart) {
       if (!c.checklists || !c.checklists.length) return false;
       return c.checklists.some(cl => (cl.items || []).some(it => !it.completed));
     });
+  }
+  else if (smart === "attachments") {
+    // Specialní pohled: dvě sekce — soubory a URL
+    renderAttachmentsSmartView(wrap);
+    container.appendChild(wrap);
+    return;
+  }
+  else if (smart === "favorites") {
+    cards = state.cards.filter(c => !c.deleted && !c.archived && c.favorite);
   }
   else if (smart === "completed") cards = state.cards.filter(c => !c.deleted && !c.archived && c.completed);
   else if (smart === "archive") cards = state.cards.filter(c => !c.deleted && c.archived);
@@ -7234,7 +7643,6 @@ function openHelp() {
     ["P", "Skok do Plánovače"],
     ["G", "Skok na libovolnou nástěnku (otevře výběr)"],
     ["B", "Přepnout na další nástěnku cyklicky"],
-    ["T", "Přepnout téma (světlé/tmavé/auto)"],
     ["F", "Skrýt / zobrazit postranní panel"],
     ["accesskey S", "Uložit do GitHubu (tlačítko ⟳ v headeru)"],
     ["/", "Skok do vyhledávání"],
@@ -7253,6 +7661,8 @@ function openHelp() {
     ["H", "Označit jako hotové / vrátit zpět"],
     ["E", "Přejmenovat kartu"],
     ["K", "Přidat URL přílohu (přijímá i markdown odkaz [text](url))"],
+    ["T", "Posunout termín o jeden den dopředu (pokud termín není, nastaví zítra)"],
+    ["S", "Přepnout oblíbené"],
     ["A", "Přiřadit členy"],
     ["L", "Štítky"],
     ["D", "Termín"],
@@ -7273,6 +7683,8 @@ function openHelp() {
     ["H", "Označit jako hotové / vrátit zpět"],
     ["E", "Přejmenovat kartu"],
     ["K", "Přidat URL přílohu (přijímá i markdown odkaz)"],
+    ["T", "Posunout termín o jeden den dopředu"],
+    ["S", "Přepnout oblíbené"],
     ["A / L / D / C / R", "Stejné akce jako na fokusované kartě"],
     ["Esc", "Zavřít detail"],
   ];
@@ -8257,12 +8669,6 @@ async function init() {
   $("#plannerBtn").addEventListener("click", () => { state.ui.currentView = { type:"planner" }; renderAll(); });
   $("#stickyBtn").addEventListener("click", () => { state.ui.currentView = { type:"stickies" }; renderAll(); });
   $("#membersBtn").addEventListener("click", () => { state.ui.currentView = { type:"members" }; renderAll(); });
-  $("#themeBtn").addEventListener("click", () => {
-    const order = ["auto","light","dark"];
-    state.settings.theme = order[(order.indexOf(state.settings.theme) + 1) % order.length];
-    applyTheme(); saveState();
-    toast("Téma: " + state.settings.theme, "info");
-  });
   $("#helpBtn").addEventListener("click", openHelp);
   $("#settingsBtn").addEventListener("click", openSettings);
 
@@ -8289,12 +8695,6 @@ async function init() {
       case "b": case "B":  e.preventDefault(); cycleBoard(1); return;
       case "i": case "I":  e.preventDefault(); state.ui.currentView = { type:"inbox" }; renderAll(); return;
       case "p": case "P":  e.preventDefault(); state.ui.currentView = { type:"planner" }; renderAll(); return;
-      case "t": case "T":
-        e.preventDefault();
-        state.settings.theme = state.settings.theme === "dark" ? "light" : (state.settings.theme === "light" ? "auto" : "dark");
-        applyTheme(); saveState();
-        announce("Téma: " + state.settings.theme);
-        return;
       case "f": case "F":  e.preventDefault(); toggleSidebar(); return;
       case "Escape":
         if (state.ui.focusCardId) { state.ui.focusCardId = null; document.body.classList.remove("focus-mode"); renderAll(); }
