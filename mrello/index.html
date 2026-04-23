@@ -370,6 +370,70 @@ header.app-header h1 {
   padding: 2px 0;
   font-size: 13px;
 }
+/* Záznamy času v detailu karty */
+.time-entries-wrap {
+  margin-top: 10px;
+}
+.time-entries-wrap summary {
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.time-entries {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+}
+.time-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.time-entry > span:first-child { flex: 1; }
+.time-entry:last-child { border-bottom: none; }
+/* Report času */
+.time-report-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.time-report-custom {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.time-report-total {
+  margin: 10px 0;
+  font-size: 20px;
+}
+.time-report-board {
+  margin-bottom: 16px;
+  padding: 10px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+}
+.time-report-board h3 {
+  margin-top: 0;
+  font-size: 15px;
+}
+.time-report-cards {
+  list-style: none;
+  padding-left: 12px;
+  margin: 6px 0 0;
+}
+.time-report-cards li {
+  padding: 3px 0;
+}
 /* Tlačítko „Vazby" na kartě v seznamu */
 .card-relations-btn {
   margin-top: 4px;
@@ -1518,7 +1582,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-gh-load-robust-fallback";
+const MRELLO_BUILD = "2026-04-23-time-tracking-entries-and-reports";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3200,6 +3264,199 @@ function toggleCardFavorite(cardId) {
   saveState();
   return c.favorite;
 }
+
+// ============ ČASOVAČE ============
+// Struktura: card.time = { estimateSec, spentSec, runningSince, entries: [...] }
+// Každý entry: { id, start: ms, end: ms, durationSec, note, source }
+//   - source: "timer" | "manual" | "pomodoro"
+//   - start/end jsou timestampy v ms (Date.now())
+//   - durationSec je redundantní cache (vypočtené jako (end-start)/1000), aby se v reportech
+//     nemuselo přepočítávat a aby ruční záznamy s vlastním start/end byly konzistentní
+
+// Ujisti se, že má karta pole time i entries — starší karty mohou mít jen time.
+function ensureCardTime(card) {
+  if (!card.time) card.time = { estimateSec: 0, spentSec: 0, runningSince: null, entries: [] };
+  if (!Array.isArray(card.time.entries)) card.time.entries = [];
+  return card.time;
+}
+
+// Zahájí běh časovače na kartě. Vrací { started: true } nebo { alreadyRunning: true }.
+function startCardTimer(cardId) {
+  const c = getCard(cardId); if (!c) return null;
+  const t = ensureCardTime(c);
+  if (t.runningSince) return { alreadyRunning: true, since: t.runningSince };
+  t.runningSince = Date.now();
+  c.updatedAt = Date.now();
+  logActivity(c, "Časovač spuštěn");
+  saveState();
+  return { started: true };
+}
+
+// Zastaví běh časovače. Uzavře entry (start = runningSince, end = now) a přičte do spentSec.
+// Vrací { stopped: true, addedSec, totalSec } nebo null (nic neběželo).
+function stopCardTimer(cardId) {
+  const c = getCard(cardId); if (!c) return null;
+  const t = ensureCardTime(c);
+  if (!t.runningSince) return null;
+  const end = Date.now();
+  const start = t.runningSince;
+  const addedSec = Math.max(0, Math.round((end - start) / 1000));
+  t.spentSec = (t.spentSec || 0) + addedSec;
+  t.entries.push({
+    id: uid("tt_"),
+    start, end,
+    durationSec: addedSec,
+    note: "",
+    source: "timer",
+  });
+  t.runningSince = null;
+  c.updatedAt = Date.now();
+  logActivity(c, "Časovač zastaven, přidáno " + formatHours(addedSec) + " (celkem " + formatHours(t.spentSec) + ")");
+  saveState();
+  return { stopped: true, addedSec, totalSec: t.spentSec };
+}
+
+// Přepne časovač. Pokud neběžel, spustí; pokud běžel, zastaví.
+// Vrací { action: "started"|"stopped", ...další pole z výše uvedených }
+function toggleCardTimer(cardId) {
+  const c = getCard(cardId); if (!c) return null;
+  const t = ensureCardTime(c);
+  if (t.runningSince) {
+    const r = stopCardTimer(cardId);
+    return Object.assign({ action: "stopped" }, r || {});
+  } else {
+    const r = startCardTimer(cardId);
+    return Object.assign({ action: "started" }, r || {});
+  }
+}
+
+// Přidá ruční záznam s explicitním intervalem.
+// startMs, endMs — Date.now()-formát milisekund. Note je volitelná poznámka.
+// Vrací vytvořený entry objekt nebo null při chybě.
+function addCardTimeEntry(cardId, startMs, endMs, note) {
+  const c = getCard(cardId); if (!c) return null;
+  if (!(startMs > 0) || !(endMs > 0) || endMs <= startMs) return null;
+  const t = ensureCardTime(c);
+  const durationSec = Math.max(1, Math.round((endMs - startMs) / 1000));
+  const entry = {
+    id: uid("tt_"),
+    start: startMs, end: endMs,
+    durationSec,
+    note: (note || "").trim(),
+    source: "manual",
+  };
+  t.entries.push(entry);
+  t.spentSec = (t.spentSec || 0) + durationSec;
+  c.updatedAt = Date.now();
+  const fmtNote = entry.note ? ` „${entry.note}“` : "";
+  logActivity(c, "Ručně přidán záznam " + formatHours(durationSec) + fmtNote + " (celkem " + formatHours(t.spentSec) + ")");
+  saveState();
+  return entry;
+}
+
+// Přidá prostý záznam délky X sekund ke kartě (bez přesného intervalu).
+// Slouží pro rychlé "+Hodiny" a pro Pomodoro dokončení.
+// Zpětně vypočte start/end tak, že end = now a start = end - duration.
+function addCardTimeDuration(cardId, durationSec, source, note) {
+  const c = getCard(cardId); if (!c) return null;
+  if (!(durationSec > 0)) return null;
+  const t = ensureCardTime(c);
+  const end = Date.now();
+  const start = end - durationSec * 1000;
+  const entry = {
+    id: uid("tt_"),
+    start, end,
+    durationSec,
+    note: (note || "").trim(),
+    source: source || "manual",
+  };
+  t.entries.push(entry);
+  t.spentSec = (t.spentSec || 0) + durationSec;
+  c.updatedAt = Date.now();
+  const prefix = source === "pomodoro" ? "Pomodoro dokončeno, přidáno "
+              : source === "manual"   ? "Ručně přidáno "
+              : "Přidán čas ";
+  const fmtNote = entry.note && source !== "pomodoro" ? ` „${entry.note}“` : "";
+  logActivity(c, prefix + formatHours(durationSec) + fmtNote + " (celkem " + formatHours(t.spentSec) + ")");
+  saveState();
+  return entry;
+}
+
+// Smaže záznam podle ID. Odečte durationSec od spentSec. Pokud to byl otevřený entry (end je
+// null a runningSince je aktuální, neexistuje — rvací timer nemá entry dokud se nezastaví),
+// taky neřeší.
+function deleteCardTimeEntry(cardId, entryId) {
+  const c = getCard(cardId); if (!c) return false;
+  const t = ensureCardTime(c);
+  const idx = t.entries.findIndex(e => e.id === entryId);
+  if (idx < 0) return false;
+  const removed = t.entries.splice(idx, 1)[0];
+  t.spentSec = Math.max(0, (t.spentSec || 0) - (removed.durationSec || 0));
+  c.updatedAt = Date.now();
+  logActivity(c, "Smazán záznam času " + formatHours(removed.durationSec || 0) + " (celkem " + formatHours(t.spentSec) + ")");
+  saveState();
+  return true;
+}
+
+// Dialog pro ruční přidání záznamu s explicitním intervalem (od / do / poznámka).
+// Po uložení volá onSaved() aby rodič přepočetl UI.
+function openAddTimeEntryDialog(card, onSaved) {
+  if (!card) return;
+  // Default: poslední hodina (end = teď, start = teď - 1h)
+  const now = new Date();
+  const startDefault = new Date(now.getTime() - 60 * 60 * 1000);
+  // datetime-local vyžaduje formát "YYYY-MM-DDTHH:MM" lokálně (bez Z)
+  const toLocalInput = (d) => {
+    const pad = n => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate())
+         + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  };
+  const startInp = el("input", { type:"datetime-local", value: toLocalInput(startDefault), "aria-label":"Od (datum a čas)" });
+  const endInp = el("input", { type:"datetime-local", value: toLocalInput(now), "aria-label":"Do (datum a čas)" });
+  const noteInp = el("input", { type:"text", placeholder:"Poznámka (volitelné)", "aria-label":"Poznámka" });
+  const durPreview = el("div", { class:"muted small", "aria-live":"polite" }, "");
+  const updateDur = () => {
+    const s = startInp.value ? new Date(startInp.value).getTime() : 0;
+    const e = endInp.value ? new Date(endInp.value).getTime() : 0;
+    if (s > 0 && e > s) {
+      durPreview.textContent = "Délka: " + formatHours(Math.round((e - s) / 1000));
+    } else if (s > 0 && e > 0 && e <= s) {
+      durPreview.textContent = "Chyba: „Do“ musí být později než „Od“.";
+    } else {
+      durPreview.textContent = "";
+    }
+  };
+  startInp.addEventListener("input", updateDur);
+  endInp.addEventListener("input", updateDur);
+  updateDur();
+  const m = openModal({
+    title: "Přidat záznam času — „" + card.title + "“",
+    body: el("div", {},
+      el("div", { class:"field-row" }, el("label", {}, "Od: "), startInp),
+      el("div", { class:"field-row" }, el("label", {}, "Do: "), endInp),
+      el("div", { class:"field-row" }, el("label", {}, "Poznámka: "), noteInp),
+      durPreview,
+    ),
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const s = startInp.value ? new Date(startInp.value).getTime() : 0;
+        const e = endInp.value ? new Date(endInp.value).getTime() : 0;
+        if (!s || !e || e <= s) { toast("Neplatný interval (Do musí být později než Od).", "warning"); sound.warn(); return; }
+        const entry = addCardTimeEntry(card.id, s, e, noteInp.value);
+        if (!entry) { toast("Záznam se nepodařilo přidat.", "error"); return; }
+        toast("Záznam přidán: " + formatHours(entry.durationSec), "success");
+        announce("Přidán záznam " + formatHours(entry.durationSec) + ".");
+        sound.add();
+        m.close();
+        if (onSaved) onSaved();
+      } }, T("save")),
+    ],
+    size:"small",
+  });
+  setTimeout(() => startInp.focus(), 50);
+}
+
 function setCardField(cardId, field, value) {
   const c = getCard(cardId); if (!c) return;
   c[field] = value; c.updatedAt = Date.now();
@@ -3442,6 +3699,7 @@ function renderSidebar() {
     ["openChecklists", "Nedokončené checklisty"],
     ["attachments", "Přílohy"],
     ["favorites", "Oblíbené"],
+    ["timeReport", "Přehled času"],
     ["completed", T("completed")],
     ["archive", T("archive")],
     ["trash", T("trash")],
@@ -3732,7 +3990,7 @@ function viewHeadlineText(v) {
     const suffix = { board:"", table:" – tabulka", calendar:" – kalendář", timeline:" – časová osa", dashboard:" – přehled", eisenhower:" – matice priorit" }[t] || "";
     return b.name + suffix;
   }
-  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", attachments:"Přílohy", favorites:"Oblíbené", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
+  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", attachments:"Přílohy", favorites:"Oblíbené", timeReport:"Přehled času", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
   if (v.type === "inbox") return T("inbox");
   if (v.type === "planner") return T("planner");
   if (v.type === "stickies") return T("stickies");
@@ -4752,6 +5010,22 @@ function onCardKey(e, card) {
       _refocusCard(card.id);
       sound.click();
       announce(isFav ? "Označeno jako oblíbené." : "Odebráno z oblíbených.");
+      return;
+    }
+    // 'z' — přepnout časovač (start/stop)
+    if (e.key === "z" || e.key === "Z") {
+      e.preventDefault();
+      const r = toggleCardTimer(card.id);
+      if (!r) return;
+      renderView();
+      _refocusCard(card.id);
+      sound.click();
+      if (r.action === "started") {
+        announce("Časovač spuštěn.");
+      } else {
+        announce("Časovač zastaven, přidáno " + formatHours(r.addedSec || 0) + ", celkem " + formatHours(r.totalSec || 0) + ".");
+      }
+      updateRunningTimersChip();
       return;
     }
     // 'e' — přejmenovat kartu
@@ -5947,38 +6221,90 @@ function openCardDetail(cardId) {
   const spentLabel = el("span", {}, formatHours(real.time.spentSec || 0));
   const runBtn = el("button", { class:"ghost" }, real.time.runningSince ? "Stop" : "Start");
   runBtn.addEventListener("click", () => {
-    if (real.time.runningSince) {
-      const addedSec = Math.round((Date.now() - real.time.runningSince) / 1000);
-      real.time.spentSec = (real.time.spentSec || 0) + addedSec;
-      real.time.runningSince = null;
-      runBtn.textContent = "Start";
-      logActivity(real, "Časovač zastaven, přidáno " + formatHours(addedSec) + " (celkem " + formatHours(real.time.spentSec) + ")");
-      announce("Časovač zastaven.");
-    } else {
-      real.time.runningSince = Date.now();
+    const r = toggleCardTimer(real.id);
+    if (!r) return;
+    if (r.action === "started") {
       runBtn.textContent = "Stop";
-      logActivity(real, "Časovač spuštěn");
       announce("Časovač spuštěn.");
+    } else {
+      runBtn.textContent = "Start";
+      announce("Časovač zastaven, přidáno " + formatHours(r.addedSec) + ".");
     }
     spentLabel.textContent = formatHours(real.time.spentSec || 0);
-    saveState();
     refreshActivity();
+    refreshEntries();
+    updateRunningTimersChip();
   });
   const addManual = el("button", { class:"ghost", onclick: () => {
-    const h = parseFloat(prompt("Přidat strávené hodiny:", "0.25") || "0");
+    const h = parseFloat(prompt("Přidat strávené hodiny (rychlé, bez uvedení od-do):", "0.25") || "0");
     if (h > 0) {
       const sec = Math.round(h * 3600);
-      real.time.spentSec = (real.time.spentSec || 0) + sec;
+      addCardTimeDuration(real.id, sec, "manual", "");
       spentLabel.textContent = formatHours(real.time.spentSec);
-      logActivity(real, "Ručně přidáno " + formatHours(sec) + " (celkem " + formatHours(real.time.spentSec) + ")");
-      saveState();
       refreshActivity();
+      refreshEntries();
     }
   } }, "+ Hodiny");
+  const addEntryBtn = el("button", { class:"ghost", onclick: () => openAddTimeEntryDialog(real, () => {
+    spentLabel.textContent = formatHours(real.time.spentSec || 0);
+    refreshActivity();
+    refreshEntries();
+  }) }, "+ Záznam od-do…");
   tSec.append(
     el("label", {}, T("estimate") + " (h): ", estInp),
-    el("div", {}, "Stráveno: ", spentLabel, " ", runBtn, " ", addManual),
+    el("div", {}, "Stráveno: ", spentLabel, " ", runBtn, " ", addManual, " ", addEntryBtn),
   );
+  // Seznam záznamů — rozbalitelný (details/summary), ať nezabírá místo defaultně
+  const entriesWrap = el("details", { class:"time-entries-wrap" });
+  const entriesSummary = el("summary", {}, "Záznamy času");
+  entriesWrap.appendChild(entriesSummary);
+  const entriesList = el("div", { class:"time-entries-list" });
+  entriesWrap.appendChild(entriesList);
+  function refreshEntries() {
+    clear(entriesList);
+    const entries = (real.time && real.time.entries) || [];
+    if (!entries.length) {
+      entriesList.appendChild(el("p", { class:"muted small" }, "Zatím žádné záznamy."));
+      entriesSummary.textContent = "Záznamy času";
+      return;
+    }
+    entriesSummary.textContent = "Záznamy času (" + entries.length + ")";
+    // Seřadit nejnovější první
+    const sorted = entries.slice().sort((a, b) => (b.end || 0) - (a.end || 0));
+    const ul = el("ul", { class:"time-entries" });
+    sorted.forEach(e => {
+      const li = el("li", { class:"time-entry" });
+      const dateStr = e.start ? formatDate(e.start, true) : "";
+      const endStr = e.end ? formatDate(e.end, true) : "";
+      const dur = formatHours(e.durationSec || 0);
+      const src = e.source === "timer" ? "🕒" : e.source === "pomodoro" ? "🍅" : "✍";
+      const mainSpan = el("span", {}, src + " " + dur + " ");
+      if (e.start && e.end) {
+        mainSpan.appendChild(el("span", { class:"muted small" }, dateStr + " → " + endStr));
+      } else if (e.end) {
+        mainSpan.appendChild(el("span", { class:"muted small" }, endStr));
+      }
+      if (e.note) mainSpan.appendChild(el("span", {}, " — " + e.note));
+      li.appendChild(mainSpan);
+      const rmBtn = el("button", {
+        class: "ghost small",
+        "aria-label": "Smazat záznam " + dur,
+        onclick: async () => {
+          if (!await confirm2("Smazat záznam " + dur + "?", { danger:true })) return;
+          deleteCardTimeEntry(real.id, e.id);
+          spentLabel.textContent = formatHours(real.time.spentSec || 0);
+          refreshEntries();
+          refreshActivity();
+          sound.remove();
+        },
+      }, "×");
+      li.appendChild(rmBtn);
+      ul.appendChild(li);
+    });
+    entriesList.appendChild(ul);
+  }
+  refreshEntries();
+  tSec.appendChild(entriesWrap);
   right.appendChild(tSec);
 
   // Dependencies
@@ -6436,6 +6762,25 @@ function openCardDetail(cardId) {
       if (typeof refreshActivity === "function") refreshActivity();
       return;
     }
+    // 'z' — přepnout časovač. Aktualizuje UI tlačítka Start/Stop v sekci Čas, pokud je vidět.
+    if (k === "z") {
+      e.preventDefault();
+      const r = toggleCardTimer(real.id);
+      if (!r) return;
+      sound.click();
+      // Najít tlačítko Start/Stop v time tracking sekci (textContent === "Start" nebo "Stop")
+      const btn = Array.from(m.overlay.querySelectorAll("section[aria-label='" + T("timeTracking") + "'] button"))
+        .find(b => b.textContent === "Start" || b.textContent === "Stop");
+      if (btn) btn.textContent = r.action === "started" ? "Stop" : "Start";
+      if (r.action === "started") {
+        announce("Časovač spuštěn.");
+      } else {
+        announce("Časovač zastaven, přidáno " + formatHours(r.addedSec || 0) + ", celkem " + formatHours(r.totalSec || 0) + ".");
+      }
+      if (typeof refreshActivity === "function") refreshActivity();
+      updateRunningTimersChip();
+      return;
+    }
     // 'e' — přejmenovat kartu. Najdu tlačítko Přejmenovat (aria-label) a simuluji klik
     if (k === "e") {
       e.preventDefault();
@@ -6853,6 +7198,155 @@ function formatAttachmentSize(bytes) {
 //   1) Souborové přílohy — karty, které mají soubor v attachments (base64 dataUrl), s velikostí
 //   2) Odkazové přílohy — karty, které mají URL odkazy, s klikatelnými odkazy
 // Karty, které mají oba typy, se objeví v obou sekcích.
+// Přehled času — vykreslí rekapitulaci spent time v 3 režimech: Dnes / Tento měsíc / Vlastní rozsah.
+// Každý entry je započítán do aktuálního dne i měsíce podle entry.end (případně start pokud end chybí).
+// Vypíše celkový součet + strom Nástěnka → Karta s hodinami, vše klikatelné na detail karty.
+function renderTimeReportView(wrap) {
+  // Komponenta: toolbar s třemi tlačítky přepínající rozsah + pro Vlastní rozsah input od-do.
+  let mode = "today";  // today | month | custom
+  let customStart = null;  // ms
+  let customEnd = null;    // ms
+
+  const toolbar = el("div", { class:"time-report-toolbar" });
+  const btnToday = el("button", { class:"primary", "aria-pressed":"true" }, "Dnes");
+  const btnMonth = el("button", { class:"ghost", "aria-pressed":"false" }, "Tento měsíc");
+  const btnCustom = el("button", { class:"ghost", "aria-pressed":"false" }, "Vlastní rozsah…");
+  toolbar.append(btnToday, " ", btnMonth, " ", btnCustom);
+  wrap.appendChild(toolbar);
+
+  // Kontejner pro vlastní rozsah (zatím skrytý)
+  const customRangeBox = el("div", { class:"time-report-custom", hidden: true });
+  const now = new Date();
+  const toLocalDate = (d) => {
+    const pad = n => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
+  };
+  const rangeFrom = el("input", { type:"date", value: toLocalDate(new Date(now.getFullYear(), now.getMonth(), 1)), "aria-label":"Rozsah od" });
+  const rangeTo = el("input", { type:"date", value: toLocalDate(now), "aria-label":"Rozsah do" });
+  const rangeApply = el("button", { class:"primary" }, "Zobrazit");
+  customRangeBox.append(
+    el("label", {}, "Od: "), rangeFrom, " ",
+    el("label", {}, "Do: "), rangeTo, " ",
+    rangeApply,
+  );
+  wrap.appendChild(customRangeBox);
+
+  // Kontejner pro výstup reportu — tento se přepisuje při změně režimu
+  const output = el("div", { class:"time-report-output" });
+  wrap.appendChild(output);
+
+  function setMode(newMode) {
+    mode = newMode;
+    // Přepnout aria-pressed a třídy tlačítek
+    [[btnToday, "today"], [btnMonth, "month"], [btnCustom, "custom"]].forEach(([b, m]) => {
+      const active = (mode === m);
+      b.classList.toggle("primary", active);
+      b.classList.toggle("ghost", !active);
+      b.setAttribute("aria-pressed", String(active));
+    });
+    customRangeBox.hidden = (mode !== "custom");
+    renderReport();
+  }
+
+  function getRange() {
+    const n = new Date();
+    if (mode === "today") {
+      const start = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, 0, 0, 0).getTime();
+      const end = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 23, 59, 59, 999).getTime();
+      return { start, end, label: "dnes (" + formatDate(toLocalDate(n)) + ")" };
+    }
+    if (mode === "month") {
+      const start = new Date(n.getFullYear(), n.getMonth(), 1, 0, 0, 0, 0).getTime();
+      const end = new Date(n.getFullYear(), n.getMonth()+1, 0, 23, 59, 59, 999).getTime();
+      const monthNames = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
+      return { start, end, label: monthNames[n.getMonth()] + " " + n.getFullYear() };
+    }
+    // custom
+    if (!customStart || !customEnd) {
+      const fallback = { start: 0, end: Date.now(), label: "celé období" };
+      return fallback;
+    }
+    return { start: customStart, end: customEnd, label: formatDate(toLocalDate(new Date(customStart))) + " – " + formatDate(toLocalDate(new Date(customEnd))) };
+  }
+
+  function renderReport() {
+    clear(output);
+    const range = getRange();
+    // Sestavit data: projít všechny karty a filtrovat jejich entries podle range.
+    // Použijeme entry.end (nebo start když end chybí) jako časové razítko entry.
+    const boardStats = {};  // boardId -> { name, cards: { cardId -> { title, entries: [...], totalSec } }, totalSec }
+    let grandTotal = 0;
+    state.cards.forEach(c => {
+      if (c.deleted) return;
+      const entries = (c.time && c.time.entries) || [];
+      if (!entries.length) return;
+      const inRange = entries.filter(e => {
+        const ts = e.end || e.start;
+        return ts >= range.start && ts <= range.end;
+      });
+      if (!inRange.length) return;
+      const sumSec = inRange.reduce((s, e) => s + (e.durationSec || 0), 0);
+      if (sumSec <= 0) return;
+      const boardId = c.boardId;
+      if (!boardStats[boardId]) {
+        const b = getBoard(boardId);
+        boardStats[boardId] = { name: b ? b.name : "(neznámá nástěnka)", cards: [], totalSec: 0 };
+      }
+      boardStats[boardId].cards.push({ id: c.id, title: c.title, totalSec: sumSec, entries: inRange });
+      boardStats[boardId].totalSec += sumSec;
+      grandTotal += sumSec;
+    });
+    // Header — celkem + rozsah
+    output.appendChild(el("h2", { class:"time-report-total" },
+      "Celkem za " + range.label + ": " + formatHours(grandTotal)
+    ));
+    if (grandTotal <= 0) {
+      output.appendChild(el("p", { class:"muted" }, "V tomto období nebyl na žádné kartě zaznamenaný čas."));
+      return;
+    }
+    // Seřadit nástěnky podle totalSec sestupně
+    const boards = Object.entries(boardStats).map(([id, data]) => ({ id, ...data }));
+    boards.sort((a, b) => b.totalSec - a.totalSec);
+    boards.forEach(b => {
+      const section = el("section", { class:"time-report-board" });
+      section.appendChild(el("h3", {},
+        b.name + " — " + formatHours(b.totalSec) + " (" + b.cards.length + " karet)"
+      ));
+      // Seřadit karty v nástěnce podle totalSec sestupně
+      b.cards.sort((x, y) => y.totalSec - x.totalSec);
+      const ul = el("ul", { class:"time-report-cards" });
+      b.cards.forEach(c => {
+        const li = el("li");
+        const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title);
+        const dur = el("strong", {}, " — " + formatHours(c.totalSec));
+        const cnt = el("span", { class:"muted small" }, " (" + c.entries.length + " záznam" + (c.entries.length === 1 ? "" : c.entries.length < 5 ? "y" : "ů") + ")");
+        li.append(btn, dur, cnt);
+        ul.appendChild(li);
+      });
+      section.appendChild(ul);
+      output.appendChild(section);
+    });
+  }
+
+  btnToday.addEventListener("click", () => setMode("today"));
+  btnMonth.addEventListener("click", () => setMode("month"));
+  btnCustom.addEventListener("click", () => {
+    setMode("custom");
+    // Při prvním kliku rovnou vyhodnotit výchozí hodnoty
+    customStart = new Date(rangeFrom.value + "T00:00:00").getTime();
+    customEnd = new Date(rangeTo.value + "T23:59:59").getTime();
+    renderReport();
+  });
+  rangeApply.addEventListener("click", () => {
+    if (!rangeFrom.value || !rangeTo.value) { toast("Zadej rozsah od–do.", "warning"); return; }
+    customStart = new Date(rangeFrom.value + "T00:00:00").getTime();
+    customEnd = new Date(rangeTo.value + "T23:59:59").getTime();
+    renderReport();
+  });
+  // Initial
+  renderReport();
+}
+
 function renderAttachmentsSmartView(wrap) {
   const candidates = state.cards.filter(c => !c.deleted && !c.archived && c.attachments && c.attachments.length > 0);
   // Rozdělení příloh podle typu: soubor = má size/type nebo dataUrl bez url; odkaz = má url
@@ -6959,6 +7453,11 @@ function renderSmartView(container, smart) {
   }
   else if (smart === "favorites") {
     cards = state.cards.filter(c => !c.deleted && !c.archived && c.favorite);
+  }
+  else if (smart === "timeReport") {
+    renderTimeReportView(wrap);
+    container.appendChild(wrap);
+    return;
   }
   else if (smart === "completed") cards = state.cards.filter(c => !c.deleted && !c.archived && c.completed);
   else if (smart === "archive") cards = state.cards.filter(c => !c.deleted && c.archived);
@@ -7294,12 +7793,12 @@ function scheduleNextPomo() {
   const remaining = Math.max(0, dur - elapsed);
   _pomoTimer = setTimeout(() => {
     if (state.pomodoro.type === "work") {
-      // log time on card
+      // log time on card — přes pomocnou funkci, která vytvoří entry a zapíše activity
       if (state.pomodoro.cardId) {
         const c = getCard(state.pomodoro.cardId);
         if (c) {
-          if (!c.time) c.time = { estimateSec:0, spentSec:0, runningSince:null };
-          c.time.spentSec = (c.time.spentSec || 0) + state.settings.pomodoroWork * 60;
+          const pomoSec = state.settings.pomodoroWork * 60;
+          addCardTimeDuration(c.id, pomoSec, "pomodoro", "");
         }
       }
       state.pomodoro.completed = (state.pomodoro.completed || 0) + 1;
@@ -7771,6 +8270,7 @@ function openHelp() {
     ["K", "Přidat URL přílohu (přijímá i markdown odkaz [text](url))"],
     ["T", "Posunout termín o jeden den dopředu (pokud termín není, nastaví zítra)"],
     ["S", "Přepnout oblíbené"],
+    ["Z", "Přepnout časovač (start/stop)"],
     ["A", "Přiřadit členy"],
     ["L", "Štítky"],
     ["D", "Termín"],
@@ -7793,6 +8293,7 @@ function openHelp() {
     ["K", "Přidat URL přílohu (přijímá i markdown odkaz)"],
     ["T", "Posunout termín o jeden den dopředu"],
     ["S", "Přepnout oblíbené"],
+    ["Z", "Přepnout časovač (start/stop)"],
     ["A / L / D / C / R", "Stejné akce jako na fokusované kartě"],
     ["Esc", "Zavřít detail"],
   ];
