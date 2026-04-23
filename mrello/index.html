@@ -1973,18 +1973,108 @@ function tone(freq, dur=0.08, type="sine", vol=0.06) {
 function arpeggio(freqs, gap=0.05) {
   freqs.forEach((f,i) => setTimeout(() => tone(f, 0.09, "sine", 0.06), i*gap*1000));
 }
+// Attack-decay envelope helper pro bohatší zvuky.
+function _env(gain, peak, attack, decay, startT) {
+  gain.gain.setValueAtTime(0, startT);
+  gain.gain.linearRampToValueAtTime(peak, startT + attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startT + attack + decay);
+}
+// ===== Zvukové definice vybrané Michalem ze zvukového katalogu =====
+// Každá funkce v try/catch — pokud AudioContext selže (starý prohlížeč, JSDOM test),
+// selhat tiše a nepřerušit ostatní logiku aplikace.
+// Ping (katalog #1) — krátké jasné pípnutí pro přidání / vytvoření
+function _sndPing() {
+  try {
+    if (!audioOn()) return;
+    const c = ensureAudio(); if (!c) return;
+    const now = c.currentTime;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = "sine"; o.frequency.value = 880;
+    o.connect(g); g.connect(c.destination);
+    _env(g, 0.3, 0.005, 0.15, now);
+    o.start(now); o.stop(now + 0.2);
+  } catch (e) {}
+}
+// Cinkot (katalog #3) — vybraný pro chyby i varování (jemný kovový zvonek)
+function _sndCinkot() {
+  try {
+    if (!audioOn()) return;
+    const c = ensureAudio(); if (!c) return;
+    const now = c.currentTime;
+    [1600, 2400, 3200].forEach((freq, i) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = "sine"; o.frequency.value = freq;
+      o.connect(g); g.connect(c.destination);
+      const peak = 0.15 / (i + 1);
+      _env(g, peak, 0.001, 0.5 - i * 0.1, now);
+      o.start(now); o.stop(now + 0.6);
+    });
+  } catch (e) {}
+}
+// Úspěch (katalog #5) — vzestupná fanfára pro úspěšnou synchronizaci
+function _sndUspech() {
+  try {
+    if (!audioOn()) return;
+    const c = ensureAudio(); if (!c) return;
+    const now = c.currentTime;
+    [523, 784].forEach((freq, i) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = "triangle"; o.frequency.value = freq;
+      o.connect(g); g.connect(c.destination);
+      const t = now + i * 0.1;
+      _env(g, 0.3, 0.005, 0.2, t);
+      o.start(t); o.stop(t + 0.25);
+    });
+  } catch (e) {}
+}
+// Harfa (katalog #12) — arpeggio C-E-G pro označení karty jako hotové
+function _sndHarfa() {
+  try {
+    if (!audioOn()) return;
+    const c = ensureAudio(); if (!c) return;
+    const now = c.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = "triangle"; o.frequency.value = freq;
+      o.connect(g); g.connect(c.destination);
+      const t = now + i * 0.07;
+      _env(g, 0.25, 0.002, 0.3, t);
+      o.start(t); o.stop(t + 0.35);
+    });
+  } catch (e) {}
+}
+// Čmáranice (katalog #16) — R2-D2 cvrlikání pro zaškrtnutí položky checklistu
+function _sndCmaranice() {
+  try {
+    if (!audioOn()) return;
+    const c = ensureAudio(); if (!c) return;
+    const now = c.currentTime;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(800, now);
+    o.frequency.setValueAtTime(1200, now + 0.04);
+    o.frequency.setValueAtTime(600, now + 0.08);
+    o.frequency.setValueAtTime(1400, now + 0.12);
+    o.frequency.setValueAtTime(900, now + 0.16);
+    o.frequency.setValueAtTime(1600, now + 0.2);
+    o.connect(g); g.connect(c.destination);
+    _env(g, 0.15, 0.005, 0.25, now);
+    o.start(now); o.stop(now + 0.28);
+  } catch (e) {}
+}
 const sound = {
   click: () => tone(880, 0.04, "sine", 0.03),
-  add:   () => arpeggio([523, 659, 784]),
-  done:  () => arpeggio([784, 988, 1175]),
+  add:   _sndPing,       // katalog #1 Ping
+  done:  _sndHarfa,      // katalog #12 Harfa
   remove:() => arpeggio([784, 523, 392]),
-  err:   () => arpeggio([392, 261]),
-  warn:  () => arpeggio([523, 415]),
+  err:   _sndCinkot,     // katalog #3 Cinkot
+  warn:  _sndCinkot,     // katalog #3 Cinkot
   pomoStart: () => arpeggio([523, 659, 784, 1047]),
   pomoEnd:   () => arpeggio([1047, 784, 659, 523]),
   pickup: () => tone(660, 0.06, "sine", 0.05),
   drop:   () => tone(440, 0.08, "sine", 0.05),
-  sync:  () => arpeggio([392, 523, 659]),
+  sync:  _sndUspech,     // katalog #5 Úspěch
+  checkItem: _sndCmaranice,  // katalog #16 Čmáranice — zaškrtnutí položky checklistu
 };
 //#endregion
 
@@ -2808,7 +2898,7 @@ function toggleChecklistItem(cardId, checklistId, itemId) {
   const wasDone = it.completed;
   it.completed = !it.completed;
   logActivity(c, it.completed ? T("activityChecklistDone", it.text) : T("activityChecklistTodo", it.text));
-  if (it.completed) sound.click();
+  if (it.completed) sound.checkItem();
   saveState();
   // Trigger: pokud všechny položky všech checklistů jsou hotové a předtím nebyly
   if (!wasDone) {
@@ -4389,7 +4479,6 @@ function openCardDetail(cardId) {
         cb.addEventListener("change", () => {
           toggleChecklistItem(real.id, cl.id, item.id);
           refreshChecklists();
-          sound.click();
         });
         const lbl = el("label", { for:`it_${item.id}`, class:"item-text" + (item.completed ? " done" : "") }, item.text);
         const editBtn = el("button", { class:"ghost small", "aria-label":"Upravit položku", onclick: () => {
