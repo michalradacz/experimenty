@@ -1516,6 +1516,10 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 <div id="urgentAnnouncer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
 <script>
 "use strict";
+// Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
+// Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
+const MRELLO_BUILD = "2026-04-23-gh-load-robust-fallback";
+console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
 const I18N_CS = {
@@ -2546,25 +2550,103 @@ function b64decUtf8(b64) {
 async function ghLoad() {
   if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
   setGhStatus("", "GitHub…");
+  // Podrobný log do konzole každého kroku — při problémech se dá přesně vidět, která cesta selhala.
+  const log = (...args) => console.log("[ghLoad]", ...args);
   try {
+    log("Začínám. repo=" + state.github.owner + "/" + state.github.repo + " branch=" + state.github.branch + " path=" + state.github.path);
     const headers = await ghHeaders();
-    const url = `${GH_API}/repos/${state.github.owner}/${state.github.repo}/contents/${encodeURIComponent(state.github.path)}?ref=${encodeURIComponent(state.github.branch)}`;
-    const r = await fetch(url, { headers });
-    if (r.status === 404) { toast("Soubor v repu zatím neexistuje.", "warning"); setGhStatus("dirty", "GitHub: nový"); return; }
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const j = await r.json();
-    const content = b64decUtf8(j.content);
-    const data = JSON.parse(content);
+    let text = null;
+    // ----- POKUS 1: raw.githubusercontent.com -----
+    // Funguje pro veřejná repa bez auth, pro privátní potřebuje token (přes Authorization header).
+    // Není tam 1 MB limit, celý soubor se stáhne jako text.
+    try {
+      const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(state.github.owner)}/${encodeURIComponent(state.github.repo)}/${encodeURIComponent(state.github.branch)}/${state.github.path.split("/").map(encodeURIComponent).join("/")}`;
+      log("Pokus 1: raw.githubusercontent.com → " + rawUrl);
+      const tok = state.github.token || (typeof getGhTokenAsync === "function" ? await getGhTokenAsync() : null);
+      const rawHeaders = tok ? { "Authorization": "token " + tok } : {};
+      const r = await fetch(rawUrl, { headers: rawHeaders, cache: "no-cache" });
+      log("  → HTTP " + r.status);
+      if (r.ok) {
+        text = await r.text();
+        log("  → OK, načteno " + text.length + " bajtů");
+      } else {
+        log("  → neúspěch, zkusím další cestu");
+      }
+    } catch (e) {
+      log("  → výjimka: " + e.message + ", zkusím další cestu");
+    }
+    // ----- POKUS 2: Contents API (JSON) → pro soubory <1 MB -----
+    if (!text) {
+      try {
+        const contentsUrl = `${GH_API}/repos/${state.github.owner}/${state.github.repo}/contents/${encodeURIComponent(state.github.path)}?ref=${encodeURIComponent(state.github.branch)}`;
+        log("Pokus 2: Contents API → " + contentsUrl);
+        const r1 = await fetch(contentsUrl, { headers });
+        log("  → HTTP " + r1.status);
+        if (r1.status === 404) { toast("Soubor v repu zatím neexistuje.", "warning"); setGhStatus("dirty", "GitHub: nový"); return; }
+        if (!r1.ok) {
+          let detail = "";
+          try { const errJson = await r1.json(); if (errJson && errJson.message) detail = " — " + errJson.message; } catch {}
+          throw new Error("Contents API HTTP " + r1.status + detail);
+        }
+        const meta = await r1.json();
+        log("  → meta: size=" + meta.size + " encoding=" + meta.encoding + " sha=" + meta.sha + " content.length=" + (meta.content ? meta.content.length : 0));
+        if (meta.content && meta.encoding === "base64") {
+          // Malé soubory: obsah je rovnou v odpovědi
+          const b64 = meta.content.replace(/\s+/g, "");
+          text = b64decUtf8(b64);
+          log("  → dekódováno z Contents API, text.length=" + text.length);
+        } else if (meta.sha) {
+          // ----- POKUS 3: Git Blobs API (pro soubory 1-100 MB) -----
+          log("Pokus 3: Git Blobs API se sha=" + meta.sha);
+          const blobUrl = `${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/blobs/${meta.sha}`;
+          const r2 = await fetch(blobUrl, { headers });
+          log("  → HTTP " + r2.status);
+          if (!r2.ok) {
+            let detail = "";
+            try { const errJson = await r2.json(); if (errJson && errJson.message) detail = " — " + errJson.message; } catch {}
+            throw new Error("Git Blobs API HTTP " + r2.status + detail);
+          }
+          const blob = await r2.json();
+          log("  → blob: size=" + blob.size + " encoding=" + blob.encoding + " content.length=" + (blob.content ? blob.content.length : 0));
+          if (!blob.content) throw new Error("Git Blobs API vrátil prázdný content pro sha " + meta.sha);
+          const b64 = blob.content.replace(/\s+/g, "");
+          text = b64decUtf8(b64);
+          log("  → dekódováno z Git Blobs, text.length=" + text.length);
+        } else {
+          throw new Error("Contents API odpověď nemá content ani sha");
+        }
+      } catch (e) {
+        log("  → výjimka: " + e.message);
+        throw e;
+      }
+    }
+    if (!text || !text.trim()) throw new Error("Obsah souboru je prázdný po všech pokusech.");
+    log("Parsuju JSON, délka textu = " + text.length);
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error("Obsah není validní JSON: " + parseErr.message + " (prvních 200 znaků: " + text.substring(0, 200) + ")");
+    }
+    log("JSON OK, aplikuji state");
     state = mergeLoadedState(data);
-    state.github.sha = j.sha;
-    state.github.lastSync = Date.now();
+    state.github.lastLoadAt = new Date().toISOString();
+    delete state.github.dirtySince;
+    delete state.github.lastErrorAt;
+    delete state.github.lastErrorMessage;
+    _skipNextDirty = true;
     saveState();
     renderAll();
     setGhStatus("synced", "GitHub OK");
     sound.sync();
     toast(T("syncOk"), "success");
+    log("Hotovo.");
   } catch (e) {
-    console.error(e);
+    console.error("[ghLoad] CHYBA:", e);
+    state.github.lastErrorAt = new Date().toISOString();
+    state.github.lastErrorMessage = e.message;
+    _skipNextDirty = true;
+    saveState();
     setGhStatus("error", "GitHub chyba");
     toast(T("syncErr") + " " + e.message, "error"); sound.err();
   }
@@ -7728,6 +7810,7 @@ function openHelp() {
 
   body.appendChild(el("h3", {}, "O aplikaci"));
   body.appendChild(el("p", {}, "mrello je jednouživatelská aplikace pro správu úkolů. Data se ukládají lokálně do prohlížeče (IndexedDB). Všechny funkce fungují offline."));
+  body.appendChild(el("p", { class:"muted small" }, "Verze aplikace: " + (typeof MRELLO_BUILD !== "undefined" ? MRELLO_BUILD : "neznámá")));
 
   openModal({ title: T("helpTitle"), body, size:"medium",
     footer: [el("button", { class:"primary", onclick: function() { this.closest(".modal-overlay").click(); } }, T("close"))]
@@ -8807,18 +8890,42 @@ async function tryLoadFromGhUrl() {
       const r = await fetch(rawUrl, { cache: "no-cache" });
       if (r.ok) text = await r.text();
     } catch {}
-    // Pokus 2: GitHub API s tokenem (pokud veřejný raw selhal a máme token)
+    // Pokus 2: GitHub API (pro privátní repa nebo pokud raw selhal).
+    // Dvoustupňové: Contents (meta+SHA) → Git Blobs (pro 1-100 MB).
     if (!text) {
       try {
         const tok = state.github.token || (await getGhTokenAsync());
         if (!tok) throw new Error("Token není nastaven (repo asi privátní).");
+        const authHeaders = { "Authorization": "token " + tok, "Accept": "application/vnd.github+json" };
         const apiUrl = `https://api.github.com/repos/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/contents/${info.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(info.branch)}`;
-        const r = await fetch(apiUrl, { headers: { "Authorization": "token " + tok, "Accept": "application/vnd.github+json" }});
-        if (!r.ok) throw new Error("GitHub API vrátil " + r.status);
-        const j = await r.json();
-        if (!j.content) throw new Error("Odpověď neobsahuje content.");
-        text = atob(j.content.replace(/\s+/g, ""));
-        // base64 → UTF-8
+        const r = await fetch(apiUrl, { headers: authHeaders });
+        if (!r.ok) {
+          let detail = "";
+          try { const eb = await r.json(); if (eb && eb.message) detail = " — " + eb.message; } catch {}
+          throw new Error("Contents API vrátil " + r.status + detail);
+        }
+        const meta = await r.json();
+        let b64 = "";
+        if (meta.content && meta.encoding === "base64") {
+          b64 = meta.content.replace(/\s+/g, "");
+        } else if (meta.sha) {
+          // Velký soubor (1-100 MB) → Git Blobs
+          const blobUrl = `https://api.github.com/repos/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/git/blobs/${meta.sha}`;
+          const r2 = await fetch(blobUrl, { headers: authHeaders });
+          if (!r2.ok) {
+            let detail = "";
+            try { const eb = await r2.json(); if (eb && eb.message) detail = " — " + eb.message; } catch {}
+            throw new Error("Git Blobs API vrátil " + r2.status + detail + " (soubor přes 100 MB?)");
+          }
+          const blob = await r2.json();
+          if (!blob.content) throw new Error("Git Blobs API vrátil prázdný content pro SHA " + meta.sha);
+          b64 = blob.content.replace(/\s+/g, "");
+        } else {
+          throw new Error("Neplatná odpověď z Contents API (chybí content i sha).");
+        }
+        if (!b64) throw new Error("Obsah souboru je prázdný.");
+        // base64 → UTF-8 (používáme stejnou cestu jako ostatní dekódování v aplikaci)
+        text = atob(b64);
         try { text = decodeURIComponent(escape(text)); } catch {}
       } catch (e) {
         throw new Error("Stažení selhalo: " + e.message);
