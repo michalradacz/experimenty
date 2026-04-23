@@ -3430,7 +3430,7 @@ async function openMoveCardDialog(cardId) {
         const toList = listSel.value;
         if (!toList) return;
         moveCard(card.id, toList);
-        saveState(); renderView(); m.close(); sound.drop();
+        saveState(); renderView(); m.close(); _refocusCard(cardId); sound.drop();
         announce("Karta přesunuta do seznamu " + getList(toList)?.name);
       } }, T("save")),
     ],
@@ -3449,12 +3449,12 @@ function openSetDueDialog(cardId) {
     body: el("div", { class:"field-row" }, el("label", {}, T("dueDate")), inp),
     footer: [
       el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
-      el("button", { class:"danger", onclick: () => { setCardField(card.id, "dueDate", null); logActivity(card, T("activityDueRemoved")); saveState(); renderView(); m.close(); sound.click(); announce("Termín odebrán."); } }, T("delete")),
+      el("button", { class:"danger", onclick: () => { setCardField(card.id, "dueDate", null); logActivity(card, T("activityDueRemoved")); saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click(); announce("Termín odebrán."); } }, T("delete")),
       el("button", { class:"primary", onclick: () => {
         if (!inp.value) return;
         setCardField(card.id, "dueDate", inp.value);
         logActivity(card, T("activityDueSet", formatDate(inp.value)));
-        saveState(); renderView(); m.close(); sound.click();
+        saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click();
         announce("Termín nastaven na " + formatDate(inp.value));
       } }, T("save")),
     ],
@@ -3469,7 +3469,7 @@ function openCardLabelsDialog(cardId) {
   if (!card) return;
   const board = getBoard(card.boardId);
   if (!board) return;
-  pickLabels(card, board).then(() => { saveState(); renderView(); });
+  pickLabels(card, board).then(() => { saveState(); renderView(); _refocusCard(cardId); });
 }
 
 // Rychlý picker členů pro fokusovanou kartu.
@@ -3478,7 +3478,7 @@ function openCardMembersDialog(cardId) {
   if (!card) return;
   const board = getBoard(card.boardId);
   if (!board) return;
-  pickMembers(card, board).then(() => { saveState(); renderView(); });
+  pickMembers(card, board).then(() => { saveState(); renderView(); _refocusCard(cardId); });
 }
 
 // Rychlé přidání komentáře na fokusovanou kartu.
@@ -3497,7 +3497,7 @@ function openCardCommentDialog(cardId) {
         card.comments = card.comments || [];
         card.comments.push({ id: uid("cm_"), text, createdAt: Date.now() });
         logActivity(card, T("activityCommented"));
-        saveState(); renderView(); m.close(); sound.add();
+        saveState(); renderView(); m.close(); _refocusCard(cardId); sound.add();
         announce("Komentář přidán.");
       } }, T("save")),
     ],
@@ -4401,15 +4401,23 @@ function toggleSelect(cardId) {
   if (i >= 0) state.ui.selectedCards.splice(i, 1);
   else state.ui.selectedCards.push(cardId);
 }
+// Helper: po re-renderu nástěnky vrátí focus na konkrétní kartu (pokud ještě existuje).
+// Čtečka obrazovky tak neztratí kontext a Michal ví, kde je.
+function _refocusCard(cardId) {
+  setTimeout(() => {
+    const f = document.querySelector(`.card[data-card-id="${cardId}"]`);
+    if (f) f.focus();
+  }, 30);
+}
 function onCardKey(e, card) {
   // Enter: open card detail
   if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); openCardDetail(card.id); return; }
   // Space: toggle selection
-  if (e.key === " " && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleSelect(card.id); renderView(); return; }
+  if (e.key === " " && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleSelect(card.id); renderView(); _refocusCard(card.id); return; }
   // Modifier-free single keys (do not intercept when user holds Ctrl/Alt/Meta):
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
     // 'h' — toggle hotovo (dříve Ctrl+Enter)
-    if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleCardComplete(card.id); renderView(); return; }
+    if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleCardComplete(card.id); renderView(); _refocusCard(card.id); return; }
     // 'e' — přejmenovat kartu
     if (e.key === "e" || e.key === "E") {
       e.preventDefault();
@@ -4441,7 +4449,7 @@ function onCardKey(e, card) {
         card.attachments.push({ id: uid("at_"), url: newAttachment.url, name: newAttachment.name, createdAt: Date.now() });
         logActivity(card, "Přidána příloha „" + newAttachment.name + "“ (z markdown odkazu v názvu)");
       }
-      saveState(); renderView();
+      saveState(); renderView(); _refocusCard(card.id);
       announce("Karta přejmenována na " + finalTitle + (newDue ? ", termín " + formatDate(newDue) : "") + ".");
       sound.click();
       return;
@@ -4461,7 +4469,7 @@ function onCardKey(e, card) {
       card.attachments = card.attachments || [];
       card.attachments.push({ id: uid("at_"), url, name, createdAt: Date.now() });
       logActivity(card, "Přidána příloha „" + name + "“");
-      saveState(); renderView();
+      saveState(); renderView(); _refocusCard(card.id);
       sound.add();
       announce("Příloha přidána.");
       return;
@@ -4482,12 +4490,14 @@ function onCardKey(e, card) {
       if (_kbdGrabbed && _kbdGrabbed.cardId === card.id) {
         _kbdGrabbed = null;
         renderView();
+        _refocusCard(card.id);
         announce("Uvolněno.");
       } else {
         _kbdGrabbed = { cardId: card.id };
         announce("Karta uchopena. Šipkami přesuň, U pro upuštění, Esc pro zrušení.");
         sound.pickup();
         renderView();
+        _refocusCard(card.id);
       }
       return;
     }
