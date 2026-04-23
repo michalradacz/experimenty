@@ -1414,7 +1414,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 <body>
 <a href="#main" class="skip-link">Přeskočit na obsah</a>
 <header class="app-header" role="banner">
-  <button class="icon-btn" id="sidebarToggleBtn" title="Skrýt/zobrazit postranní panel (H)" aria-label="Skrýt nebo zobrazit postranní panel" aria-pressed="false">☰</button>
+  <button class="icon-btn" id="sidebarToggleBtn" title="Skrýt/zobrazit postranní panel (F)" aria-label="Skrýt nebo zobrazit postranní panel" aria-pressed="false">☰</button>
   <button class="icon-btn" id="ghSyncBtn" title="Synchronizovat s GitHubem (accesskey S)" aria-label="Synchronizovat s GitHubem" accesskey="s">⟳ Synchronizace</button>
   <span class="app-brand" aria-hidden="true">mrello</span>
   <div class="header-divider"></div>
@@ -2531,49 +2531,102 @@ async function ghSave() {
     });
     if (!blobR.ok) throw new Error("blob HTTP " + blobR.status);
     const blob = await blobR.json();
-    // Get current ref
-    const refR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/ref/heads/${state.github.branch}`, { headers });
-    if (!refR.ok) throw new Error("ref HTTP " + refR.status);
-    const ref = await refR.json();
-    const baseSha = ref.object.sha;
-    // Get base tree
-    const commitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits/${baseSha}`, { headers });
-    if (!commitR.ok) throw new Error("commit HTTP " + commitR.status);
-    const baseCommit = await commitR.json();
-    // Create tree
-    const treeR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/trees`, {
-      method:"POST", headers,
-      body: JSON.stringify({
-        base_tree: baseCommit.tree.sha,
-        tree: [{ path: state.github.path, mode:"100644", type:"blob", sha: blob.sha }]
-      })
-    });
-    if (!treeR.ok) throw new Error("tree HTTP " + treeR.status);
-    const tree = await treeR.json();
-    // Create commit
-    const newCommitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits`, {
-      method:"POST", headers,
-      body: JSON.stringify({
-        message: "kanban: update " + new Date().toISOString(),
-        tree: tree.sha,
-        parents: [baseSha]
-      })
-    });
-    if (!newCommitR.ok) throw new Error("commit-create HTTP " + newCommitR.status);
-    const newCommit = await newCommitR.json();
-    // Move ref
-    const updR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/refs/heads/${state.github.branch}`, {
-      method:"PATCH", headers,
-      body: JSON.stringify({ sha: newCommit.sha })
-    });
-    if (!updR.ok) throw new Error("ref-update HTTP " + updR.status);
-    state.github.lastSync = Date.now();
+
+    // Vnitřní funkce, která udělá: get ref → get commit → create tree → create commit → patch ref.
+    // Je v ní všechno, co závisí na aktuálním base SHA, aby se to dalo opakovat, pokud PATCH narazí na
+    // "not a fast-forward" (např. mezi tím, co jsme četli ref, se na remotu něco změnilo — typicky
+    // při souběhu s jinou synchronizací nebo po nedávném ghLoad, kde by se remote mohl pohnout).
+    async function doCommitAndPatch() {
+      // Get current ref
+      const refR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/ref/heads/${state.github.branch}`, { headers });
+      if (!refR.ok) throw new Error("ref HTTP " + refR.status);
+      const ref = await refR.json();
+      const baseSha = ref.object.sha;
+      // Get base tree
+      const commitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits/${baseSha}`, { headers });
+      if (!commitR.ok) throw new Error("commit HTTP " + commitR.status);
+      const baseCommit = await commitR.json();
+      // Create tree — pokud je obsah identický s base tree, GitHub vrátí tentýž tree SHA
+      const treeR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/trees`, {
+        method:"POST", headers,
+        body: JSON.stringify({
+          base_tree: baseCommit.tree.sha,
+          tree: [{ path: state.github.path, mode:"100644", type:"blob", sha: blob.sha }]
+        })
+      });
+      if (!treeR.ok) throw new Error("tree HTTP " + treeR.status);
+      const tree = await treeR.json();
+      // Pokud je tree SHA stejná jako base tree SHA, nemusíme dělat commit — není co pushovat
+      if (tree.sha === baseCommit.tree.sha) {
+        return { noop: true, baseSha };
+      }
+      // Create commit
+      const newCommitR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/commits`, {
+        method:"POST", headers,
+        body: JSON.stringify({
+          message: "mrello: update " + new Date().toISOString(),
+          tree: tree.sha,
+          parents: [baseSha]
+        })
+      });
+      if (!newCommitR.ok) throw new Error("commit-create HTTP " + newCommitR.status);
+      const newCommit = await newCommitR.json();
+      // Pojistka: pokud by noví commit SHA byla identická s base (stejný tree, stejný parent,
+      // stejný message — v našem případě ale ISO timestamp zajišťuje různost), taky není co patchovat.
+      if (newCommit.sha === baseSha) {
+        return { noop: true, baseSha };
+      }
+      // Move ref
+      const updR = await fetch(`${GH_API}/repos/${state.github.owner}/${state.github.repo}/git/refs/heads/${state.github.branch}`, {
+        method:"PATCH", headers,
+        body: JSON.stringify({ sha: newCommit.sha, force: false })
+      });
+      if (!updR.ok) {
+        // Pokud 422, přečti si tělo odpovědi — GitHub tam dá přesnou zprávu
+        let msg = "ref-update HTTP " + updR.status;
+        try {
+          const errBody = await updR.json();
+          if (errBody && errBody.message) msg += " — " + errBody.message;
+        } catch {}
+        const err = new Error(msg);
+        err.status = updR.status;
+        throw err;
+      }
+      return { noop: false, baseSha, newSha: newCommit.sha };
+    }
+
+    let result;
+    try {
+      result = await doCommitAndPatch();
+    } catch (e) {
+      // Pokud je to fast-forward chyba (422), zkus to jednou znovu se świeżím base SHA
+      if (e.status === 422) {
+        console.warn("ghSave: 422 při PATCH ref, zkouším se świeżím base SHA...");
+        result = await doCommitAndPatch();
+      } else {
+        throw e;
+      }
+    }
+
+    state.github.lastSyncAt = new Date().toISOString();
+    delete state.github.dirtySince;
+    delete state.github.lastErrorAt;
+    delete state.github.lastErrorMessage;
+    _skipNextDirty = true;
     saveState();
     setGhStatus("synced", "GitHub OK");
     sound.sync();
-    toast(T("syncOk"), "success");
+    if (result && result.noop) {
+      toast("Žádné změny k odeslání — remote je aktuální.", "info");
+    } else {
+      toast(T("syncOk"), "success");
+    }
   } catch (e) {
     console.error(e);
+    state.github.lastErrorAt = new Date().toISOString();
+    state.github.lastErrorMessage = e.message;
+    _skipNextDirty = true;
+    saveState();
     setGhStatus("error", "GitHub chyba");
     toast(T("syncErr") + " " + e.message, "error"); sound.err();
   }
@@ -2706,6 +2759,16 @@ function newList(boardId, name) {
 function looksLikeUrl(s) {
   return /^https?:\/\/\S+$/i.test(String(s || "").trim());
 }
+// Rozpozná markdown odkaz ve tvaru [text](url) kdekoliv v řetězci.
+// Vrací { text, url, full, index } nebo null.
+// URL musí začínat http(s):// aby se vyloučily falešné matche jako [ok](sem).
+function parseMarkdownLink(s) {
+  if (!s || typeof s !== "string") return null;
+  const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+  const m = s.match(re);
+  if (!m) return null;
+  return { text: m[1].trim(), url: m[2].trim(), full: m[0], index: m.index };
+}
 async function fetchUrlTitle(url) {
   try {
     const r = await fetch(url, { mode: "cors", redirect: "follow", cache: "no-cache" });
@@ -2799,6 +2862,15 @@ function newCard(listId, title, opts={}) {
       detectedDueDate = parsed.date;
     }
   }
+  // Markdown odkaz v názvu [text](url) — vezmi text jako název, URL jako přílohu
+  let detectedAttachment = null;
+  if (!opts.skipMarkdownLink && finalTitle) {
+    const md = parseMarkdownLink(finalTitle);
+    if (md) {
+      finalTitle = md.text;
+      detectedAttachment = { url: md.url, name: md.text };
+    }
+  }
   const cards = cardsInList(listId);
   const card = {
     id: uid("c_"), boardId: list.boardId, listId, position: cards.length,
@@ -2832,6 +2904,16 @@ function newCard(listId, title, opts={}) {
   }
   if (detectedDueDate) {
     logActivity(card, T("activityDueSet", formatDate(detectedDueDate)) + " (rozpoznáno z názvu)");
+  }
+  if (detectedAttachment) {
+    card.attachments = card.attachments || [];
+    card.attachments.push({
+      id: uid("at_"),
+      url: detectedAttachment.url,
+      name: detectedAttachment.name,
+      createdAt: Date.now(),
+    });
+    logActivity(card, "Přidána příloha „" + detectedAttachment.name + "“ (z markdown odkazu v názvu)");
   }
   saveState();
   runAutomationsFor("card.created", { card });
@@ -4324,10 +4406,66 @@ function onCardKey(e, card) {
   if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); openCardDetail(card.id); return; }
   // Space: toggle selection
   if (e.key === " " && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleSelect(card.id); renderView(); return; }
-  // Cmd/Ctrl+Enter: toggle complete
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); toggleCardComplete(card.id); renderView(); return; }
   // Modifier-free single keys (do not intercept when user holds Ctrl/Alt/Meta):
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    // 'h' — toggle hotovo (dříve Ctrl+Enter)
+    if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleCardComplete(card.id); renderView(); return; }
+    // 'e' — přejmenovat kartu
+    if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      const nm = prompt("Nový název karty:", card.title);
+      if (nm == null) return;
+      const trimmed = nm.trim();
+      if (!trimmed || trimmed === card.title) return;
+      const old = card.title;
+      // Přirozený jazyk — rozpoznej datum
+      const parsed = parseNaturalDate(trimmed);
+      let finalTitle = trimmed;
+      let newDue = null;
+      if (parsed && parsed.stripped) { finalTitle = parsed.stripped; newDue = parsed.date; }
+      // Markdown odkaz v názvu
+      let newAttachment = null;
+      const md = parseMarkdownLink(finalTitle);
+      if (md) {
+        finalTitle = md.text;
+        newAttachment = { url: md.url, name: md.text };
+      }
+      setCardField(card.id, "title", finalTitle);
+      logActivity(card, T("activityRenamed", old, finalTitle));
+      if (newDue) {
+        setCardField(card.id, "dueDate", newDue);
+        logActivity(card, T("activityDueSet", formatDate(newDue)) + " (rozpoznáno z názvu)");
+      }
+      if (newAttachment) {
+        card.attachments = card.attachments || [];
+        card.attachments.push({ id: uid("at_"), url: newAttachment.url, name: newAttachment.name, createdAt: Date.now() });
+        logActivity(card, "Přidána příloha „" + newAttachment.name + "“ (z markdown odkazu v názvu)");
+      }
+      saveState(); renderView();
+      announce("Karta přejmenována na " + finalTitle + (newDue ? ", termín " + formatDate(newDue) : "") + ".");
+      sound.click();
+      return;
+    }
+    // 'k' — přidat URL přílohu (prompt pro URL nebo markdown odkaz)
+    if (e.key === "k" || e.key === "K") {
+      e.preventDefault();
+      const input = prompt("Přidat URL přílohu (přijímá i markdown odkaz [text](url)):", "");
+      if (input == null) return;
+      const val = input.trim();
+      if (!val) return;
+      let url = val, name = val;
+      const md = parseMarkdownLink(val);
+      if (md) { url = md.url; name = md.text; }
+      else if (looksLikeUrl(val)) { url = val; name = val; }
+      else { toast("Nerozpoznaná URL.", "warning"); return; }
+      card.attachments = card.attachments || [];
+      card.attachments.push({ id: uid("at_"), url, name, createdAt: Date.now() });
+      logActivity(card, "Přidána příloha „" + name + "“");
+      saveState(); renderView();
+      sound.add();
+      announce("Příloha přidána.");
+      return;
+    }
     // 'a' — přiřadit členy
     if (e.key === "a" || e.key === "A") { e.preventDefault(); openCardMembersDialog(card.id); return; }
     // 'l' — štítky
@@ -4338,7 +4476,7 @@ function onCardKey(e, card) {
     if (e.key === "c" || e.key === "C") { e.preventDefault(); openCardCommentDialog(card.id); return; }
     // 'r' — přesun karty do jiného seznamu / nástěnky
     if (e.key === "r" || e.key === "R") { e.preventDefault(); openMoveCardDialog(card.id); return; }
-    // 'u' — uchopit pro přesun šipkami (původně 'g', ale 'g' je teď globální pro goto-nástěnku)
+    // 'u' — uchopit pro přesun šipkami
     if (e.key === "u" || e.key === "U") {
       e.preventDefault();
       if (_kbdGrabbed && _kbdGrabbed.cardId === card.id) {
@@ -5395,12 +5533,33 @@ function openCardDetail(cardId) {
   aSec.appendChild(el("div", { style:{ marginTop:"8px" } }, el("label", {}, "Nahrát soubor(y): "), fileInp));
 
   // URL příloha (externí odkaz) — zachováno
-  const aUrl = el("input", { type:"url", placeholder: T("attachmentUrl") });
+  const aUrl = el("input", { type:"url", placeholder: T("attachmentUrl") + " nebo [text](url)" });
   const aName = el("input", { type:"text", placeholder: T("attachmentName") });
+  // Paste handler na URL pole — pokud vložený text je markdown odkaz,
+  // rozdělíme ho: název do aName, URL do aUrl
+  aUrl.addEventListener("paste", (e) => {
+    const pasted = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+    if (!pasted.trim()) return;
+    const md = parseMarkdownLink(pasted);
+    if (!md) return;  // není MD odkaz, default chování
+    e.preventDefault();
+    aUrl.value = md.url;
+    if (!aName.value.trim()) aName.value = md.text;
+    announce("Markdown odkaz rozpoznán: název „" + md.text + "“, URL „" + md.url + "“.");
+  });
   const aAdd = el("button", { class:"ghost", onclick: () => {
-    if (!aUrl.value.trim()) return;
+    let url = aUrl.value.trim();
+    let name = aName.value.trim();
+    // Fallback: pokud uživatel vložil MD odkaz přes jiný způsob (psaní, drag),
+    // rozlož ho i při kliknutí na + URL
+    const md = parseMarkdownLink(url);
+    if (md) {
+      url = md.url;
+      if (!name) name = md.text;
+    }
+    if (!url) return;
     if (!real.attachments) real.attachments = [];
-    real.attachments.push({ id: uid("at_"), url: aUrl.value.trim(), name: aName.value.trim() || aUrl.value.trim(), createdAt: Date.now() });
+    real.attachments.push({ id: uid("at_"), url: url, name: name || url, createdAt: Date.now() });
     aUrl.value = ""; aName.value = "";
     saveState();
     refreshAttachments();
@@ -5672,11 +5831,28 @@ function openCardDetail(cardId) {
       finalTitle = parsed.stripped;
       newDue = parsed.date;
     }
+    // Markdown odkaz [text](url) — text jako název, URL jako příloha
+    let newAttachment = null;
+    const md = parseMarkdownLink(finalTitle);
+    if (md) {
+      finalTitle = md.text;
+      newAttachment = { url: md.url, name: md.text };
+    }
     setCardField(real.id, "title", finalTitle);
     logActivity(real, T("activityRenamed", old, finalTitle));
     if (newDue) {
       setCardField(real.id, "dueDate", newDue);
       logActivity(real, T("activityDueSet", formatDate(newDue)) + " (rozpoznáno z názvu)");
+    }
+    if (newAttachment) {
+      real.attachments = real.attachments || [];
+      real.attachments.push({
+        id: uid("at_"),
+        url: newAttachment.url,
+        name: newAttachment.name,
+        createdAt: Date.now(),
+      });
+      logActivity(real, "Přidána příloha „" + newAttachment.name + "“ (z markdown odkazu v názvu)");
     }
     saveState();
     // update viditelný nadpis v tomto otevřeném detailu
@@ -5823,6 +5999,41 @@ function openCardDetail(cardId) {
     if (k === "d") { e.preventDefault(); openSetDueDialog(real.id); return; }
     if (k === "c") { e.preventDefault(); openCardCommentDialog(real.id); return; }
     if (k === "r") { e.preventDefault(); openMoveCardDialog(real.id); return; }
+    // 'h' — toggle hotovo. Kliknu za tebe na tlačítko (má správnou logiku vč. logování)
+    if (k === "h") { e.preventDefault(); completeBtn.click(); return; }
+    // 'e' — přejmenovat kartu. Najdu tlačítko Přejmenovat (aria-label) a simuluji klik
+    if (k === "e") {
+      e.preventDefault();
+      const rb = m.overlay.querySelector("button[class~='ghost']");
+      // Lepší: najdu přesně tlačítko s textem "Přejmenovat"
+      const renameEl = Array.from(m.overlay.querySelectorAll("button"))
+        .find(b => b.textContent.trim() === "Přejmenovat");
+      if (renameEl) renameEl.click();
+      return;
+    }
+    // 'k' — přidat URL přílohu (prompt, podporuje markdown odkaz)
+    if (k === "k") {
+      e.preventDefault();
+      const input = prompt("Přidat URL přílohu (přijímá i markdown odkaz [text](url)):", "");
+      if (input == null) return;
+      const val = input.trim();
+      if (!val) return;
+      let url = val, name = val;
+      const md = parseMarkdownLink(val);
+      if (md) { url = md.url; name = md.text; }
+      else if (looksLikeUrl(val)) { url = val; name = val; }
+      else { toast("Nerozpoznaná URL.", "warning"); return; }
+      real.attachments = real.attachments || [];
+      real.attachments.push({ id: uid("at_"), url, name, createdAt: Date.now() });
+      logActivity(real, "Přidána příloha „" + name + "“");
+      saveState();
+      // Překreslit sekci příloh v otevřeném detailu
+      if (typeof refreshAttachments === "function") refreshAttachments();
+      if (typeof refreshActivity === "function") refreshActivity();
+      sound.add();
+      announce("Příloha „" + name + "“ přidána.");
+      return;
+    }
   };
   m.overlay.addEventListener("keydown", modalKeyHandler);
 
@@ -7014,7 +7225,7 @@ function openHelp() {
     ["G", "Skok na libovolnou nástěnku (otevře výběr)"],
     ["B", "Přepnout na další nástěnku cyklicky"],
     ["T", "Přepnout téma (světlé/tmavé/auto)"],
-    ["H", "Skrýt / zobrazit postranní panel"],
+    ["F", "Skrýt / zobrazit postranní panel"],
     ["accesskey S", "Uložit do GitHubu (tlačítko ⟳ v headeru)"],
     ["/", "Skok do vyhledávání"],
     ["?", "Tato nápověda"],
@@ -7029,7 +7240,9 @@ function openHelp() {
   const cardItems = [
     ["Enter", "Otevřít detail karty"],
     ["Space", "Vybrat / odvybrat kartu (pro hromadné akce)"],
-    ["Ctrl+Enter", "Označit jako hotové / vrátit zpět"],
+    ["H", "Označit jako hotové / vrátit zpět"],
+    ["E", "Přejmenovat kartu"],
+    ["K", "Přidat URL přílohu (přijímá i markdown odkaz [text](url))"],
     ["A", "Přiřadit členy"],
     ["L", "Štítky"],
     ["D", "Termín"],
@@ -7047,6 +7260,9 @@ function openHelp() {
   const detailItems = [
     [".", "Další karta"],
     [",", "Předchozí karta"],
+    ["H", "Označit jako hotové / vrátit zpět"],
+    ["E", "Přejmenovat kartu"],
+    ["K", "Přidat URL přílohu (přijímá i markdown odkaz)"],
     ["A / L / D / C / R", "Stejné akce jako na fokusované kartě"],
     ["Esc", "Zavřít detail"],
   ];
@@ -8069,7 +8285,7 @@ async function init() {
         applyTheme(); saveState();
         announce("Téma: " + state.settings.theme);
         return;
-      case "h": case "H":  e.preventDefault(); toggleSidebar(); return;
+      case "f": case "F":  e.preventDefault(); toggleSidebar(); return;
       case "Escape":
         if (state.ui.focusCardId) { state.ui.focusCardId = null; document.body.classList.remove("focus-mode"); renderAll(); }
         else if (state.ui.selectedCards && state.ui.selectedCards.length) { state.ui.selectedCards = []; renderView(); }
