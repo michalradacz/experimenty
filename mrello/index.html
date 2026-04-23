@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-timer-popup-stop-creates-entry";
+const MRELLO_BUILD = "2026-04-23-url-load-always-fresh-from-gh";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -9621,7 +9621,7 @@ async function tryLoadFromGhUrl() {
   // Pokud uživatel chce uložit lokální změny, musí kliknout na sync PŘED otevřením URL.
   // Tímto je GitHub vždy single source of truth a konflikt mezi zařízeními nevzniká.
   try {
-    toast("Načítám z GitHubu…", "info", 2000);
+    toast("Načítám z GitHubu…", "info", 10000);
     announce("Načítám data z GitHubu.");
     let text = null;
     // Pokus 1: raw.githubusercontent.com (veřejný obsah, bez tokenu)
@@ -9711,15 +9711,25 @@ async function getGhTokenAsync() {
 
 //#region ============= INIT =============
 async function init() {
-  // load state
-  try {
-    const data = await idbLoad();
-    if (data) state = mergeLoadedState(data);
-  } catch (e) {
+  // Má URL parametr ?gh=? Pokud ano, GitHub je single source of truth — načteme ho napřed,
+  // IDB použijeme jen jako záchranný fallback pokud GitHub selže.
+  // Motivace: uživatel chce, aby při otevření URL (nebo F5) aplikace VŽDY stáhla nejnovější
+  // verzi z GitHubu a od toho bodu začala sledovat lokální změny. Ne aby dotáhla staré IDB
+  // data (s nějakým starým dirtySince) a pak to místo toho přepisovala.
+  const qs = new URLSearchParams(location.search);
+  const hasGhUrl = qs.has("gh");
+
+  if (!hasGhUrl) {
+    // Bez URL parametru: standardní offline flow — načíst z IDB
     try {
-      const ls = localStorage.getItem(STORAGE_KEY);
-      if (ls) state = mergeLoadedState(JSON.parse(ls));
-    } catch {}
+      const data = await idbLoad();
+      if (data) state = mergeLoadedState(data);
+    } catch (e) {
+      try {
+        const ls = localStorage.getItem(STORAGE_KEY);
+        if (ls) state = mergeLoadedState(JSON.parse(ls));
+      } catch {}
+    }
   }
   if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
   if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
@@ -9727,9 +9737,33 @@ async function init() {
   applyI18n();
   renderAll();
 
-  // Pokud je v URL parametr ?gh=owner/repo/branch/path, nabídne načtení po vykreslení UI
-  // (modální dialog s potvrzením, protože přepíše lokální data)
-  tryLoadFromGhUrl().then(loaded => { if (loaded) renderAll(); });
+  // URL load — má přednost před IDB. Načteme po vykreslení initial UI (tzn. uživatel vidí prázdný/výchozí
+  // stav + loading indikátor, pak se UI překreslí skutečnými daty).
+  if (hasGhUrl) {
+    const btn = document.getElementById("ghSyncBtn");
+    if (btn) {
+      btn.textContent = "⟳ Načítám z GitHubu…";
+      btn.disabled = true;
+    }
+    announce("Načítám z GitHubu.");
+    try {
+      const loaded = await tryLoadFromGhUrl();
+      if (!loaded) {
+        // GitHub selhal (síť, token, 404) — použij IDB jako záchrannou síť, ať uživatel není bez dat
+        try {
+          const data = await idbLoad();
+          if (data) {
+            state = mergeLoadedState(data);
+            toast("GitHub nedostupný, používám lokální stav.", "warning", 6000);
+          }
+        } catch {}
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+      renderAll();
+      updateSyncButtonLabel();
+    }
+  }
 
   // resume Pomodoro?
   if (state.pomodoro && state.pomodoro.active) scheduleNextPomo();
