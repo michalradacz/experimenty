@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-url-load-always-fresh-from-gh";
+const MRELLO_BUILD = "2026-04-23-gh-busy-toasts-and-no-auth-raw";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2399,6 +2399,13 @@ let state = deepClone(initialState);
 let _saveTimer = null;
 // Flag pro potlačení markDirty u systémových změn (load z URL, sync do GitHubu).
 let _skipNextDirty = false;
+// Když je nastaven, syncButtonLabel ukáže tento řetězec (např. „Načítám z GitHubu…", „Ukládám…").
+// Hodnotu nastavují ghLoad / ghSave / tryLoadFromGhUrl na začátku a v finally vynulují.
+let _ghBusy = null;
+function setGhBusy(label) {
+  _ghBusy = label;
+  updateSyncButtonLabel();
+}
 function saveState() {
   // Označ stav jako „změněný od posledního sync" — pokud ovšem změna není systémová.
   if (_skipNextDirty) {
@@ -2433,39 +2440,32 @@ function saveStateUi() {
 // Vrátí textový popisek pro sync tlačítko podle stavu state.github.
 function syncButtonLabel() {
   const g = state.github || {};
+  // Pokud právě probíhá načítání nebo ukládání, ukaž to
+  if (_ghBusy) return "⟳ " + _ghBusy;
   const loadAt = g.lastLoadAt ? new Date(g.lastLoadAt).getTime() : 0;
   const syncAt = g.lastSyncAt ? new Date(g.lastSyncAt).getTime() : 0;
   const errAt = g.lastErrorAt ? new Date(g.lastErrorAt).getTime() : 0;
   const dirtyAt = g.dirtySince ? new Date(g.dirtySince).getTime() : 0;
-  // Pokud poslední událost byla chyba, ukaž "Chyba synchronizace"
   const lastSuccess = Math.max(loadAt, syncAt);
+  // Chyba má přednost, ať uživatel vidí co se stalo
   if (errAt > lastSuccess) {
     return "⟳ Chyba synchronizace " + formatRelTime(errAt);
   }
-  // Nikdy jsme nenačetli ani neuložili
   if (!loadAt && !syncAt) {
     return "⟳ Synchronizace";
   }
-  // Klíčová otázka: MÁME lokální změny, které ještě nejsou na GitHubu?
-  // Dirty je „modifikace po posledním sync nebo load". Jen na něm záleží, ne na kombinaci load/sync.
+  // Klíčová otázka: máme lokální změny od posledního úspěšného sync / load?
   const hasDirty = dirtyAt > lastSuccess;
-  // Poslední úspěšná akce — čas, podle kterého ukazujeme "před N minutami"
   const refTime = Math.max(loadAt, syncAt);
   const refRel = formatRelTime(refTime);
-  let label;
   if (hasDirty) {
-    // Máme lokální změny. Label říká „máte lokální změny" plus čas posledního úspěšného sync/load.
-    // Cíl: uživatel vidí, kdy naposledy bylo vše čisté a že teď něco leží.
-    label = "Máte lokální změny (od " + refRel + ")";
-  } else {
-    // Vše je synchronizováno — ať už naposledy byl sync nebo load, stav je čistý.
-    if (syncAt >= loadAt) {
-      label = "Synchronizováno " + refRel;
-    } else {
-      label = "Aktuální, načteno " + refRel;
-    }
+    return "⟳ Uložit lokální změny (od " + formatRelTime(dirtyAt) + ")";
   }
-  return "⟳ " + label;
+  // Nic neleží lokálně
+  if (syncAt >= loadAt) {
+    return "⟳ Synchronizováno " + refRel;
+  }
+  return "⟳ Načteno " + refRel;
 }
 // Vrátí pole běžících časovačů napříč všemi kartami.
 function getRunningTimers() {
@@ -2666,7 +2666,8 @@ function b64decUtf8(b64) {
 }
 async function ghLoad() {
   if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
-  setGhStatus("", "GitHub…");
+  setGhBusy("Načítám z GitHubu…");
+  toast("Načítám z GitHubu…", "info", 10000);
   // Podrobný log do konzole každého kroku — při problémech se dá přesně vidět, která cesta selhala.
   const log = (...args) => console.log("[ghLoad]", ...args);
   try {
@@ -2679,13 +2680,14 @@ async function ghLoad() {
     try {
       const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(state.github.owner)}/${encodeURIComponent(state.github.repo)}/${encodeURIComponent(state.github.branch)}/${state.github.path.split("/").map(encodeURIComponent).join("/")}`;
       log("Pokus 1: raw.githubusercontent.com → " + rawUrl);
-      const tok = state.github.token || (typeof getGhTokenAsync === "function" ? await getGhTokenAsync() : null);
-      const rawHeaders = tok ? { "Authorization": "token " + tok } : {};
-      const r = await fetch(rawUrl, { headers: rawHeaders, cache: "no-cache" });
+      // Bez jakýchkoliv headerů — tím se vyhneme CORS preflight (OPTIONS) requestu. Pro veřejná repa
+      // to projde, pro privátní selže a spadne do Pokus 2/3. Přidávání Authorization header by způsobilo
+      // preflight, který raw.githubusercontent.com na cross-origin GET z GitHub Pages neodpovídá.
+      const r = await fetch(rawUrl, { cache: "no-cache" });
       log("  → HTTP " + r.status);
       if (r.ok) {
         text = await r.text();
-        log("  → OK, načteno " + text.length + " bajtů");
+        log("  → OK, načteno " + text.length + " bajtů (jedno stažení, hotovo)");
       } else {
         log("  → neúspěch, zkusím další cestu");
       }
@@ -2754,9 +2756,9 @@ async function ghLoad() {
     _skipNextDirty = true;
     saveState();
     renderAll();
-    setGhStatus("synced", "GitHub OK");
     sound.sync();
-    toast(T("syncOk"), "success");
+    toast("✓ Načteno z GitHubu (" + Math.round(text.length / 1024) + " kB).", "success", 4000);
+    announce("Načteno z GitHubu.");
     log("Hotovo.");
   } catch (e) {
     console.error("[ghLoad] CHYBA:", e);
@@ -2764,13 +2766,17 @@ async function ghLoad() {
     state.github.lastErrorMessage = e.message;
     _skipNextDirty = true;
     saveState();
-    setGhStatus("error", "GitHub chyba");
-    toast(T("syncErr") + " " + e.message, "error"); sound.err();
+    toast("✗ Chyba: " + e.message, "error", 8000);
+    sound.err();
+  } finally {
+    setGhBusy(null);
+    updateSyncButtonLabel();
   }
 }
 async function ghSave() {
   if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
-  setGhStatus("", "GitHub…");
+  setGhBusy("Ukládám na GitHub…");
+  toast("Ukládám na GitHub…", "info", 10000);
   try {
     const headers = await ghHeaders();
     headers["Content-Type"] = "application/json";
@@ -2866,21 +2872,24 @@ async function ghSave() {
     delete state.github.lastErrorMessage;
     _skipNextDirty = true;
     saveState();
-    setGhStatus("synced", "GitHub OK");
     sound.sync();
     if (result && result.noop) {
-      toast("Žádné změny k odeslání — remote je aktuální.", "info");
+      toast("✓ Žádné změny k odeslání — remote je aktuální.", "info", 4000);
     } else {
-      toast(T("syncOk"), "success");
+      toast("✓ Uloženo na GitHub.", "success", 4000);
     }
+    announce("Uloženo na GitHub.");
   } catch (e) {
     console.error(e);
     state.github.lastErrorAt = new Date().toISOString();
     state.github.lastErrorMessage = e.message;
     _skipNextDirty = true;
     saveState();
-    setGhStatus("error", "GitHub chyba");
-    toast(T("syncErr") + " " + e.message, "error"); sound.err();
+    toast("✗ Chyba ukládání: " + e.message, "error", 8000);
+    sound.err();
+  } finally {
+    setGhBusy(null);
+    updateSyncButtonLabel();
   }
 }
 function mergeLoadedState(data) {
@@ -9621,7 +9630,8 @@ async function tryLoadFromGhUrl() {
   // Pokud uživatel chce uložit lokální změny, musí kliknout na sync PŘED otevřením URL.
   // Tímto je GitHub vždy single source of truth a konflikt mezi zařízeními nevzniká.
   try {
-    toast("Načítám z GitHubu…", "info", 10000);
+    setGhBusy("Načítám z GitHubu…");
+    toast("Načítám z GitHubu…", "info", 15000);
     announce("Načítám data z GitHubu.");
     let text = null;
     // Pokus 1: raw.githubusercontent.com (veřejný obsah, bez tokenu)
@@ -9684,19 +9694,20 @@ async function tryLoadFromGhUrl() {
     state.github.dirtySince = null;
     _skipNextDirty = true;
     await saveState();
-    updateSyncButtonLabel();
-    toast("Načteno z GitHubu.", "success", 4000);
+    toast("✓ Načteno z GitHubu (" + Math.round(text.length / 1024) + " kB).", "success", 4000);
     announce("Data z GitHubu načtena.");
     sound.sync();
     return true;
   } catch (e) {
-    toast("Chyba při načítání: " + e.message, "error", 6000);
+    toast("✗ Chyba při načítání: " + e.message, "error", 8000);
     state.github.lastErrorAt = new Date().toISOString();
     state.github.lastErrorMessage = "Načítání: " + e.message;
     saveState();
-    updateSyncButtonLabel();
     sound.err();
     return false;
+  } finally {
+    setGhBusy(null);
+    updateSyncButtonLabel();
   }
 }
 // Pomocná funkce: vyžádá si token (pokud je uložený zašifrovaný)
