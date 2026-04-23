@@ -1612,7 +1612,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-gh-busy-toasts-and-no-auth-raw";
+const MRELLO_BUILD = "2026-04-23-suppress-dirty-robust";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2399,6 +2399,10 @@ let state = deepClone(initialState);
 let _saveTimer = null;
 // Flag pro potlačení markDirty u systémových změn (load z URL, sync do GitHubu).
 let _skipNextDirty = false;
+// Silnější verze: pokud je true, ŽÁDNÉ volání saveState nesmí nastavit dirtySince, dokud flag nevypneme.
+// Použivá se kolem asynchronních operací (ghLoad, ghSave, tryLoadFromGhUrl), kdy nechceme,
+// aby si jakýkoliv vedlejší efekt během loadu/renderu nastavil dirty.
+let _suppressDirty = false;
 // Když je nastaven, syncButtonLabel ukáže tento řetězec (např. „Načítám z GitHubu…", „Ukládám…").
 // Hodnotu nastavují ghLoad / ghSave / tryLoadFromGhUrl na začátku a v finally vynulují.
 let _ghBusy = null;
@@ -2410,6 +2414,9 @@ function saveState() {
   // Označ stav jako „změněný od posledního sync" — pokud ovšem změna není systémová.
   if (_skipNextDirty) {
     _skipNextDirty = false;
+  } else if (_suppressDirty) {
+    // Během loadování / ukládání / renderu systémových změn nikdy neaktualizovat dirtySince.
+    // Robustnější než _skipNextDirty, který pokrývá jen jedno volání.
   } else {
     state.github = state.github || {};
     state.github.dirtySince = new Date().toISOString();
@@ -2666,6 +2673,7 @@ function b64decUtf8(b64) {
 }
 async function ghLoad() {
   if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
+  _suppressDirty = true;
   setGhBusy("Načítám z GitHubu…");
   toast("Načítám z GitHubu…", "info", 10000);
   // Podrobný log do konzole každého kroku — při problémech se dá přesně vidět, která cesta selhala.
@@ -2769,12 +2777,15 @@ async function ghLoad() {
     toast("✗ Chyba: " + e.message, "error", 8000);
     sound.err();
   } finally {
+    if (state.github) state.github.dirtySince = null;
+    _suppressDirty = false;
     setGhBusy(null);
     updateSyncButtonLabel();
   }
 }
 async function ghSave() {
   if (!state.github.enabled) { toast("GitHub není nastaven.", "warning"); return; }
+  _suppressDirty = true;
   setGhBusy("Ukládám na GitHub…");
   toast("Ukládám na GitHub…", "info", 10000);
   try {
@@ -2888,6 +2899,8 @@ async function ghSave() {
     toast("✗ Chyba ukládání: " + e.message, "error", 8000);
     sound.err();
   } finally {
+    if (state.github) state.github.dirtySince = null;
+    _suppressDirty = false;
     setGhBusy(null);
     updateSyncButtonLabel();
   }
@@ -9722,11 +9735,6 @@ async function getGhTokenAsync() {
 
 //#region ============= INIT =============
 async function init() {
-  // Má URL parametr ?gh=? Pokud ano, GitHub je single source of truth — načteme ho napřed,
-  // IDB použijeme jen jako záchranný fallback pokud GitHub selže.
-  // Motivace: uživatel chce, aby při otevření URL (nebo F5) aplikace VŽDY stáhla nejnovější
-  // verzi z GitHubu a od toho bodu začala sledovat lokální změny. Ne aby dotáhla staré IDB
-  // data (s nějakým starým dirtySince) a pak to místo toho přepisovala.
   const qs = new URLSearchParams(location.search);
   const hasGhUrl = qs.has("gh");
 
@@ -9741,26 +9749,27 @@ async function init() {
         if (ls) state = mergeLoadedState(JSON.parse(ls));
       } catch {}
     }
-  }
-  if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
-  if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
-  applyTheme();
-  applyI18n();
-  renderAll();
-
-  // URL load — má přednost před IDB. Načteme po vykreslení initial UI (tzn. uživatel vidí prázdný/výchozí
-  // stav + loading indikátor, pak se UI překreslí skutečnými daty).
-  if (hasGhUrl) {
-    const btn = document.getElementById("ghSyncBtn");
-    if (btn) {
-      btn.textContent = "⟳ Načítám z GitHubu…";
-      btn.disabled = true;
-    }
-    announce("Načítám z GitHubu.");
+    if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
+    if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
+    applyTheme();
+    applyI18n();
+    renderAll();
+  } else {
+    // URL load — má přednost před IDB. Celý blok zabalen do _suppressDirty, aby jakýkoliv vedlejší
+    // saveState (během mergu / renderu / ensure funkcí) nenastavil dirtySince.
+    _suppressDirty = true;
     try {
+      setGhBusy("Načítám z GitHubu…");
+      // Připrav minimum state aby UI mohlo vykreslit (bez dat — to dotáhne tryLoadFromGhUrl)
+      if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
+      if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
+      applyTheme();
+      applyI18n();
+      renderAll();
+      // Skutečné načtení z GitHubu
       const loaded = await tryLoadFromGhUrl();
       if (!loaded) {
-        // GitHub selhal (síť, token, 404) — použij IDB jako záchrannou síť, ať uživatel není bez dat
+        // GitHub selhal — fallback na IDB
         try {
           const data = await idbLoad();
           if (data) {
@@ -9768,10 +9777,19 @@ async function init() {
             toast("GitHub nedostupný, používám lokální stav.", "warning", 6000);
           }
         } catch {}
+        if (!state.workspaces.length) state.workspaces.push({ id: uid("ws_"), name:"Můj prostor", createdAt: Date.now() });
+        if (!state.ui.currentWorkspace) state.ui.currentWorkspace = state.workspaces[0].id;
       }
-    } finally {
-      if (btn) btn.disabled = false;
+      // Přerender s novými daty
       renderAll();
+    } finally {
+      // Explicitní cleanup: dirtySince = null, ať label ukazuje čistý stav.
+      // Tím řešíme i situace, kdy během renderu/ensure kódu proběhl saveState s dirty.
+      if (state.github) state.github.dirtySince = null;
+      _suppressDirty = false;
+      _skipNextDirty = true;
+      saveState();  // zapíše čistý stav do IDB
+      setGhBusy(null);
       updateSyncButtonLabel();
     }
   }
