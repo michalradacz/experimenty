@@ -464,21 +464,28 @@ header.app-header h1 {
   background: var(--bg-alt);
   font-weight: 500;
 }
-/* Tlačítko „Vazby" na kartě v seznamu */
-.card-relations-btn {
-  margin-top: 4px;
+/* „Vazby" odkaz POD kartou — samostatný element, ne uvnitř karty (aby byl čtečkou chápan jako zvláštní interaktivní prvek) */
+.card-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.card-wrap .card { margin-bottom: 0; }
+.card-relations-link {
+  align-self: flex-start;
   font-size: 12px;
   padding: 2px 8px;
+  color: var(--primary, #0a7);
+  text-decoration: none;
   background: var(--bg-alt);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--fg-muted);
 }
-.card-relations-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-  border-color: var(--accent);
+.card-relations-link:hover, .card-relations-link:focus {
+  text-decoration: underline;
+  outline: 2px solid var(--primary, #0a7);
+  outline-offset: 1px;
 }
 .relations-popup-body h4 {
   margin: 12px 0 4px;
@@ -1612,7 +1619,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-sync-label-asterisk";
+const MRELLO_BUILD = "2026-04-23-relations-link-out-of-card-and-list-counts";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2419,7 +2426,18 @@ function saveState() {
     // Robustnější než _skipNextDirty, který pokrývá jen jedno volání.
   } else {
     state.github = state.github || {};
+    const wasDirty = !!state.github.dirtySince;
     state.github.dirtySince = new Date().toISOString();
+    // DEBUG: pokud se z čistého stavu stal dirty, zaznamenej kdo za to může.
+    // Pomáhá při hledání „duchů" co nastaví dirty bez zásahu uživatele.
+    if (!wasDirty) {
+      try {
+        const stack = new Error().stack || "";
+        // Vynech první 2 řádky (Error + saveState), zbytek je volající kód
+        const caller = stack.split("\n").slice(2, 6).join(" ← ");
+        console.log("[saveState] dirty nastaveno, volající:", caller);
+      } catch {}
+    }
   }
   // Aktualizuj popisek sync tlačítka (pokud je v DOM)
   updateSyncButtonLabel();
@@ -4418,18 +4436,28 @@ function renderListColumn(board, list, idx) {
   const cards = cardsInList(list.id);
   const cnt = cards.length;
   const doneCount = cards.filter(c => c.completed).length;
+  const openCount = cnt - doneCount;
   const overWip = wip && cnt > wip;
   const head = el("div", { class:"list-header" });
-  // Název + počet karet přímo v H3 nadpisu. Pro WIP limit přidáme "N/LIMIT", jinak "N" (nebo "N, hotových D")
+  // Název + počet karet přímo v H3 nadpisu.
+  // Default: "N nedokončených + D hotových" (Michal chce vidět nehotové jako první číslo, aby viděl,
+  // co ještě zbývá udělat, ne celkový počet karet).
+  // WIP limit: "X/LIMIT" (zachováme jako dosud, je to klíčová informace)
   let headerText = list.name + " (";
-  if (wip) headerText += cnt + "/" + wip;
-  else headerText += cnt;
-  if (doneCount > 0) headerText += ", hotových " + doneCount;
+  if (wip) {
+    headerText += cnt + "/" + wip;
+    if (doneCount > 0) headerText += ", hotových " + doneCount;
+  } else {
+    headerText += openCount;
+    if (doneCount > 0) headerText += " + " + doneCount + " hotových";
+  }
   headerText += ")";
   const nameHeading = el("h3", {
     class: "list-name" + (overWip ? " over-wip" : ""),
     id: "lname_" + list.id,
-    title: wip ? `WIP limit ${cnt}/${wip}` : (cnt + " karet, " + doneCount + " hotových"),
+    title: wip
+      ? `WIP limit ${cnt}/${wip}${doneCount ? ", hotových " + doneCount : ""}`
+      : (openCount + " nedokončených, " + doneCount + " hotových"),
   }, headerText);
   head.appendChild(nameHeading);
   // Tlačítko pro skrytí sloupce
@@ -4909,8 +4937,9 @@ function renderCard(card, list, position) {
   if (isMirror) ind.appendChild(el("span", { class:"mirror-badge", title:"Zrcadlená kopie" }, "↪ zrcadlo"));
   if (ind.children.length) node.appendChild(ind);
 
-  // Tlačítko „Vazby“ — otevře popup s podkartami a závislostmi.
-  // Zobrazuje se, jen pokud karta má podkarty nebo nějaké závislosti.
+  // Pokud má karta podkarty nebo závislosti, vrátíme wrapper s kartou + odkazem „🔗 Vazby" jako
+  // samostatným sourozencem. Tím je odkaz mimo interaktivní kartu (čtečka ho vidí jako vlastní položku,
+  // ne jako vnořený button, což nesmí být v tabindexovatelném elementu).
   const hasSubcards = getSubcards(eff.id).length > 0;
   const hasDeps = eff.dependencies && (
     (eff.dependencies.blocks || []).length > 0 ||
@@ -4918,17 +4947,20 @@ function renderCard(card, list, position) {
     (eff.dependencies.related || []).length > 0
   );
   if (hasSubcards || hasDeps) {
-    const relBtn = el("button", {
-      class:"card-relations-btn",
+    const wrap = el("div", { class:"card-wrap" });
+    wrap.appendChild(node);
+    const relLink = el("a", {
+      href: "#",
+      class: "card-relations-link",
       "aria-label": "Zobrazit vazby karty „" + eff.title + "“ (podkarty a závislosti)",
       title: "Vazby (podkarty, závislosti)",
       onclick: (e) => {
-        e.stopPropagation();
+        e.preventDefault();
         openRelationsPopup(eff);
       },
-      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); },
     }, "🔗 Vazby");
-    node.appendChild(relBtn);
+    wrap.appendChild(relLink);
+    return wrap;
   }
   return node;
 }
@@ -9411,6 +9443,7 @@ function automationScheduleTick() {
   if (!state.automations || !state.automations.length) return;
   const now = new Date();
   const today = isoLocalDate(now);
+  let dataChanged = false;  // true jen pokud se opravdu provedla uživatelsky viditelná akce
   for (const au of state.automations) {
     if (!au.enabled) continue;
     const t = au.trigger;
@@ -9426,7 +9459,7 @@ function automationScheduleTick() {
         au._lastRun = today;
         // Denní běh: akce bez konkrétní karty (např. toast / addToInbox)
         runActions(au.actions || [], { card: null });
-        saveState();
+        dataChanged = true;
       }
     } else if (t.type === "schedule.dueSoon") {
       const daysBefore = Number(t.params?.daysBefore || 1);
@@ -9441,6 +9474,7 @@ function automationScheduleTick() {
           if (!evalAllConditions(au.conditions || [], card)) return;
           if (!isAutomationActiveOnBoard(au, card.boardId)) return;
           runActions(au.actions || [], { card });
+          dataChanged = true;
         }
       });
     } else if (t.type === "schedule.overdue") {
@@ -9456,11 +9490,14 @@ function automationScheduleTick() {
           if (!evalAllConditions(au.conditions || [], card)) return;
           if (!isAutomationActiveOnBoard(au, card.boardId)) return;
           runActions(au.actions || [], { card });
+          dataChanged = true;
         }
       });
     }
   }
-  saveState();
+  // Pokud nic reálně neběželo, neznačíme dirty — jen by to uživatele mátlo bez vizuální změny.
+  // Pokud něco ano, runActions si zavolalo vlastní saveState() s dirty; tady už stačí UI save.
+  if (dataChanged) saveStateUi();
 }
 
 // ---------- Metadata o typech triggerů, podmínek a akcí pro UI ----------
@@ -9886,13 +9923,19 @@ async function init() {
   // Periodická kontrola: habit streak reset po zmeškaném dni
   setInterval(() => {
     const today = isoLocalDate(new Date());
+    let changed = false;
     state.cards.forEach(c => {
       if (c.cardType === "habit" && c.habit && c.habit.lastCompleted && c.habit.lastCompleted !== today) {
         const last = new Date(c.habit.lastCompleted);
         const days = Math.round((dateOnly(new Date()) - last) / 86400000);
-        if (days > 1) c.habit.streak = 0;
+        if (days > 1 && c.habit.streak !== 0) {
+          c.habit.streak = 0;
+          changed = true;
+        }
       }
     });
+    // Uložit změny do IDB, ale neznačit jako dirty (je to systémová úklidová úloha, ne změna od uživatele)
+    if (changed) saveStateUi();
   }, 60 * 1000);
 
   // Automatizace: každé 2 minuty kontrola schedule triggerů (denně v HH:MM, N dní před termínem, …)
