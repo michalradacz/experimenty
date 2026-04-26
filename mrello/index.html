@@ -555,6 +555,29 @@ header.app-header h1 {
 .time-report-card-row {
   padding: 3px 0;
 }
+/* Přílohy v detailu karty — řádkové divy + sbalitelné přidávání */
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+}
+.attachment-item {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.attachment-item:last-child { border-bottom: none; }
+.attachment-add-details summary {
+  cursor: pointer;
+  padding: 6px 0;
+  font-weight: 500;
+  color: var(--primary, #0a7);
+}
+.attachment-add-details[open] summary {
+  margin-bottom: 4px;
+}
 /* ===== Kalendářový pohled ===== */
 .calendar-view { padding: 12px; }
 .cal-head {
@@ -1853,7 +1876,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-no-uls-calendar-css-card-report";
+const MRELLO_BUILD = "2026-04-23-attachments-no-uls-collapsible-add";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -6452,7 +6475,7 @@ function openCardDetail(cardId) {
   // Přílohy
   const aSec = el("section", { "aria-label": T("attachments") });
   aSec.appendChild(el("h4", {}, T("attachments")));
-  const aList = el("ul", { class:"attachments" });
+  const aList = el("div", { class:"attachments" });
   function formatBytes(b) {
     if (b < 1024) return b + " B";
     if (b < 1024*1024) return (b/1024).toFixed(1) + " kB";
@@ -6461,15 +6484,12 @@ function openCardDetail(cardId) {
   function refreshAttachments() {
     clear(aList);
     (real.attachments || []).forEach(at => {
-      const li = el("li");
+      const item = el("div", { class:"attachment-item" });
       // Tři varianty přílohy:
       //   1) iframe (at.iframe === true)   — tlačítko „Otevřít" → modal s iframem na celé okno
       //   2) soubor (at.dataUrl)           — odkaz se stažením (download attr)
       //   3) URL odkaz (default)           — odkaz target="_blank"
       if (at.iframe) {
-        // Tlačítko místo odkazu — otevře iframe modal až na vyžádání (nezatěžuje stránku
-        // automatickým fetchem cizího URL při každém otevření detailu).
-        // Zobrazujeme přímo URL (bez názvu), Michal preferuje minimální data.
         const openBtn = el("button", {
           class: "ghost",
           "aria-label": `Otevřít ${at.url} v okně`,
@@ -6484,8 +6504,8 @@ function openCardDetail(cardId) {
           sound.remove();
           announce("Iframe příloha smazána.");
         } }, "×");
-        li.append(openBtn, meta, " ", rm);
-        aList.appendChild(li);
+        item.append(openBtn, meta, " ", rm);
+        aList.appendChild(item);
         return;
       }
       // Soubor / URL odkaz (původní logika)
@@ -6519,13 +6539,19 @@ function openCardDetail(cardId) {
         sound.remove();
         announce("Příloha „" + name + "“ smazána.");
       } }, "×");
-      li.append(link, meta, " ", rm);
-      aList.appendChild(li);
+      item.append(link, meta, " ", rm);
+      aList.appendChild(item);
     });
-    if (!(real.attachments || []).length) aList.appendChild(el("li", { class:"muted small" }, "(žádné)"));
+    if (!(real.attachments || []).length) aList.appendChild(el("div", { class:"muted small" }, "(žádné)"));
   }
   refreshAttachments();
   aSec.appendChild(aList);
+
+  // Přidávací UI je defaultně sbalené do <details>, ať nepřekáží když je přílohy už vidíš.
+  // Rozkliknutím se objeví: file input + URL/iframe pole + tlačítka.
+  const addDetails = el("details", { class:"attachment-add-details", style:{ marginTop:"8px" } });
+  const addSummary = el("summary", {}, "+ Přidat přílohu");
+  addDetails.appendChild(addSummary);
 
   // Nahrání souborů — čteme je přes FileReader do base64 DataURL a ukládáme do stavu.
   // Varovat při velkých souborech (IndexedDB to přežije, ale soubor nad ~5 MB znatelně zvětšuje stav).
@@ -6571,7 +6597,7 @@ function openCardDetail(cardId) {
     sound.add();
     announce("Nahráno souborů: " + files.length);
   });
-  aSec.appendChild(el("div", { style:{ marginTop:"8px" } }, el("label", {}, "Nahrát soubor(y): "), fileInp));
+  addDetails.appendChild(el("div", { style:{ marginTop:"8px" } }, el("label", {}, "Nahrát soubor(y): "), fileInp));
 
   // URL příloha (externí odkaz) — zachováno
   const aUrl = el("input", { type:"url", placeholder: T("attachmentUrl") + " nebo [text](url)" });
@@ -6633,7 +6659,8 @@ function openCardDetail(cardId) {
     sound.add();
     announce("Iframe příloha přidána.");
   } }, "+ iframe");
-  aSec.append(el("div", { style:{ marginTop:"8px" } }, aUrl, aName, aAdd, " ", aAddIframe));
+  addDetails.append(el("div", { style:{ marginTop:"8px" } }, aUrl, aName, aAdd, " ", aAddIframe));
+  aSec.appendChild(addDetails);
   right.appendChild(aSec);
 
   // Time tracking
