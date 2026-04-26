@@ -492,16 +492,186 @@ header.app-header h1 {
   font-size: 14px;
 }
 .relations-popup-body h4:first-child { margin-top: 0; }
-.relations-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 8px;
-}
-.relations-list li {
+/* Vazby v popupu — řádkové divy (bez ul/li, čtečka tak nečte „odrážka") */
+.relations-row {
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
 }
-.relations-list li:last-child { border-bottom: none; }
+.relations-row:last-child { border-bottom: none; }
+/* Komentáře u karty */
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px 0;
+}
+.comment-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.comment-item:last-child { border-bottom: none; }
+/* Aktivita — karty i nástěnky */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.activity-item {
+  padding: 3px 0;
+  font-size: 13px;
+}
+/* Smart-list jako kontejner pro řádkové karty */
+.smart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+}
+.smart-card-item {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.smart-card-item:last-child { border-bottom: none; }
+/* Inbox */
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+}
+.inbox-item {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.inbox-item:last-child { border-bottom: none; }
+/* Time report karty */
+.time-report-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.time-report-card-row {
+  padding: 3px 0;
+}
+/* ===== Kalendářový pohled ===== */
+.calendar-view { padding: 12px; }
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cal-head h3 {
+  flex: 1;
+  text-align: center;
+  font-size: 18px;
+  margin: 0;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.cal-dow {
+  background: var(--bg-alt);
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 2px;
+  font-size: 13px;
+}
+.cal-cell {
+  background: var(--bg);
+  min-height: 90px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cal-cell.other { background: var(--bg-alt); opacity: 0.55; }
+.cal-cell.today { background: var(--bg-highlight, #fff8d9); border: 2px solid var(--primary, #0a7); padding: 2px; }
+.cal-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 2px;
+}
+.cal-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+.cal-card:hover, .cal-card:focus {
+  background: var(--bg-hover, #eef);
+  outline: 2px solid var(--primary, #0a7);
+}
+.cal-card.done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+@media (max-width: 700px) {
+  /* Mobil: užší buňky, menší font */
+  .cal-cell { min-height: 60px; padding: 2px; }
+  .cal-card { font-size: 10px; padding: 1px 3px; }
+  .cal-dow { padding: 4px 1px; font-size: 11px; }
+}
+/* ===== Časová osa (timeline) ===== */
+.timeline-view { padding: 12px; overflow-x: auto; }
+.tl-wrap {
+  display: table;
+  border-collapse: collapse;
+  min-width: 100%;
+}
+.tl-head, .tl-row {
+  display: table-row;
+}
+.tl-label {
+  display: table-cell;
+  position: sticky;
+  left: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  min-width: 180px;
+  z-index: 1;
+}
+.tl-day {
+  display: table-cell;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+.tl-day.today {
+  background: var(--primary, #0a7);
+  color: white;
+  font-weight: 600;
+}
+.tl-cell {
+  display: table-cell;
+  border: 1px solid var(--border);
+  padding: 0;
+  position: relative;
+  height: 32px;
+}
+.tl-bar {
+  background: var(--primary, #0a7);
+  height: 100%;
+  border-radius: 2px;
+}
 .sidebar-item .badge {
   margin-left: auto;
   font-size: 11px;
@@ -773,6 +943,70 @@ main.app-main {
 }
 .modal.small { max-width: 480px; }
 .modal.large { max-width: 980px; }
+/* Iframe příloha — full-window modal, responzivní pro mobil/tablet/desktop */
+.iframe-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  z-index: 200;
+  padding: 0;
+}
+.iframe-modal-wrap {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  /* Na velké obrazovce trochu menší, ať je vidět rámeček = uživatel ví, že je to modal */
+  max-width: 1400px;
+  max-height: 100vh;
+}
+.iframe-modal-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.iframe-modal-title {
+  margin: 0;
+  font-size: 16px;
+  flex: 1;
+  min-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iframe-modal-url {
+  font-size: 11px;
+  color: var(--fg-muted);
+  padding: 4px 12px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.iframe-modal-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: white;
+  min-height: 0;  /* důležité pro flex container — bez tohoto se iframe roztáhne mimo */
+}
+@media (max-width: 600px) {
+  /* Mobil: title menší, vejde se k tlačítkům */
+  .iframe-modal-title { font-size: 14px; min-width: 100px; }
+  .iframe-modal-header { padding: 6px 8px; }
+  .iframe-modal-url { font-size: 10px; padding: 3px 8px; }
+}
 .modal-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
@@ -1619,7 +1853,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-relations-link-out-of-card-and-list-counts";
+const MRELLO_BUILD = "2026-04-23-no-uls-calendar-css-card-report";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2300,7 +2534,10 @@ function toast(msg, kind="info", ms=3500) {
 
 //#region ============= MODAL =============
 function openModal({ title, body, footer, size="", onClose, escClose=true }={}) {
-  const overlay = el("div", { class:"modal-overlay", role:"dialog", "aria-modal":"true", "aria-label": title || "" });
+  // Pozn.: záměrně nepoužíváme role="dialog" ani aria-modal — chování role dialog v praxi není
+  // u některých čteček konzistentní (skok focusu, problémy s announcement). Místo toho používáme
+  // h2 jako modal title a focus management (focus na první input + focus trap v keyHandler).
+  const overlay = el("div", { class:"modal-overlay", "aria-label": title || "" });
   const modal = el("div", { class:"modal " + size });
   const headerEl = el("div", { class:"modal-header" },
     el("h2", {}, title || ""),
@@ -4228,19 +4465,19 @@ function openBoardActivityView(board) {
   if (!display.length) {
     body.appendChild(el("p", { class:"muted" }, "Zatím žádná aktivita na této nástěnce."));
   } else {
-    const ul = el("ul", { class:"activity-list board-activity-list" });
+    const wrap = el("div", { class:"activity-list board-activity-list" });
     display.forEach(a => {
-      const li = el("li");
-      li.appendChild(el("span", { class:"muted small" }, formatDate(a.timestamp, true) + ": "));
-      li.appendChild(el("button", {
+      const item = el("div", { class:"activity-item" });
+      item.appendChild(el("span", { class:"muted small" }, formatDate(a.timestamp, true) + ": "));
+      item.appendChild(el("button", {
         class: "link-btn",
         onclick: () => { m.close(); openCardDetail(a.cardId); },
         title: "Otevřít kartu",
       }, a.cardTitle + (a.archived ? " (archivováno)" : "")));
-      li.appendChild(el("span", {}, " — " + a.action));
-      ul.appendChild(li);
+      item.appendChild(el("span", {}, " — " + a.action));
+      wrap.appendChild(item);
     });
-    body.appendChild(ul);
+    body.appendChild(wrap);
   }
   const m = openModal({
     title: "Aktivita nástěnky „" + board.name + "“",
@@ -4965,25 +5202,26 @@ function renderCard(card, list, position) {
   return node;
 }
 // Popup okno s podkartami a závislostmi karty. Každá položka klikatelná → otevře detail.
+// Bez ul/li — Michal preferuje řádkové divy, čtečka pak nečte „odrážka" před každou položkou.
 function openRelationsPopup(card) {
   const body = el("div", { class:"relations-popup-body" });
+  // Pomocná funkce: vykreslí jeden řádek (kartu) jako klikatelnou položku
+  const renderRow = (c, withCheckmark = true) => {
+    const row = el("div", { class:"relations-row" });
+    const mark = (withCheckmark && c.completed) ? "✓ " : "";
+    const cl = getList(c.listId);
+    const btn = el("button", {
+      class:"link-btn",
+      onclick: () => { m.close(); openCardDetail(c.id); },
+    }, mark + c.title);
+    row.appendChild(btn);
+    if (cl) row.appendChild(el("span", { class:"muted small" }, " — " + cl.name));
+    return row;
+  };
   const subs = getSubcards(card.id);
   if (subs.length) {
     body.appendChild(el("h4", {}, "↳ Podkarty (" + subs.length + ")"));
-    const ul = el("ul", { class:"relations-list" });
-    subs.forEach(s => {
-      const li = el("li");
-      const mark = s.completed ? "✓ " : "";
-      const subList = getList(s.listId);
-      const btn = el("button", {
-        class:"link-btn",
-        onclick: () => { m.close(); openCardDetail(s.id); },
-      }, mark + s.title);
-      li.append(btn);
-      if (subList) li.append(el("span", { class:"muted small" }, " — " + subList.name));
-      ul.appendChild(li);
-    });
-    body.appendChild(ul);
+    subs.forEach(s => body.appendChild(renderRow(s)));
   }
   const deps = card.dependencies || {};
   const blocks = (deps.blocks || []).map(getCard).filter(Boolean);
@@ -4991,53 +5229,15 @@ function openRelationsPopup(card) {
   const related = (deps.related || []).map(getCard).filter(Boolean);
   if (blockedBy.length) {
     body.appendChild(el("h4", {}, "⛔ Blokují tuto kartu (" + blockedBy.length + ")"));
-    const ul = el("ul", { class:"relations-list" });
-    blockedBy.forEach(o => {
-      const li = el("li");
-      const mark = o.completed ? "✓ " : "";
-      const ol = getList(o.listId);
-      const btn = el("button", {
-        class:"link-btn",
-        onclick: () => { m.close(); openCardDetail(o.id); },
-      }, mark + o.title);
-      li.append(btn);
-      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
-      ul.appendChild(li);
-    });
-    body.appendChild(ul);
+    blockedBy.forEach(o => body.appendChild(renderRow(o)));
   }
   if (blocks.length) {
     body.appendChild(el("h4", {}, "🚧 Tato karta blokuje (" + blocks.length + ")"));
-    const ul = el("ul", { class:"relations-list" });
-    blocks.forEach(o => {
-      const li = el("li");
-      const mark = o.completed ? "✓ " : "";
-      const ol = getList(o.listId);
-      const btn = el("button", {
-        class:"link-btn",
-        onclick: () => { m.close(); openCardDetail(o.id); },
-      }, mark + o.title);
-      li.append(btn);
-      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
-      ul.appendChild(li);
-    });
-    body.appendChild(ul);
+    blocks.forEach(o => body.appendChild(renderRow(o)));
   }
   if (related.length) {
     body.appendChild(el("h4", {}, "🔗 Souvisí (" + related.length + ")"));
-    const ul = el("ul", { class:"relations-list" });
-    related.forEach(o => {
-      const li = el("li");
-      const ol = getList(o.listId);
-      const btn = el("button", {
-        class:"link-btn",
-        onclick: () => { m.close(); openCardDetail(o.id); },
-      }, o.title);
-      li.append(btn);
-      if (ol) li.append(el("span", { class:"muted small" }, " — " + ol.name));
-      ul.appendChild(li);
-    });
-    body.appendChild(ul);
+    related.forEach(o => body.appendChild(renderRow(o, false)));
   }
   const m = openModal({
     title: "Vazby karty „" + card.title + "“",
@@ -5496,7 +5696,7 @@ function generateCardReport(card) {
   const list = getList(card.listId);
   const lines = [];
 
-  lines.push("# Report úkolu: " + (card.title || "(bez názvu)"));
+  lines.push("# Karta: " + (card.title || "(bez názvu)"));
   lines.push("");
   const now = new Date();
   const genStr = now.toLocaleDateString("cs-CZ") + " " + now.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit" });
@@ -5709,6 +5909,62 @@ function generateCardReport(card) {
   }
 
   return lines.join("\n");
+}
+
+// Modal s iframe přílohou — full-window, tlačítko Zavřít vrátí zpět do detailu karty.
+// Iframe se nikdy neotevře automaticky; uživatel musí kliknout „Otevřít" → tahle funkce. Tím šetříme:
+//   1) Síťové dotazy (cizí URL se nestahuje při každém otevření detailu)
+//   2) Paměť (iframe se vykreslí jen když ho někdo opravdu chce vidět)
+//   3) Soukromí (third-party cookies / fingerprintery se nenačtou bez tvého souhlasu)
+function openIframeModal(attachment, card) {
+  if (!attachment || !attachment.url) return;
+  // Vlastní overlay, přes celé okno, neproužkovaný (jiný styl než běžný openModal — chceme co nejvíc místa)
+  const overlay = el("div", { class: "iframe-modal-overlay" });
+  const wrap = el("div", { class: "iframe-modal-wrap" });
+  // Header — URL + akční tlačítka. Iframe přílohy nemají název, jen URL (tak to chce Michal).
+  const header = el("div", { class: "iframe-modal-header" });
+  const title = el("h2", { class: "iframe-modal-title" }, attachment.url);
+  // Pomocné tlačítko: otevřít v novém panelu (pro stránky, které blokují iframe X-Frame-Options)
+  const openExternalBtn = el("a", {
+    href: attachment.url, target: "_blank", rel: "noopener noreferrer",
+    class: "ghost small",
+    "aria-label": "Otevřít v novém panelu prohlížeče",
+  }, "↗ Nový panel");
+  const closeBtn = el("button", {
+    class: "primary",
+    "aria-label": "Zavřít okno a vrátit se zpět",
+    onclick: () => close(),
+  }, "✕ Zavřít");
+  header.append(title, openExternalBtn, closeBtn);
+  wrap.appendChild(header);
+  // Iframe samotný
+  const frame = el("iframe", {
+    src: attachment.url,
+    class: "iframe-modal-frame",
+    title: attachment.url,
+    referrerpolicy: "no-referrer",
+    loading: "eager",
+  });
+  wrap.appendChild(frame);
+  overlay.appendChild(wrap);
+  document.body.appendChild(overlay);
+  // Pozn.: záměrně NElogujeme do aktivity karty — Michal nechce zaplnit aktivitu otevíráním iframů,
+  // protože je může otevírat opakovaně během dne (refresh dashboardu apod.).
+  // Zavírání: Esc + tlačítko + klik mimo modal okno
+  function close() {
+    document.removeEventListener("keydown", keyHandler);
+    overlay.remove();
+    if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  }
+  function keyHandler(e) {
+    if (e.key === "Escape") { e.stopPropagation(); close(); }
+  }
+  document.addEventListener("keydown", keyHandler);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  const lastFocus = document.activeElement;
+  // Focus na zavírací tlačítko — uživatel ho bude pravděpodobně potřebovat dřív než interakci s iframe
+  setTimeout(() => closeBtn.focus(), 100);
+  announce("Otevřena iframe příloha. Esc nebo tlačítko Zavřít pro návrat.");
 }
 
 function openCardDetail(cardId) {
@@ -6002,17 +6258,19 @@ function openCardDetail(cardId) {
   }
 
   // Komentáře — Ctrl+Enter přidá, markdown se v každém komentáři renderuje přes mdRender().
+  // Bez ul/li — divy s vlastní třídou. Pro čtečku je to stejně dobré (každý komentář má svoji metu),
+  // ale bez „odrážka" před každým prvkem.
   const cmSection = el("section", { "aria-label": T("comments") });
   cmSection.appendChild(el("h3", {}, T("comments")));
-  const cmList = el("ul", { class:"comments" });
+  const cmList = el("div", { class:"comments" });
   function refreshComments() {
     clear(cmList);
     (real.comments || []).slice().reverse().forEach(c => {
-      const li = el("li");
+      const item = el("div", { class:"comment-item" });
       const meta = el("div", { class:"comment-meta muted" }, formatDate(c.createdAt, true));
       const text = el("div", { class:"comment-text md-rendered", html: mdRender(c.text) });
-      li.append(meta, text);
-      cmList.appendChild(li);
+      item.append(meta, text);
+      cmList.appendChild(item);
     });
   }
   refreshComments();
@@ -6037,19 +6295,19 @@ function openCardDetail(cardId) {
   // Aktivita
   const actSection = el("section", { "aria-label": T("activity") });
   actSection.appendChild(el("h3", {}, T("activity")));
-  const actList = el("ul", { class:"activity-list" });
+  const actList = el("div", { class:"activity-list" });
   function refreshActivity() {
     clear(actList);
     const acts = (real.activity || []).slice(0, 50);
     if (!acts.length) {
-      actList.appendChild(el("li", { class:"muted" }, "(zatím žádná aktivita)"));
+      actList.appendChild(el("div", { class:"muted" }, "(zatím žádná aktivita)"));
       return;
     }
     acts.forEach(a => {
       // Zpětná kompatibilita: nová pole jsou `timestamp` + `action`, stará byla `at` + `msg`
       const ts = a.timestamp || a.at;
       const msg = a.action || a.msg || "";
-      actList.appendChild(el("li", {},
+      actList.appendChild(el("div", { class:"activity-item" },
         el("span", { class:"muted" }, formatDate(ts, true) + ": "),
         el("span", {}, msg)));
     });
@@ -6204,13 +6462,37 @@ function openCardDetail(cardId) {
     clear(aList);
     (real.attachments || []).forEach(at => {
       const li = el("li");
-      // Dvě možnosti: URL příloha (href na externí zdroj) nebo soubor (dataUrl = base64)
+      // Tři varianty přílohy:
+      //   1) iframe (at.iframe === true)   — tlačítko „Otevřít" → modal s iframem na celé okno
+      //   2) soubor (at.dataUrl)           — odkaz se stažením (download attr)
+      //   3) URL odkaz (default)           — odkaz target="_blank"
+      if (at.iframe) {
+        // Tlačítko místo odkazu — otevře iframe modal až na vyžádání (nezatěžuje stránku
+        // automatickým fetchem cizího URL při každém otevření detailu).
+        // Zobrazujeme přímo URL (bez názvu), Michal preferuje minimální data.
+        const openBtn = el("button", {
+          class: "ghost",
+          "aria-label": `Otevřít ${at.url} v okně`,
+          onclick: () => openIframeModal(at, real),
+        }, "▶ Otevřít: " + at.url);
+        const meta = el("span", { class:"muted small" }, " (iframe)");
+        const rm = el("button", { class:"ghost small", "aria-label":"Smazat přílohu", onclick: async () => {
+          if (!await confirm2("Smazat iframe přílohu „" + at.url + "“?", { danger:true })) return;
+          real.attachments = real.attachments.filter(x => x.id !== at.id);
+          saveState();
+          refreshAttachments();
+          sound.remove();
+          announce("Iframe příloha smazána.");
+        } }, "×");
+        li.append(openBtn, meta, " ", rm);
+        aList.appendChild(li);
+        return;
+      }
+      // Soubor / URL odkaz (původní logika)
       const href = at.dataUrl || at.url || "#";
       const linkAttrs = { href, target:"_blank", rel:"noopener" };
-      // Pokud je to soubor, nabídni download atribut (aby se stáhl, ne zobrazil)
       if (at.dataUrl && at.name) linkAttrs.download = at.name;
       const link = el("a", linkAttrs, at.name || at.url || "(bez názvu)");
-      // U souborů zalogujeme do aktivity stažení (kliknutí na odkaz)
       if (at.dataUrl) {
         link.addEventListener("click", () => {
           logActivity(real, "Stažena příloha „" + (at.name || "soubor") + "“"
@@ -6324,7 +6606,34 @@ function openCardDetail(cardId) {
     refreshAttachments();
     sound.add();
   } }, "+ URL");
-  aSec.append(el("div", { style:{ marginTop:"8px" } }, aUrl, aName, aAdd));
+  // Tlačítko „+ iframe" — uloží URL stejně jako odkaz, ale s flagem `iframe: true`.
+  // Při zobrazení nabídne místo přímého odkazu tlačítko „Otevřít v okně" → modal s iframem
+  // přes celé okno. Důvod: iframe se nenačítá automaticky, ale až na vyžádání → šetří paměť
+  // a nezahltí to čtečku obrazovky.
+  // Pozn.: iframe používá jen URL, název se nezadává (URL je samo o sobě dost identifikační).
+  const aAddIframe = el("button", { class:"ghost", onclick: () => {
+    let url = aUrl.value.trim();
+    const md = parseMarkdownLink(url);
+    if (md) { url = md.url; }
+    if (!url) return;
+    // Validace: iframe potřebuje http(s) protokol
+    if (!/^https?:\/\//i.test(url)) {
+      toast("URL musí začínat http:// nebo https://", "warning");
+      return;
+    }
+    if (!real.attachments) real.attachments = [];
+    real.attachments.push({
+      id: uid("at_"), url: url,
+      iframe: true,
+      createdAt: Date.now(),
+    });
+    aUrl.value = ""; aName.value = "";
+    saveState();
+    refreshAttachments();
+    sound.add();
+    announce("Iframe příloha přidána.");
+  } }, "+ iframe");
+  aSec.append(el("div", { style:{ marginTop:"8px" } }, aUrl, aName, aAdd, " ", aAddIframe));
   right.appendChild(aSec);
 
   // Time tracking
@@ -7444,9 +7753,9 @@ function renderTimeTrackingView(wrap) {
     "Celkem " + cards.length + " karet se stráveným časem (" + formatHours(totalSpent) + ")."
   );
   wrap.appendChild(summary);
-  const ul = el("ul", { class:"smart-list time-tracking-list" });
+  const wrapList = el("div", { class:"smart-list time-tracking-list" });
   cards.forEach(c => {
-    const li = el("li", { class: c.time.runningSince ? "tt-running" : "" });
+    const item = el("div", { class: "smart-card-item " + (c.time.runningSince ? "tt-running" : "") });
     const board = getBoard(c.boardId);
     const list = getList(c.listId);
     const est = (c.time.estimateSec || 0);
@@ -7461,7 +7770,7 @@ function renderTimeTrackingView(wrap) {
     if (board) meta.push(board.name);
     if (list) meta.push(list.name);
     if (meta.length) line1.appendChild(el("span", { class:"muted small" }, " — " + meta.join(", ")));
-    li.appendChild(line1);
+    item.appendChild(line1);
     // Druhý řádek: čas (strávený, odhad pokud je, aktuální běžící elapsed) + tlačítko Start/Stop
     const line2 = el("div", { class:"tt-time-row" });
     const timeTxt = est > 0
@@ -7492,10 +7801,10 @@ function renderTimeTrackingView(wrap) {
     }, isRun ? "Stop" : "Start");
     line2.appendChild(document.createTextNode(" "));
     line2.appendChild(toggleBtn);
-    li.appendChild(line2);
-    ul.appendChild(li);
+    item.appendChild(line2);
+    wrapList.appendChild(item);
   });
-  wrap.appendChild(ul);
+  wrap.appendChild(wrapList);
 }
 
 function renderTimeReportView(wrap) {
@@ -7611,16 +7920,16 @@ function renderTimeReportView(wrap) {
       ));
       // Seřadit karty v nástěnce podle totalSec sestupně
       b.cards.sort((x, y) => y.totalSec - x.totalSec);
-      const ul = el("ul", { class:"time-report-cards" });
+      const cardsWrap = el("div", { class:"time-report-cards" });
       b.cards.forEach(c => {
-        const li = el("li");
+        const row = el("div", { class:"time-report-card-row" });
         const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title);
         const dur = el("strong", {}, " — " + formatHours(c.totalSec));
         const cnt = el("span", { class:"muted small" }, " (" + c.entries.length + " záznam" + (c.entries.length === 1 ? "" : c.entries.length < 5 ? "y" : "ů") + ")");
-        li.append(btn, dur, cnt);
-        ul.appendChild(li);
+        row.append(btn, dur, cnt);
+        cardsWrap.appendChild(row);
       });
-      section.appendChild(ul);
+      section.appendChild(cardsWrap);
       output.appendChild(section);
     });
   }
@@ -7661,28 +7970,26 @@ function renderAttachmentsSmartView(wrap) {
     wrap.appendChild(el("p", { class:"muted" }, "Žádné karty se souborovými přílohami."));
   } else {
     fileCards.sort((a, b) => (a.card.title || "").localeCompare(b.card.title || "", "cs"));
-    const ul = el("ul", { class:"smart-list attachments-list" });
+    const wrap2 = el("div", { class:"smart-list attachments-list" });
     fileCards.forEach(({ card, files }) => {
-      const li = el("li");
+      const item = el("div", { class:"smart-card-item" });
       const board = getBoard(card.boardId);
       const list = getList(card.listId);
       const cardBtn = el("button", { class:"link-btn", onclick: () => openCardDetail(card.id) }, card.title);
       const meta = el("span", { class:"muted small" }, " — " + [board?.name, list?.name].filter(Boolean).join(", "));
-      li.append(cardBtn, meta);
-      // Podseznam souborů
-      const inner = el("ul", { class:"att-inner" });
+      item.append(cardBtn, meta);
+      // Vnořené řádky se soubory
+      const inner = el("div", { class:"att-inner" });
       files.forEach(f => {
-        const liF = el("li");
         const name = f.name || "(bez názvu)";
         const size = f.size ? formatAttachmentSize(f.size) : "";
         const type = f.type ? " · " + f.type : "";
-        liF.textContent = "📎 " + name + (size ? " (" + size + ")" : "") + type;
-        inner.appendChild(liF);
+        inner.appendChild(el("div", {}, "📎 " + name + (size ? " (" + size + ")" : "") + type));
       });
-      li.appendChild(inner);
-      ul.appendChild(li);
+      item.appendChild(inner);
+      wrap2.appendChild(item);
     });
-    wrap.appendChild(ul);
+    wrap.appendChild(wrap2);
   }
   // Sekce 2: Odkazové přílohy
   wrap.appendChild(el("h2", { class:"smart-section", style:{ marginTop:"20px" } }, "Odkazové přílohy"));
@@ -7690,29 +7997,29 @@ function renderAttachmentsSmartView(wrap) {
     wrap.appendChild(el("p", { class:"muted" }, "Žádné karty s odkazovými přílohami."));
   } else {
     linkCards.sort((a, b) => (a.card.title || "").localeCompare(b.card.title || "", "cs"));
-    const ul = el("ul", { class:"smart-list attachments-list" });
+    const wrap2 = el("div", { class:"smart-list attachments-list" });
     linkCards.forEach(({ card, links }) => {
-      const li = el("li");
+      const item = el("div", { class:"smart-card-item" });
       const board = getBoard(card.boardId);
       const list = getList(card.listId);
       const cardBtn = el("button", { class:"link-btn", onclick: () => openCardDetail(card.id) }, card.title);
       const meta = el("span", { class:"muted small" }, " — " + [board?.name, list?.name].filter(Boolean).join(", "));
-      li.append(cardBtn, meta);
-      // Podseznam odkazů — každý klikatelný
-      const inner = el("ul", { class:"att-inner" });
+      item.append(cardBtn, meta);
+      // Vnořené řádky s odkazy — každý klikatelný
+      const inner = el("div", { class:"att-inner" });
       links.forEach(ln => {
-        const liL = el("li");
+        const row = el("div", {});
         const a = el("a", { href: ln.url, target:"_blank", rel:"noopener noreferrer" }, "🔗 " + (ln.name || ln.url));
-        liL.append(a);
+        row.append(a);
         if (ln.name && ln.name !== ln.url) {
-          liL.append(el("span", { class:"muted small" }, " — " + ln.url));
+          row.append(el("span", { class:"muted small" }, " — " + ln.url));
         }
-        inner.appendChild(liL);
+        inner.appendChild(row);
       });
-      li.appendChild(inner);
-      ul.appendChild(li);
+      item.appendChild(inner);
+      wrap2.appendChild(item);
     });
-    wrap.appendChild(ul);
+    wrap.appendChild(wrap2);
   }
 }
 
@@ -7766,19 +8073,19 @@ function renderSmartView(container, smart) {
   else if (smart === "trash") {
     // Smazané karty přes pole c.deleted (konzistentní s countSmart)
     const cs = state.cards.filter(c => c.deleted);
-    const trashUl = el("ul", { class:"smart-list" });
-    if (!cs.length) trashUl.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+    const trashWrap = el("div", { class:"smart-list" });
+    if (!cs.length) trashWrap.appendChild(el("div", { class:"muted" }, T("nothingHere")));
     cs.forEach(c => {
-      const li = el("li");
-      li.appendChild(el("strong", {}, c.title));
+      const item = el("div", { class:"smart-card-item" });
+      item.appendChild(el("strong", {}, c.title));
       const restore = el("button", { class:"ghost", onclick: () => { restoreCard(c.id); renderView(); toast(T("restored"), "success"); } }, T("unarchive"));
       const perm = el("button", { class:"ghost danger", onclick: async () => {
         if (await confirm2("Smazat trvale? Tato akce je nevratná.", { danger:true })) { permanentDelete(c.id); renderView(); toast(T("deleted"), "warning"); sound.remove(); }
       } }, "Smazat trvale");
-      li.append(" ", restore, " ", perm);
-      trashUl.appendChild(li);
+      item.append(" ", restore, " ", perm);
+      trashWrap.appendChild(item);
     });
-    wrap.appendChild(trashUl);
+    wrap.appendChild(trashWrap);
     container.appendChild(wrap);
     return;
   }
@@ -7791,9 +8098,9 @@ function renderSmartView(container, smart) {
       if (!a.dueDate && b.dueDate) return 1;
       return (a.title || "").localeCompare(b.title || "", "cs");
     });
-    const ul = el("ul", { class:"smart-list" });
+    const wrapList = el("div", { class:"smart-list" });
     cards.forEach(c => {
-      const li = el("li");
+      const item = el("div", { class:"smart-card-item" });
       const b = getBoard(c.boardId);
       const l = getList(c.listId);
       const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title);
@@ -7802,10 +8109,10 @@ function renderSmartView(container, smart) {
       if (l) metaParts.push(l.name);
       if (c.dueDate) metaParts.push(formatDate(c.dueDate));
       const meta = el("span", { class:"muted" }, " — " + metaParts.join(", "));
-      li.append(btn, meta);
-      ul.appendChild(li);
+      item.append(btn, meta);
+      wrapList.appendChild(item);
     });
-    wrap.appendChild(ul);
+    wrap.appendChild(wrapList);
   }
   container.appendChild(wrap);
 }
@@ -7827,11 +8134,11 @@ function renderInboxView(container) {
   inp.addEventListener("keydown", e => { if (e.key === "Enter") btn.click(); });
   addRow.append(inp, btn);
   wrap.appendChild(addRow);
-  const ul = el("ul", { class:"inbox-list" });
-  if (!state.inbox.length) ul.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+  const inboxWrap = el("div", { class:"inbox-list" });
+  if (!state.inbox.length) inboxWrap.appendChild(el("div", { class:"muted" }, T("nothingHere")));
   state.inbox.slice().reverse().forEach(item => {
-    const li = el("li");
-    li.appendChild(el("span", {}, item.text));
+    const row = el("div", { class:"inbox-item" });
+    row.appendChild(el("span", {}, item.text));
     const moveBtn = el("button", { class:"ghost", onclick: async () => {
       const lid = await pickList();
       if (lid) {
@@ -7845,10 +8152,10 @@ function renderInboxView(container) {
       state.inbox = state.inbox.filter(x => x.id !== item.id);
       saveState(); renderView();
     } }, "×");
-    li.append(" ", moveBtn, " ", delBtn);
-    ul.appendChild(li);
+    row.append(" ", moveBtn, " ", delBtn);
+    inboxWrap.appendChild(row);
   });
-  wrap.appendChild(ul);
+  wrap.appendChild(inboxWrap);
   container.appendChild(wrap);
 }
 //#endregion
@@ -7974,18 +8281,18 @@ function renderFilterView(container, filterId) {
   if (!f) { wrap.appendChild(el("p", {}, "Filtr nenalezen.")); container.appendChild(wrap); return; }
   const cards = applyFilter(f);
   if (!cards.length) wrap.appendChild(el("p", { class:"muted" }, T("nothingHere")));
-  const ul = el("ul", { class:"smart-list" });
+  const wrapList = el("div", { class:"smart-list" });
   cards.forEach(c => {
     const b = getBoard(c.boardId);
     const l = getList(c.listId);
     const parts = [];
     if (b) parts.push(b.name);
     if (l) parts.push(l.name);
-    const li = el("li");
-    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
-    ul.appendChild(li);
+    const item = el("div", { class:"smart-card-item" });
+    item.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
+    wrapList.appendChild(item);
   });
-  wrap.appendChild(ul);
+  wrap.appendChild(wrapList);
   container.appendChild(wrap);
 }
 function applyFilter(f) {
@@ -8009,18 +8316,18 @@ function renderSearchView(container, query) {
   if (!q) { container.appendChild(wrap); return; }
   const cards = state.cards.filter(c => !c.archived && (c.title.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q) || (c.comments || []).some(cm => cm.text.toLowerCase().includes(q))));
   wrap.appendChild(el("p", { class:"muted" }, "Nalezeno: " + cards.length));
-  const ul = el("ul", { class:"smart-list" });
+  const wrapList = el("div", { class:"smart-list" });
   cards.forEach(c => {
     const b = getBoard(c.boardId);
     const l = getList(c.listId);
     const parts = [];
     if (b) parts.push(b.name);
     if (l) parts.push(l.name);
-    const li = el("li");
-    li.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
-    ul.appendChild(li);
+    const item = el("div", { class:"smart-card-item" });
+    item.append(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title), " ", el("span", { class:"muted" }, "— " + parts.join(", ")));
+    wrapList.appendChild(item);
   });
-  wrap.appendChild(ul);
+  wrap.appendChild(wrapList);
   // Save filter
   const saveBtn = el("button", { class:"ghost", onclick: () => {
     const name = prompt(T("filterName") + ":", query);
