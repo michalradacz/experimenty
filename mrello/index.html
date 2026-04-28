@@ -578,6 +578,41 @@ header.app-header h1 {
 .attachment-add-details[open] summary {
   margin-bottom: 4px;
 }
+/* Závislosti — řádky bez ul/li */
+.dep-row {
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.dep-items {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dep-item {
+  padding: 2px 4px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+/* Podkarty — řádky bez ul/li */
+.subcards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+  margin: 0;
+}
+.subcard-item {
+  padding: 3px 0;
+  font-size: 13px;
+}
+.subcard-item.done {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
 /* ===== Kalendářový pohled ===== */
 .calendar-view { padding: 12px; }
 .cal-head {
@@ -1876,7 +1911,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-attachments-no-uls-collapsible-add";
+const MRELLO_BUILD = "2026-04-23-sync-error-honest-deps-no-uls";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3049,13 +3084,13 @@ async function ghLoad() {
   } catch (e) {
     console.error("[ghLoad] CHYBA:", e);
     state.github.lastErrorAt = new Date().toISOString();
-    state.github.lastErrorMessage = e.message;
+    state.github.lastErrorMessage = e.message || "neznámá chyba";
     _skipNextDirty = true;
     saveState();
-    toast("✗ Chyba: " + e.message, "error", 8000);
+    toast("✗ Chyba: " + (e.message || "neznámá chyba"), "error", 8000);
     sound.err();
   } finally {
-    if (state.github) state.github.dirtySince = null;
+    // POZOR: NIKDY se v finally nemaže dirtySince. To se dělá jen v try-bloku po úspěchu.
     _suppressDirty = false;
     setGhBusy(null);
     updateSyncButtonLabel();
@@ -3171,13 +3206,16 @@ async function ghSave() {
   } catch (e) {
     console.error(e);
     state.github.lastErrorAt = new Date().toISOString();
-    state.github.lastErrorMessage = e.message;
+    state.github.lastErrorMessage = e.message || "neznámá chyba";
+    // POZOR: nedotýkáme se dirtySince — server data nepřijal, lokální změny tam pořád "nesynchronizované" leží
     _skipNextDirty = true;
     saveState();
-    toast("✗ Chyba ukládání: " + e.message, "error", 8000);
+    toast("✗ Chyba ukládání: " + (e.message || "neznámá chyba"), "error", 8000);
     sound.err();
   } finally {
-    if (state.github) state.github.dirtySince = null;
+    // POZOR: NIKDY se v finally nemaže dirtySince. To se dělá jen v try-bloku po úspěchu.
+    // Pokud sem došlo přes catch, máme reálnou chybu a stav je dirty. Pokud sem došlo z try po úspěchu,
+    // dirtySince už je null (smazaný v try-bloku).
     _suppressDirty = false;
     setGhBusy(null);
     updateSyncButtonLabel();
@@ -5262,6 +5300,10 @@ function openRelationsPopup(card) {
     body.appendChild(el("h4", {}, "🔗 Souvisí (" + related.length + ")"));
     related.forEach(o => body.appendChild(renderRow(o, false)));
   }
+  // Pokud nic nemáme, řekni to slovně, ne prázdným popupem
+  if (!subs.length && !blockedBy.length && !blocks.length && !related.length) {
+    body.appendChild(el("p", { class:"muted" }, "Tato karta nemá žádné podkarty ani závislosti."));
+  }
   const m = openModal({
     title: "Vazby karty „" + card.title + "“",
     body,
@@ -6852,20 +6894,20 @@ function openCardDetail(cardId) {
   depSec.appendChild(el("h4", {}, T("dependencies")));
   function depRow(kind, label) {
     const row = el("div", { class:"dep-row" });
-    const list = el("ul");
+    const items = el("div", { class:"dep-items" });
     const deps = (real.dependencies && real.dependencies[kind]) || [];
     deps.forEach(otherId => {
       const oc = getCard(otherId);
       if (!oc) return;
-      const li = el("li");
+      const item = el("div", { class:"dep-item" });
       const blockedFlag = kind === "blockedBy" && !oc.completed ? "⛔ " : "";
       const doneFlag = oc.completed ? "✓ " : "";
       const link = el("button", { class:"link-btn", onclick: () => { close(); openCardDetail(otherId); } }, blockedFlag + doneFlag + oc.title);
       const rm = el("button", { class:"ghost small", "aria-label": "Odebrat závislost", onclick: () => { setDep(real.id, otherId, kind, false); refreshDeps(); } }, "×");
-      li.append(link, " ", rm);
-      list.appendChild(li);
+      item.append(link, " ", rm);
+      items.appendChild(item);
     });
-    if (!deps.length) list.appendChild(el("li", { class:"muted small" }, "(žádné)"));
+    if (!deps.length) items.appendChild(el("span", { class:"muted small" }, "žádné"));
     const addBtn = el("button", { class:"ghost", onclick: async () => {
       const oid = await pickCard();
       if (oid && oid !== real.id) {
@@ -6873,7 +6915,7 @@ function openCardDetail(cardId) {
         else { toast("Tato závislost by vytvořila cyklus.", "warning"); sound.err(); }
       }
     } }, "+ " + label);
-    row.append(el("strong", {}, label + ":"), list, addBtn);
+    row.append(el("strong", {}, label + ":"), " ", items, " ", addBtn);
     return row;
   }
   const depBox = el("div");
@@ -6910,20 +6952,23 @@ function openCardDetail(cardId) {
       subSec.appendChild(parentRow);
     }
   }
-  const subList = el("ul", { class:"subcards-list" });
+  const subList = el("div", { class:"subcards-list" });
   subSec.appendChild(subList);
   function refreshSubcards() {
     clear(subList);
     const subs = getSubcards(real.id);
     if (!subs.length) {
-      subList.appendChild(el("li", { class:"muted small" }, "(žádné podkarty)"));
+      subList.appendChild(el("div", { class:"muted small" }, "Žádné podkarty."));
+      // Resetuj nadpis (mohl být upraven předchozím refreshem)
+      const h = subSec.querySelector("h4");
+      if (h) h.textContent = T("subcards");
     } else {
       const done = subs.filter(s => s.completed).length;
       subSec.querySelector("h4").textContent = T("subcards") + " (" + done + "/" + subs.length + ")";
       subs.forEach(s => {
         const l = getList(s.listId);
         const b = getBoard(s.boardId);
-        const li = el("li", { class: s.completed ? "done" : "" });
+        const item = el("div", { class: "subcard-item" + (s.completed ? " done" : "") });
         // Checkbox pro rychlé označení hotové
         const cb = el("input", { type:"checkbox", checked: !!s.completed, "aria-label": "Označit hotovou podkartu „" + s.title + "“",
           onclick: (e) => {
@@ -6943,8 +6988,8 @@ function openCardDetail(cardId) {
             refreshSubcards();
           }
         }, "×");
-        li.append(cb, " ", link, " ", rm);
-        subList.appendChild(li);
+        item.append(cb, " ", link, " ", rm);
+        subList.appendChild(item);
       });
     }
   }
@@ -10177,29 +10222,18 @@ async function init() {
     }
     const btn = $("#ghSyncBtn");
     btn.disabled = true;
-    btn.textContent = "⟳ Synchronizuji…";
     btn.style.opacity = "0.6";
+    // POZN.: textContent neaktualizujeme tady, protože _ghBusy v ghSave / ghLoad to nastaví.
+    // Tj. uvidíš „⟳ Ukládám na GitHub…" během akce a po skončení správný label podle stavu.
     announce("Synchronizuji s GitHubem.");
     try {
+      // ghSave si interně zachází se všemi případy (úspěch, chyba). Nastavuje lastSyncAt jen po úspěchu,
+      // lastErrorAt po chybě. My tady nesmíme nic přepisovat — jinak bychom maskovali chyby.
       await ghSave();
-      state.github.lastSyncAt = new Date().toISOString();
-      state.github.lastErrorAt = null;
-      state.github.lastErrorMessage = null;
-      state.github.dirtySince = null;
-      _skipNextDirty = true;  // systémová změna, neoznačovat jako dirty
-      saveState();
-      announce("Synchronizováno.");
-      sound.sync();
-    } catch (e) {
-      state.github.lastErrorAt = new Date().toISOString();
-      state.github.lastErrorMessage = e.message || "neznámá chyba";
-      saveState();
-      announce("Chyba synchronizace: " + (e.message || "neznámá chyba"));
-      toast("Chyba synchronizace: " + (e.message || "neznámá chyba"), "error", 6000);
-      sound.err();
     } finally {
       btn.disabled = false;
       btn.style.opacity = "";
+      // updateSyncButtonLabel běží už v ghSave finally, ale pro jistotu znovu — kdyby UI bylo nesynchronní
       updateSyncButtonLabel();
     }
   });
