@@ -586,6 +586,26 @@ header.app-header h1 {
   gap: 4px;
   align-items: center;
 }
+/* Inbox badge — malé číslo v rohu tlačítka In v hlavním menu */
+#inboxBtn {
+  position: relative;
+}
+.inbox-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--danger, #e74);
+  color: white;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-sizing: border-box;
+}
 .dep-items {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1881,7 +1901,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
     <span id="ghStatus" class="gh-status" hidden></span>
     <input type="search" id="globalSearch" class="header-search" placeholder="Hledat (/)" data-i18n-placeholder="searchPlaceholder" aria-label="Globální hledání">
     <button class="icon-btn" id="quickCaptureBtn" title="Nová karta / rychlý zápis (N)" data-i18n-title="quickCapture">+</button>
-    <button class="icon-btn" id="inboxBtn" title="Inbox (I)" data-i18n-title="inbox">In</button>
+    <button class="icon-btn" id="inboxBtn" title="Inbox (I)" data-i18n-title="inbox">In<span class="inbox-badge" id="inboxBadge" hidden aria-hidden="true">0</span></button>
     <button class="icon-btn" id="plannerBtn" title="Plánovač (P)" data-i18n-title="planner">Pl</button>
     <button class="icon-btn" id="stickyBtn" title="Poznámky (M vytvoří novou)" data-i18n-title="stickies">Lp</button>
     <button class="icon-btn" id="membersBtn" title="Členové" data-i18n-title="members">Čl</button>
@@ -1911,7 +1931,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-sync-error-honest-deps-no-uls";
+const MRELLO_BUILD = "2026-04-23-inbox-badge-count";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -2736,6 +2756,8 @@ function saveState() {
   }
   // Aktualizuj popisek sync tlačítka (pokud je v DOM)
   updateSyncButtonLabel();
+  // Aktualizuj badge u Inbox tlačítka — taky se může změnit při saveState (přidání/přesunutí položky)
+  updateInboxBadge();
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
@@ -2863,6 +2885,28 @@ function openRunningTimersDialog() {
     size:"small",
     footer: [el("button", { class:"primary", onclick: () => m.close() }, T("close"))],
   });
+}
+// Aktualizuje badge u Inbox tlačítka v headeru — počet aktuálních položek v inboxu.
+// Volá se automaticky při saveState (a v init), a ručně po výslovných změnách inboxu.
+function updateInboxBadge() {
+  if (typeof document === "undefined") return;
+  const badge = document.getElementById("inboxBadge");
+  if (!badge) return;
+  const count = (state.inbox || []).length;
+  if (count <= 0) {
+    badge.hidden = true;
+    badge.textContent = "0";
+  } else {
+    badge.hidden = false;
+    // Pokud je počet velký, zkrátíme na 99+ aby nepřekáželo
+    badge.textContent = count > 99 ? "99+" : String(count);
+  }
+  // Pro čtečku doplníme info do aria-label tlačítka
+  const btn = document.getElementById("inboxBtn");
+  if (btn) {
+    btn.setAttribute("aria-label",
+      "Inbox" + (count > 0 ? " (" + count + " položek)" : " (prázdný)"));
+  }
 }
 function updateSyncButtonLabel() {
   const btn = (typeof document !== "undefined") ? document.getElementById("ghSyncBtn") : null;
@@ -10240,6 +10284,8 @@ async function init() {
   // Hned při startu nastav popisek podle uložených časů (a pravidelně ho aktualizuj)
   updateSyncButtonLabel();
   setInterval(updateSyncButtonLabel, 30 * 1000);  // přepočet textu „před N min" každých 30 s
+  // Inbox badge — počet položek v inboxu na tlačítku „In" v headeru
+  updateInboxBadge();
   // Běžící časovače — chip v headeru, přepočet každých 10 sekund kvůli čitelnosti uplynulého času
   updateRunningTimersChip();
   setInterval(updateRunningTimersChip, 10 * 1000);
