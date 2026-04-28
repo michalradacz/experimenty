@@ -487,6 +487,27 @@ header.app-header h1 {
   outline: 2px solid var(--primary, #0a7);
   outline-offset: 1px;
 }
+/* Rychlý odkaz na URL přílohu — stejný vizuál jako card-relations-link, jiná barva (modrá vs zelená) */
+.card-quick-url-link {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 2px 8px;
+  color: #2563eb;
+  text-decoration: none;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Pro dlouhá URL nezalamovat ven, ale přepsat trojtečkou */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-quick-url-link:hover, .card-quick-url-link:focus {
+  text-decoration: underline;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
 .relations-popup-body h4 {
   margin: 12px 0 4px;
   font-size: 14px;
@@ -605,6 +626,26 @@ header.app-header h1 {
   line-height: 16px;
   text-align: center;
   box-sizing: border-box;
+}
+/* Focus mode na seznam — jeden sloupec přes celou šířku, ostatní skryty */
+.focus-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-highlight, #fff8d9);
+  border: 2px solid var(--primary, #0a7);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.lists-container.focus-mode {
+  /* Jeden sloupec, roztáhneme ho na max šířku 900 px (čitelné na velkých monitorech) */
+  display: block;
+}
+.lists-container.focus-mode .list {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
 }
 .dep-items {
   display: inline-flex;
@@ -1931,7 +1972,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-inbox-badge-count";
+const MRELLO_BUILD = "2026-04-23-list-focus-and-goto-board-from-detail";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4713,10 +4754,39 @@ function renderBoardView(container, board) {
   container.appendChild(tb);
   // lists
   const lc = el("div", { class:"lists-container", role:"list", "aria-label":"Seznamy nástěnky" });
-  listsInBoard(board.id).forEach((lst, idx) => lc.appendChild(renderListColumn(board, lst, idx)));
-  // add list
-  const addListBtn = el("button", { class:"list-add primary", style:{ minWidth:"260px", height:"40px" }, onclick: () => promptNewList(board) }, T("addList"));
-  lc.appendChild(addListBtn);
+  // Focus mode: pokud je nastavený state.ui.focusListId a daný seznam patří k této nástěnce,
+  // renderujeme jen ten jeden sloupec — a v plné šířce. Cíl: soustředit se na práci v jednom seznamu
+  // bez vizuálního ruchu ostatních sloupců.
+  let listsToRender = listsInBoard(board.id);
+  const focusId = state.ui.focusListId;
+  const focusedList = focusId ? listsToRender.find(l => l.id === focusId) : null;
+  if (focusedList) {
+    listsToRender = [focusedList];
+    lc.classList.add("focus-mode");
+    // Nahoru přidáme info pruh s tlačítkem pro ukončení focus modu
+    const focusBar = el("div", { class:"focus-mode-bar" });
+    focusBar.appendChild(el("strong", {}, "Focus: " + focusedList.name));
+    focusBar.appendChild(el("span", { class:"muted small" }, " — ostatní seznamy jsou dočasně skryty"));
+    focusBar.appendChild(el("button", {
+      class: "primary",
+      style: { marginLeft: "auto" },
+      "aria-label": "Ukončit focus a zobrazit všechny seznamy",
+      onclick: () => {
+        state.ui.focusListId = null;
+        saveStateUi();
+        renderView();
+        announce("Focus ukončen, zobrazeny všechny seznamy.");
+        sound.click();
+      },
+    }, "✕ Ukončit focus"));
+    container.appendChild(focusBar);
+  }
+  listsToRender.forEach((lst, idx) => lc.appendChild(renderListColumn(board, lst, idx)));
+  // add list — jen mimo focus mode
+  if (!focusedList) {
+    const addListBtn = el("button", { class:"list-add primary", style:{ minWidth:"260px", height:"40px" }, onclick: () => promptNewList(board) }, T("addList"));
+    lc.appendChild(addListBtn);
+  }
   container.appendChild(lc);
   // bulk bar
   if (state.ui.selectedCards && state.ui.selectedCards.length) renderBulkBar();
@@ -4802,6 +4872,21 @@ function renderListColumn(board, list, idx) {
       : (openCount + " nedokončených, " + doneCount + " hotových"),
   }, headerText);
   head.appendChild(nameHeading);
+  // Tlačítko Focus — schová všechny ostatní seznamy a tento roztáhne na celou šířku.
+  // Cíl: soustředění na jeden seznam bez ruchu (cards visible normálně, klávesy/dnd fungují).
+  const focusBtn = el("button", {
+    class: "icon-btn",
+    "aria-label": `Focus na seznam „${list.name}“ (skryje ostatní seznamy)`,
+    title: "Focus na tento seznam",
+    onclick: () => {
+      state.ui.focusListId = list.id;
+      saveStateUi();
+      renderView();
+      announce(`Focus na seznam „${list.name}“. Ostatní seznamy skryty.`);
+      sound.click();
+    },
+  }, "⌖");
+  head.appendChild(focusBtn);
   // Tlačítko pro skrytí sloupce
   const hideBtn = el("button", {
     class: "icon-btn",
@@ -5288,20 +5373,42 @@ function renderCard(card, list, position) {
     (eff.dependencies.blockedBy || []).length > 0 ||
     (eff.dependencies.related || []).length > 0
   );
-  if (hasSubcards || hasDeps) {
+  // Rychlý odkaz: pokud má karta právě JEDNU URL přílohu (ne soubor přes dataUrl, ne iframe),
+  // přidáme tlačítko, které ji otevře v novém panelu. Cíl: nemusíš otevírat detail karty,
+  // klikneš a stránka se otevře.
+  // Důvod „právě jednu": při více URL přílohách by nebylo jasné, kterou otevřít — uživatel
+  // si musí stejně otevřít detail karty a vybrat. Při jediné URL je jasná volba.
+  const urlAttachments = (eff.attachments || []).filter(a => a.url && !a.dataUrl && !a.iframe);
+  const singleUrl = urlAttachments.length === 1 ? urlAttachments[0] : null;
+  if (hasSubcards || hasDeps || singleUrl) {
     const wrap = el("div", { class:"card-wrap" });
     wrap.appendChild(node);
-    const relLink = el("a", {
-      href: "#",
-      class: "card-relations-link",
-      "aria-label": "Zobrazit vazby karty „" + eff.title + "“ (podkarty a závislosti)",
-      title: "Vazby (podkarty, závislosti)",
-      onclick: (e) => {
-        e.preventDefault();
-        openRelationsPopup(eff);
-      },
-    }, "🔗 Vazby");
-    wrap.appendChild(relLink);
+    if (hasSubcards || hasDeps) {
+      const relLink = el("a", {
+        href: "#",
+        class: "card-relations-link",
+        "aria-label": "Zobrazit vazby karty „" + eff.title + "“ (podkarty a závislosti)",
+        title: "Vazby (podkarty, závislosti)",
+        onclick: (e) => {
+          e.preventDefault();
+          openRelationsPopup(eff);
+        },
+      }, "🔗 Vazby");
+      wrap.appendChild(relLink);
+    }
+    if (singleUrl) {
+      // Stejný styl jako card-relations-link, ale otevírá v novém panelu — target=_blank.
+      // Aria-label obsahuje URL, ať čtečka řekne, kam to vede (vidící to vidí v hover/title).
+      const urlLink = el("a", {
+        href: singleUrl.url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        class: "card-quick-url-link",
+        "aria-label": "Otevřít přílohu „" + (singleUrl.name || singleUrl.url) + "“ v novém panelu",
+        title: "Otevřít: " + singleUrl.url,
+      }, "↗ " + (singleUrl.name || singleUrl.url));
+      wrap.appendChild(urlLink);
+    }
     return wrap;
   }
   return node;
@@ -6098,8 +6205,29 @@ function openCardDetail(cardId) {
     sound.done();
     refresh();
   } }, real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo");
-  const inListInfo = el("span", { class:"muted" }, "Seznam: " + list.name);
-  statusRow.append(completeBtn, inListInfo);
+  // Tlačítko ke skoku na nástěnku, kde je tato karta — uživatel může z detailu rychle přejít
+  // a podívat se na kontext (ostatní karty v seznamu, vedlejší seznamy).
+  // Po kliknutí: zavře detail, přepne na nástěnku, scrollne na seznam.
+  const goToBoardBtn = el("button", {
+    class: "link-btn",
+    "aria-label": `Otevřít nástěnku „${board.name}“ a zobrazit seznam „${list.name}“`,
+    title: "Otevřít nástěnku a zobrazit seznam, kde je tato karta",
+    onclick: () => {
+      m.close();
+      state.ui.currentView = { type:"board", boardId: board.id, viewType: state.ui.currentView.viewType || "board" };
+      // Zrušíme případný focus mod — uživatel chce vidět celou nástěnku v kontextu
+      state.ui.focusListId = null;
+      saveStateUi();
+      renderAll();
+      // Scroll na seznam, kde je tato karta. Krátký timeout, ať DOM stihne vykreslit.
+      setTimeout(() => {
+        const listHead = document.getElementById("lname_" + list.id);
+        if (listHead) listHead.scrollIntoView({ behavior:"smooth", block:"start" });
+      }, 100);
+      announce(`Otevřena nástěnka „${board.name}“, seznam „${list.name}“.`);
+    },
+  }, "📋 " + board.name + " / " + list.name);
+  statusRow.append(completeBtn, el("span", { class:"muted" }, "Umístění: "), goToBoardBtn);
   left.appendChild(statusRow);
 
   // Popis — s rozumnějším workflow:
