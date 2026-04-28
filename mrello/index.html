@@ -647,6 +647,47 @@ header.app-header h1 {
   width: 100%;
   margin: 0 auto;
 }
+/* Sumární chipy v detailu karty nahoře — rychlý přehled klíčových metrik */
+.card-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+  padding: 8px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+}
+.summary-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.summary-chip.danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+  font-weight: 600;
+}
+.summary-chip.warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+  font-weight: 500;
+}
+.summary-chip.info {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+.summary-chip.success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
 .dep-items {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1972,7 +2013,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-list-focus-and-goto-board-from-detail";
+const MRELLO_BUILD = "2026-04-23-card-detail-summary-chips";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -6230,6 +6271,134 @@ function openCardDetail(cardId) {
   statusRow.append(completeBtn, el("span", { class:"muted" }, "Umístění: "), goToBoardBtn);
   left.appendChild(statusRow);
 
+  // Souhrn klíčových informací — řádek s "chipy" pro rychlý přehled.
+  // Cíl: uživatel po otevření karty vidí na první pohled, co je důležité, bez nutnosti scrollovat
+  // a hledat to v jednotlivých sekcích. Každá metrika má vlastní vizuální charakter (barva podle
+  // urgence) a aria-label, který čtečka přečte celé v jedné větě.
+  const summaryRow = el("div", { class:"card-summary-row" });
+  function refreshSummary() {
+    clear(summaryRow);
+    const chips = [];
+    // 1) Termín — nejdůležitější věc, takže první. Barva podle blízkosti (po termínu = červená, dnes = oranž, atd.)
+    if (real.dueDate && !real.completed) {
+      const days = daysFromNow(real.dueDate);
+      let txt, cls;
+      if (days < 0) {
+        txt = "Po termínu o " + Math.abs(days) + " " + (Math.abs(days) === 1 ? "den" : Math.abs(days) < 5 ? "dny" : "dnů");
+        cls = "summary-chip danger";
+      } else if (days === 0) {
+        txt = "Termín dnes";
+        cls = "summary-chip warning";
+      } else if (days === 1) {
+        txt = "Termín zítra";
+        cls = "summary-chip warning";
+      } else if (days <= 7) {
+        txt = "Termín za " + days + " dní";
+        cls = "summary-chip info";
+      } else {
+        txt = "Termín za " + days + " dní";
+        cls = "summary-chip";
+      }
+      chips.push(el("span", { class: cls, title: formatDate(real.dueDate) }, "📅 " + txt));
+    } else if (real.dueDate && real.completed && real.completedAt) {
+      // Hotovo — jen kdy
+      chips.push(el("span", { class:"summary-chip success" }, "✓ Hotovo " + formatDate(real.completedAt)));
+    }
+    // 2) Závislosti — nejdůležitější je „blokuje mě X" (znemožňuje práci). Pak „blokuji Y"
+    const deps = real.dependencies || {};
+    const blockedBy = (deps.blockedBy || []).map(getCard).filter(Boolean);
+    const blocks = (deps.blocks || []).map(getCard).filter(Boolean);
+    const related = (deps.related || []).map(getCard).filter(Boolean);
+    const blockedByOpen = blockedBy.filter(c => !c.completed);
+    if (blockedByOpen.length) {
+      chips.push(el("span", { class:"summary-chip danger", title:"Karta čeká na dokončení " + blockedByOpen.length + " jiných" },
+        "⛔ Blokována " + blockedByOpen.length + " " + (blockedByOpen.length === 1 ? "kartou" : blockedByOpen.length < 5 ? "kartami" : "kartami")));
+    } else if (blockedBy.length) {
+      chips.push(el("span", { class:"summary-chip success", title:"Všechny blokující karty jsou hotové" },
+        "✅ Odblokována (" + blockedBy.length + " hotových)"));
+    }
+    if (blocks.length) {
+      const blocksOpen = blocks.filter(c => !c.completed).length;
+      chips.push(el("span", { class:"summary-chip info", title:"Tato karta brání pokračování " + blocksOpen + " dalších" },
+        "🚧 Blokuje " + blocks.length + " " + (blocks.length === 1 ? "kartu" : blocks.length < 5 ? "karty" : "karet")));
+    }
+    if (related.length) {
+      chips.push(el("span", { class:"summary-chip" },
+        "🔗 Souvisí s " + related.length));
+    }
+    // 3) Podkarty — kolik je celkem, kolik hotových
+    const subs = getSubcards(real.id);
+    if (subs.length) {
+      const done = subs.filter(s => s.completed).length;
+      const pct = Math.round(done * 100 / subs.length);
+      const cls = done === subs.length ? "summary-chip success" : "summary-chip";
+      chips.push(el("span", { class: cls, title: pct + " % podkaret hotových" },
+        "↳ Podkarty " + done + "/" + subs.length + " (" + pct + " %)"));
+    }
+    // 4) Checklisty — agregát přes všechny checklisty karty
+    let cliTotal = 0, cliDone = 0;
+    (real.checklists || []).forEach(cl => (cl.items || []).forEach(it => { cliTotal++; if (it.completed) cliDone++; }));
+    if (cliTotal > 0) {
+      const pct = Math.round(cliDone * 100 / cliTotal);
+      const cls = cliDone === cliTotal ? "summary-chip success" : "summary-chip";
+      chips.push(el("span", { class: cls, title: "Checklist: " + cliDone + " z " + cliTotal + " položek hotových" },
+        "☑ Checklist " + cliDone + "/" + cliTotal + " (" + pct + " %)"));
+    }
+    // 5) Čas — pokud je odhad nebo strávený čas
+    if (real.time) {
+      const est = real.time.estimateSec || 0;
+      let spent = real.time.spentSec || 0;
+      if (real.time.runningSince) spent += Math.round((Date.now() - real.time.runningSince) / 1000);
+      if (est > 0 && spent > 0) {
+        const pct = Math.round(spent * 100 / est);
+        const cls = spent > est ? "summary-chip warning" : "summary-chip";
+        chips.push(el("span", { class: cls, title: "Stráveno " + formatHours(spent) + " z odhadovaných " + formatHours(est) + " (" + pct + " %)" },
+          "⏱ " + formatHours(spent) + " / " + formatHours(est) + (spent > est ? " (přečerpáno)" : "")));
+      } else if (est > 0) {
+        chips.push(el("span", { class:"summary-chip" }, "⏱ Odhad " + formatHours(est)));
+      } else if (spent > 0) {
+        chips.push(el("span", { class:"summary-chip" }, "⏱ Stráveno " + formatHours(spent)));
+      }
+      if (real.time.runningSince) {
+        chips.push(el("span", { class:"summary-chip info", title:"Časovač běží od " + formatDate(real.time.runningSince, true) }, "▶ Časovač běží"));
+      }
+    }
+    // 6) Přílohy a komentáře — drobné metriky, ale dobré vidět
+    const atCount = (real.attachments || []).length;
+    if (atCount > 0) {
+      chips.push(el("span", { class:"summary-chip" },
+        "📎 " + atCount + " " + (atCount === 1 ? "příloha" : atCount < 5 ? "přílohy" : "příloh")));
+    }
+    const cmCount = (real.comments || []).length;
+    if (cmCount > 0) {
+      chips.push(el("span", { class:"summary-chip" },
+        "💬 " + cmCount + " " + (cmCount === 1 ? "komentář" : cmCount < 5 ? "komentáře" : "komentářů")));
+    }
+    // 7) Štítky a členové — zobrazíme jen jako počty, detail je v sekcích níže
+    if ((real.labels || []).length) {
+      chips.push(el("span", { class:"summary-chip" }, "🏷 " + real.labels.length + " " + (real.labels.length === 1 ? "štítek" : real.labels.length < 5 ? "štítky" : "štítků")));
+    }
+    if ((real.members || []).length) {
+      chips.push(el("span", { class:"summary-chip" }, "👥 " + real.members.length + " " + (real.members.length === 1 ? "člen" : real.members.length < 5 ? "členové" : "členů")));
+    }
+    // 8) Oblíbená
+    if (real.favorite) {
+      chips.push(el("span", { class:"summary-chip" }, "⭐ Oblíbená"));
+    }
+    // 9) Archivovaná
+    if (real.archived) {
+      chips.push(el("span", { class:"summary-chip warning" }, "📦 Archivovaná"));
+    }
+    // Pokud nic, ukázat „Bez metrik" — krátká hláška ať uživatel ví, že je tu prázdno (ne render bug)
+    if (!chips.length) {
+      summaryRow.appendChild(el("span", { class:"muted small" }, "Žádná metrika k zobrazení."));
+      return;
+    }
+    chips.forEach(c => summaryRow.appendChild(c));
+  }
+  refreshSummary();
+  left.appendChild(summaryRow);
+
   // Popis — s rozumnějším workflow:
   //   Preview je fokusovatelný (tabindex 0), Enter/Mezerník v něm přepne do editace.
   //   V textarea: Ctrl+Enter = uložit a zobrazit náhled, Esc = zahodit změny, blur = uložit (zůstane v edit módu).
@@ -6538,16 +6707,19 @@ function openCardDetail(cardId) {
     const acts = (real.activity || []).slice(0, 50);
     if (!acts.length) {
       actList.appendChild(el("div", { class:"muted" }, "(zatím žádná aktivita)"));
-      return;
+    } else {
+      acts.forEach(a => {
+        // Zpětná kompatibilita: nová pole jsou `timestamp` + `action`, stará byla `at` + `msg`
+        const ts = a.timestamp || a.at;
+        const msg = a.action || a.msg || "";
+        actList.appendChild(el("div", { class:"activity-item" },
+          el("span", { class:"muted" }, formatDate(ts, true) + ": "),
+          el("span", {}, msg)));
+      });
     }
-    acts.forEach(a => {
-      // Zpětná kompatibilita: nová pole jsou `timestamp` + `action`, stará byla `at` + `msg`
-      const ts = a.timestamp || a.at;
-      const msg = a.action || a.msg || "";
-      actList.appendChild(el("div", { class:"activity-item" },
-        el("span", { class:"muted" }, formatDate(ts, true) + ": "),
-        el("span", {}, msg)));
-    });
+    // Sumární chipy nahoře taky aktualizujeme — jakákoliv aktivita znamená, že se něco změnilo
+    // (přidaná příloha, dokončená podkarta, změna termínu atd.) a sumář to musí odrážet.
+    if (typeof refreshSummary === "function") refreshSummary();
   }
   refreshActivity();
   actSection.appendChild(actList);
@@ -7583,6 +7755,8 @@ function openCardDetail(cardId) {
   function close() { m.close(); }
   function refresh() {
     completeBtn.textContent = real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo";
+    // Po jakékoliv změně přepočítej souhrnné chipy nahoře
+    if (typeof refreshSummary === "function") refreshSummary();
   }
 }
 //#endregion
