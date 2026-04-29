@@ -797,6 +797,20 @@ body.body-focus-list main.app-main {
   font-weight: 500;
   font-style: italic;
 }
+/* Sekce „Ve složkách" v detailu karty — odkazy na složky obsahující tuto kartu */
+.card-folders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+}
+.card-folder-item {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.card-folder-item:last-child { border-bottom: none; }
 .folder-actions-cell {
   display: flex;
   gap: 2px;
@@ -2276,7 +2290,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-hashtag-labels-focus-chrome-resource-type";
+const MRELLO_BUILD = "2026-04-23-card-show-containing-folders";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4169,10 +4183,13 @@ function convertCardToFolder(cardId) {
   if (c.cardType === "folder") return false;
   c.cardType = "folder";
   ensureCardFolder(c);
+  // Přidat 📁 přímo do názvu, ať je viditelné všude (frontpage, exporty, reporty, hromadné akce).
+  // Idempotentní: pokud už tam je, nepřidávat znovu.
+  if (!/^📁\s/.test(c.title || "")) {
+    c.title = "📁 " + (c.title || "");
+  }
   c.updatedAt = Date.now();
-  // Po převodu posuneme složku na začátek seznamu — Michal chce, aby složky byly vidět nahoře
-  // jako kategorie/přehled, pod nimi pak jednotlivé karty.
-  // Posun: snížíme position pod aktuální minimum v listu (–1), pak při příštím renderu se zařadí první.
+  // Po převodu posuneme složku na začátek seznamu
   const cardsInSameList = state.cards.filter(x => x.listId === c.listId && !x.deleted && !x.archived && x.id !== c.id);
   const minPos = cardsInSameList.length ? Math.min(...cardsInSameList.map(x => x.position || 0)) : 0;
   c.position = minPos - 1;
@@ -4180,13 +4197,14 @@ function convertCardToFolder(cardId) {
   saveState();
   return true;
 }
-// Vrátí složku zpět na běžnou kartu — uloží počet odkazů do logu, ale obsah cardIds vyhodí.
 function convertFolderToCard(cardId) {
   const c = getCard(cardId); if (!c) return false;
   if (c.cardType !== "folder") return false;
   const count = (c.folder && c.folder.cardIds || []).length;
   c.cardType = "normal";
   c.folder = null;
+  // Odstranit 📁 prefix z názvu (pokud tam je)
+  c.title = (c.title || "").replace(/^📁\s+/, "");
   c.updatedAt = Date.now();
   logActivity(c, "Složka převedena zpět na kartu" + (count ? " (zahozeno " + count + " odkazů)" : ""));
   saveState();
@@ -4202,12 +4220,12 @@ function convertCardToResource(cardId) {
   const c = getCard(cardId); if (!c) return false;
   if (c.cardType === "resource") return false;
   c.cardType = "resource";
-  // Vyčistit pole, která se ke zdroji nehodí — uživatel je nastavil když to byla běžná karta,
-  // nyní je nemůže editovat, takže by je nečekaně nesly skryté.
   c.dueDate = null;
   c.startDate = null;
-  // Time tracking ponecháme v stavu (data se neztratí), ale nezobrazí se ve zdrojovém detailu.
-  // Pokud uživatel zdroj zase převede na běžnou kartu, čas tam bude.
+  c.members = [];
+  c.cover = null;
+  // Pozn.: zdroj NEPŘIDÁVÁ ikonu do názvu (na rozdíl od složky), Michal preferuje minimalistický přístup.
+  // Vizuální rozlišení zajišťuje fialový rámeček + kurzíva v CSS třídě card-title-resource.
   c.updatedAt = Date.now();
   logActivity(c, "Převedeno na zdroj");
   saveState();
@@ -4217,6 +4235,7 @@ function convertResourceToCard(cardId) {
   const c = getCard(cardId); if (!c) return false;
   if (c.cardType !== "resource") return false;
   c.cardType = "normal";
+  // Žádné odstraňování — emoji se nepřidávalo, takže nic.
   c.updatedAt = Date.now();
   logActivity(c, "Zdroj převeden zpět na kartu");
   saveState();
@@ -4278,6 +4297,17 @@ function getFolderCards(folderId) {
   return (folder.folder.cardIds || [])
     .map(id => getCard(id))
     .filter(c => c && !c.deleted);
+}
+// Vrátí všechny složky, které obsahují odkaz na danou kartu. Karta může být v 0..N složkách.
+// Použití: detail karty zobrazí sekci „Ve složkách" pokud výsledek není prázdný.
+function getFoldersContainingCard(cardId) {
+  return state.cards.filter(c =>
+    c.cardType === "folder" &&
+    !c.deleted &&
+    c.folder &&
+    Array.isArray(c.folder.cardIds) &&
+    c.folder.cardIds.includes(cardId)
+  );
 }
 
 // ============ ČASOVAČE ============
@@ -5890,25 +5920,22 @@ function renderCard(card, list, position) {
     });
     node.appendChild(lr);
   }
-  // Typ karty se bere přímo ze samotné karty (nikoliv z eff = resolveCard, který u mirroru vrací zdroj).
+  // Typ karty pro vizuální odlišení (border, pozadí). Emoji 📁 / 📚 jsou už součástí title v datech,
+  // takže je zde nepřidáváme — bylo by to dvojí (předtím Michal viděl raz emoji v title, raz prefix renderem).
   const isFolder = (card.cardType === "folder") || (eff.cardType === "folder");
   const isResource = (card.cardType === "resource") || (eff.cardType === "resource");
   const favMark = eff.favorite ? "⭐ " : "";
-  const folderMark = isFolder ? "📁 " : "";
-  const resourceMark = isResource ? "📚 " : "";
-  // title (skip if shown in cover, ale složky a oblíbené si ikonu zaslouží i bez nadpisu)
+  // title (skip if shown in cover)
   if (!(eff.cover && eff.cover.full && eff.cover.value)) {
-    // Třída card-title-folder/resource umožní speciální styling.
     let titleClass = "card-title";
     if (isFolder) titleClass += " card-title-folder";
     if (isResource) titleClass += " card-title-resource";
     const titleEl = el("div", {
       class: titleClass,
-    }, (isMirror ? "↪ " : "") + favMark + folderMark + resourceMark + eff.title);
+    }, (isMirror ? "↪ " : "") + favMark + eff.title);
     node.appendChild(titleEl);
-  } else if (favMark || folderMark || resourceMark) {
-    // Karta s plným coverem — přidáme malý overlay s emotikony, aby se neztratil typ karty
-    node.appendChild(el("div", { class:"card-cover-marks" }, (isMirror ? "↪ " : "") + favMark + folderMark + resourceMark));
+  } else if (favMark || isMirror) {
+    node.appendChild(el("div", { class:"card-cover-marks" }, (isMirror ? "↪ " : "") + favMark));
   }
   // CSS třída na celé kartě pro vizuální odlišení (rámeček, pozadí)
   if (isFolder) node.classList.add("card-folder");
@@ -6148,8 +6175,37 @@ function onCardKey(e, card) {
   if (e.key === " " && !e.ctrlKey && !e.metaKey) { e.preventDefault(); toggleSelect(card.id); renderView(); _refocusCard(card.id); return; }
   // Modifier-free single keys (do not intercept when user holds Ctrl/Alt/Meta):
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-    // 'h' — toggle hotovo (dříve Ctrl+Enter)
-    if (e.key === "h" || e.key === "H") { e.preventDefault(); toggleCardComplete(card.id); renderView(); _refocusCard(card.id); return; }
+    // 'h' — toggle hotovo. Pokud po dokončení zmizí karta z DOM (např. zapnuté „Skrýt hotové"),
+    // přesuneme focus na následující sourozeneckou kartu (jinak focus zmizí).
+    if (e.key === "h" || e.key === "H") {
+      e.preventDefault();
+      // Před renderem si zapamatujeme následníka v DOM (i pokud současná karta po H zmizí, sousedi zůstanou)
+      const cardEl = e.currentTarget;
+      const listEl = cardEl ? cardEl.closest("[data-list-id]") : null;
+      const allInList = listEl ? Array.from(listEl.querySelectorAll(".card[data-card-id]")) : [];
+      const idx = allInList.findIndex(el => el.dataset.cardId === card.id);
+      // Kandidát: nejdřív následník, jinak předchůdce, jinak nic
+      const nextCardId = (allInList[idx + 1] && allInList[idx + 1].dataset.cardId)
+        || (allInList[idx - 1] && allInList[idx - 1].dataset.cardId)
+        || null;
+      toggleCardComplete(card.id);
+      renderView();
+      // Po renderu zkusíme refokusovat původní kartu — pokud je v DOM, zůstane focus na ní.
+      // Pokud zmizela (skryta filtrem), refokusneme na uloženého souseda.
+      setTimeout(() => {
+        const stillThere = document.querySelector(`.card[data-card-id="${card.id}"]`);
+        if (stillThere) {
+          stillThere.focus();
+        } else if (nextCardId) {
+          const next = document.querySelector(`.card[data-card-id="${nextCardId}"]`);
+          if (next) {
+            next.focus();
+            announce("Focus přesunut na další kartu.");
+          }
+        }
+      }, 30);
+      return;
+    }
     // 't' — posun termínu o jeden den dopředu
     if (e.key === "t" || e.key === "T") {
       e.preventDefault();
@@ -7449,7 +7505,24 @@ function openFolderDetail(real, board, list) {
     renderAll();
   } }, T("delete"));
 
-  const titleSpan = el("span", { class:"card-title-display" }, "📁 " + real.title);
+  const titleSpan = el("span", { class:"card-title-display" }, real.title);
+  // Tlačítko „Označit hotovo / Vrátit z hotových" — i složka může být označena jako hotová.
+  // Praktický scénář: složka představuje projekt nebo iniciativu, kterou jsi dokončil.
+  const completeBtn = el("button", {
+    class: real.completed ? "ghost" : "primary",
+    onclick: () => {
+      toggleCardComplete(real.id);
+      sound.done();
+      // Aktualizovat label — místo zavření detailu (uživatel může chtít dál upravovat)
+      completeBtn.textContent = real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo";
+      completeBtn.classList.toggle("primary", !real.completed);
+      completeBtn.classList.toggle("ghost", real.completed);
+      titleSpan.textContent = (real.completed ? "✓ " : "") + real.title.replace(/^✓\s+/, "");
+      announce(real.completed ? "Složka označena jako hotová." : "Složka vrácena z hotových.");
+    },
+  }, real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo");
+  // Pokud je složka hotová, prefix ✓ přímo v titulu (vizuálně jasné v hlavičce modalu)
+  if (real.completed) titleSpan.textContent = "✓ " + real.title;
   // Tlačítko Sloupce — patří do akcí složky, ne k tabulce. Otevře dialog pro výběr sloupců.
   const colsBtn = el("button", {
     class: "ghost",
@@ -7461,6 +7534,7 @@ function openFolderDetail(real, board, list) {
     body,
     size: "large",
     footer: [
+      completeBtn,
       renameBtn,
       goToBoardBtn,
       colsBtn,
@@ -8019,8 +8093,9 @@ function openCardDetail(cardId) {
 
   // ----- Pravý sloupec -----
 
-  // Členové
-  const mSec = el("section", { "aria-label": T("members") });
+  // Členové — pro typ resource skipnuto (zdroj nemá členy, je to neutrální reference)
+  if (!isResource) {
+    const mSec = el("section", { "aria-label": T("members") });
   mSec.appendChild(el("h4", {}, T("members")));
   const mList = el("div", { class:"chips" });
   function refreshMembers() {
@@ -8045,6 +8120,7 @@ function openCardDetail(cardId) {
   } }, "+ " + T("pickMembers"));
   mSec.appendChild(mPickBtn);
   right.appendChild(mSec);
+  } // konec if (!isResource) — členové sekce
 
   // Štítky
   const lSec = el("section", { "aria-label": T("labels") });
@@ -8128,30 +8204,32 @@ function openCardDetail(cardId) {
   right.appendChild(dSec);
   } // konec if (!isResource) — datum sekce
 
-  // Cover
-  const covSec = el("section", { "aria-label": T("cover") });
-  covSec.appendChild(el("h4", {}, T("cover")));
-  const covColors = ["", "--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8","--label-c9","--label-c10"];
-  const covRow = el("div", { class:"color-picker" });
-  covColors.forEach(c => {
-    const b = el("button", { class:"color-swatch", style: c ? { background: colorVar(c) } : {}, "aria-label": c ? "Barva " + colorName(c) : "Bez barvy" }, c ? "" : "—");
-    if (real.cover && real.cover.color === c) b.classList.add("selected");
-    b.addEventListener("click", () => {
-      setCardField(real.id, "cover", c ? { color:c, full: real.cover && real.cover.full } : null);
-      covRow.querySelectorAll(".color-swatch").forEach(x => x.classList.remove("selected"));
-      b.classList.add("selected");
-      saveState();
+  // Cover — pro typ resource skipnuto (zdroj je neutrální reference, cover ho ruší)
+  if (!isResource) {
+    const covSec = el("section", { "aria-label": T("cover") });
+    covSec.appendChild(el("h4", {}, T("cover")));
+    const covColors = ["", "--label-c1","--label-c2","--label-c3","--label-c4","--label-c5","--label-c6","--label-c7","--label-c8","--label-c9","--label-c10"];
+    const covRow = el("div", { class:"color-picker" });
+    covColors.forEach(c => {
+      const b = el("button", { class:"color-swatch", style: c ? { background: colorVar(c) } : {}, "aria-label": c ? "Barva " + colorName(c) : "Bez barvy" }, c ? "" : "—");
+      if (real.cover && real.cover.color === c) b.classList.add("selected");
+      b.addEventListener("click", () => {
+        setCardField(real.id, "cover", c ? { color:c, full: real.cover && real.cover.full } : null);
+        covRow.querySelectorAll(".color-swatch").forEach(x => x.classList.remove("selected"));
+        b.classList.add("selected");
+        saveState();
+      });
+      covRow.appendChild(b);
     });
-    covRow.appendChild(b);
-  });
-  covSec.appendChild(covRow);
-  const covFull = el("input", { type:"checkbox", id:"covFull" });
-  covFull.checked = !!(real.cover && real.cover.full);
-  covFull.addEventListener("change", () => {
-    if (real.cover) { real.cover.full = covFull.checked; saveState(); }
-  });
-  covSec.appendChild(el("label", { for:"covFull" }, covFull, " Plné záhlaví"));
-  right.appendChild(covSec);
+    covSec.appendChild(covRow);
+    const covFull = el("input", { type:"checkbox", id:"covFull" });
+    covFull.checked = !!(real.cover && real.cover.full);
+    covFull.addEventListener("change", () => {
+      if (real.cover) { real.cover.full = covFull.checked; saveState(); }
+    });
+    covSec.appendChild(el("label", { for:"covFull" }, covFull, " Plné záhlaví"));
+    right.appendChild(covSec);
+  }
 
   // Přílohy
   const aSec = el("section", { "aria-label": T("attachments") });
@@ -8529,6 +8607,37 @@ function openCardDetail(cardId) {
   spentLabel.textContent = formatHours(effectiveSpentSec());
   right.appendChild(tSec);
   } // konec if (!isResource) — time tracking sekce
+
+  // Sekce „Ve složkách" — kde je tato karta odkazována. Zobrazí se jen pokud je karta aspoň
+  // v jedné složce (jinak by jen plnila prostor). Klik na složku otevře její detail.
+  const containingFolders = getFoldersContainingCard(real.id);
+  if (containingFolders.length > 0) {
+    const foldSec = el("section", { "aria-label": "Složky obsahující tuto kartu" });
+    foldSec.appendChild(el("h4", {}, "📁 Ve složkách (" + containingFolders.length + ")"));
+    const foldList = el("div", { class:"card-folders-list" });
+    containingFolders.forEach(f => {
+      const item = el("div", { class:"card-folder-item" });
+      const status = f.completed ? "✓ " : "";
+      const link = el("button", {
+        class: "link-btn",
+        "aria-label": "Otevřít složku „" + f.title + "“",
+        onclick: () => { close(); openCardDetail(f.id); },
+      }, status + f.title);
+      item.appendChild(link);
+      // Drobná meta s nástěnkou/seznamem, kde složka sídlí
+      const fb = getBoard(f.boardId);
+      const fl = getList(f.listId);
+      const metaParts = [];
+      if (fb) metaParts.push(fb.name);
+      if (fl) metaParts.push(fl.name);
+      if (metaParts.length) {
+        item.appendChild(el("span", { class:"muted small" }, " — " + metaParts.join(", ")));
+      }
+      foldList.appendChild(item);
+    });
+    foldSec.appendChild(foldList);
+    right.appendChild(foldSec);
+  }
 
   // Dependencies
   const depSec = el("section", { "aria-label": T("dependencies") });
