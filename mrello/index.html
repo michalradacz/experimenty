@@ -744,6 +744,26 @@ header.app-header h1 {
 }
 .folder-table tr.done-row td { opacity: 0.6; }
 .folder-table tr:hover { background: var(--bg-alt); }
+.folder-card-link {
+  color: var(--primary, #0a7);
+  text-decoration: none;
+  font-weight: 500;
+}
+.folder-card-link:hover, .folder-card-link:focus {
+  text-decoration: underline;
+  outline: 2px solid var(--primary, #0a7);
+  outline-offset: 1px;
+}
+/* Marks na kartě s plným coverem (kde není nadpis) */
+.card-cover-marks {
+  position: absolute;
+  top: 4px; left: 4px;
+  background: rgba(255,255,255,0.85);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 14px;
+  z-index: 1;
+}
 .folder-actions-cell {
   display: flex;
   gap: 2px;
@@ -2223,7 +2243,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-folder-table-with-cols-and-quick-due";
+const MRELLO_BUILD = "2026-04-23-folder-tweaks";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4073,7 +4093,13 @@ function convertCardToFolder(cardId) {
   c.cardType = "folder";
   ensureCardFolder(c);
   c.updatedAt = Date.now();
-  logActivity(c, "Převedeno na složku");
+  // Po převodu posuneme složku na začátek seznamu — Michal chce, aby složky byly vidět nahoře
+  // jako kategorie/přehled, pod nimi pak jednotlivé karty.
+  // Posun: snížíme position pod aktuální minimum v listu (–1), pak při příštím renderu se zařadí první.
+  const cardsInSameList = state.cards.filter(x => x.listId === c.listId && !x.deleted && !x.archived && x.id !== c.id);
+  const minPos = cardsInSameList.length ? Math.min(...cardsInSameList.map(x => x.position || 0)) : 0;
+  c.position = minPos - 1;
+  logActivity(c, "Převedeno na složku (přesunuto na začátek seznamu)");
   saveState();
   return true;
 }
@@ -5753,13 +5779,14 @@ function renderCard(card, list, position) {
     });
     node.appendChild(lr);
   }
-  // title (skip if shown in cover)
+  // title (skip if shown in cover, ale složky a oblíbené si ikonu zaslouží i bez nadpisu)
+  const favMark = eff.favorite ? "⭐ " : "";
+  const folderMark = eff.cardType === "folder" ? "📁 " : "";
   if (!(eff.cover && eff.cover.full && eff.cover.value)) {
-    // Oblíbené karty mají hvězdičku, složky mají ikonu složky. Obojí slouží i jako rychlá vizuální
-    // identifikace typu (čtečka má aria-label rozšířený v cardAriaLabel).
-    const favMark = eff.favorite ? "⭐ " : "";
-    const folderMark = eff.cardType === "folder" ? "📁 " : "";
     node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + favMark + folderMark + eff.title));
+  } else if (favMark || folderMark) {
+    // Karta s plným coverem — přidáme malý overlay s emotikony, aby se neztratil typ karty
+    node.appendChild(el("div", { class:"card-cover-marks" }, (isMirror ? "↪ " : "") + favMark + folderMark));
   }
   // meta
   const meta = el("div", { class:"card-meta" });
@@ -6712,12 +6739,15 @@ function renderFolderCell(card, colKey, cfMap, folderCard, refresh, closeDetail)
   }
   switch (colKey) {
     case "title": {
-      // Klikatelný odkaz na detail karty + případný indikátor hotovosti
+      // Klikatelný odkaz na detail karty + případný indikátor hotovosti.
+      // Použijeme `<a>` element s href="#" — uživatel chce sémantický odkaz, ne tlačítko (lepší pro
+      // čtečky obrazovky a podtržení klasického odkazového stylu).
       const status = card.completed ? "✓ " : "";
-      const link = el("button", {
-        class: "link-btn",
-        onclick: () => { closeDetail(); openCardDetail(card.id); },
+      const link = el("a", {
+        href: "#",
+        class: "folder-card-link",
         "aria-label": "Otevřít kartu „" + card.title + "“",
+        onclick: (e) => { e.preventDefault(); closeDetail(); openCardDetail(card.id); },
       }, status + card.title);
       td.appendChild(link);
       // Pokud má karta nevyřízené podkarty, zobrazí se pod názvem drobný indikátor
@@ -6987,17 +7017,23 @@ function openFolderDetail(real, board, list) {
   // ----- Seznam karet ve složce -----
   const contentSec = el("section", { "aria-label": "Obsah složky" });
   const contentHeader = el("h3", { style:{ flex:"1", margin:0 } }, "Obsah složky");
-  // Tlačítko pro nastavení sloupců — vedle nadpisu, ať je hned vidět
-  const colsBtn = el("button", {
+  // Přepínač: skrýt/zobrazit hotové karty v tabulce. Per-modal stav (neukládá se do dat).
+  let hideCompletedInFolder = false;
+  const hideCompletedBtn = el("button", {
     class: "ghost small",
-    "aria-label": "Nastavení sloupců tabulky",
-    title: "Nastavení sloupců",
-    onclick: () => openFolderColumnsDialog(real, refreshFolderContent),
-  }, "⚙ Sloupce");
-  const headerRow = el("div", { class:"folder-content-header" }, contentHeader, colsBtn);
+    "aria-pressed": "false",
+    "aria-label": "Skrýt hotové karty v tabulce",
+    title: "Přepnout zobrazení hotových karet",
+    onclick: () => {
+      hideCompletedInFolder = !hideCompletedInFolder;
+      hideCompletedBtn.setAttribute("aria-pressed", hideCompletedInFolder ? "true" : "false");
+      hideCompletedBtn.textContent = hideCompletedInFolder ? "👁 Zobrazit hotové" : "🚫 Skrýt hotové";
+      refreshFolderContent();
+      announce(hideCompletedInFolder ? "Hotové karty skryté." : "Hotové karty zobrazené.");
+    },
+  }, "🚫 Skrýt hotové");
+  const headerRow = el("div", { class:"folder-content-header" }, contentHeader, hideCompletedBtn);
   contentSec.appendChild(headerRow);
-  const folderList = el("div", { class:"folder-content-list" });
-  contentSec.appendChild(folderList);
   // Tlačítko pro přidání karty
   const addToFolderBtn = el("button", {
     class: "ghost",
@@ -7020,8 +7056,6 @@ function openFolderDetail(real, board, list) {
     },
   }, "+ Přidat existující");
   // Tlačítko pro rychlé vytvoření nové karty rovnou ve stejném seznamu jako složka.
-  // Po vytvoření se karta automaticky přidá do složky — uživatel nemusí ji nejdřív vytvářet bokem
-  // a pak přidávat jako existující. To je nejčastější workflow při budování složky.
   const createInFolderBtn = el("button", {
     class: "primary",
     "aria-label": "Vytvořit novou kartu ve stejném seznamu a přidat ji do složky",
@@ -7044,10 +7078,8 @@ function openFolderDetail(real, board, list) {
           el("button", { class:"primary", onclick: () => {
             const title = titleInp.value.trim();
             if (!title) { titleInp.focus(); return; }
-            // Vytvoříme novou kartu ve stejném seznamu jako tato složka
             const newC = newCard(real.listId, title);
             if (!newC) { toast("Chyba při vytváření karty.", "error"); return; }
-            // A hned ji přidáme do složky
             addCardToFolder(real.id, newC.id);
             sound.add();
             refreshFolderContent();
@@ -7057,7 +7089,6 @@ function openFolderDetail(real, board, list) {
         ],
         onOpen: () => titleInp.focus(),
       });
-      // Enter v textovém poli odešle (uživatel typuje název, Enter = potvrdit)
       titleInp.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -7067,9 +7098,12 @@ function openFolderDetail(real, board, list) {
       });
     },
   }, "+ Vytvořit novou kartu");
-  // Tlačítka vedle sebe v jednom kontejneru
+  // Tlačítka přidání NAD tabulkou
   const addBtnsRow = el("div", { class:"folder-add-btns" }, createInFolderBtn, addToFolderBtn);
   contentSec.appendChild(addBtnsRow);
+  // Tabulka s obsahem (refreshFolderContent ji vyplní)
+  const folderList = el("div", { class:"folder-content-list" });
+  contentSec.appendChild(folderList);
   body.appendChild(contentSec);
 
   // ----- Vlastní komentáře složky -----
@@ -7163,6 +7197,8 @@ function openFolderDetail(real, board, list) {
     if (!cards.length) {
       folderList.appendChild(el("div", { class:"muted small" }, "Složka je prázdná."));
     } else {
+      // Aplikuj filtr „skrýt hotové" — týká se jen tabulky, statistiky výše ukazují všechno.
+      const tableCards = hideCompletedInFolder ? cards.filter(c => !c.completed) : cards;
       // Sestavíme tabulku — sloupce dle visibleColumns. cf:xxx jsou vlastní pole.
       const visibleCols = getFolderVisibleColumns(real);
       const customFields = getFolderCustomFields(real);
@@ -7186,7 +7222,7 @@ function openFolderDetail(real, board, list) {
       table.appendChild(thead);
       // Tělo
       const tbody = el("tbody");
-      cards.forEach(c => {
+      tableCards.forEach(c => {
         const tr = el("tr", { class: c.completed ? "done-row" : "" });
         visibleCols.forEach(col => {
           tr.appendChild(renderFolderCell(c, col, cfMap, real, refreshFolderContent, () => m.close()));
@@ -7198,6 +7234,11 @@ function openFolderDetail(real, board, list) {
       const wrap = el("div", { class:"folder-table-wrap" });
       wrap.appendChild(table);
       folderList.appendChild(wrap);
+      // Pokud filtr něco skryl, řekneme to slovně pod tabulkou
+      if (hideCompletedInFolder && cards.length !== tableCards.length) {
+        folderList.appendChild(el("div", { class:"muted small" },
+          "Skryto " + (cards.length - tableCards.length) + " hotových karet."));
+      }
     }
     // Header s počtem
     contentHeader.textContent = "Obsah složky (" + total + ")";
@@ -7283,6 +7324,12 @@ function openFolderDetail(real, board, list) {
   } }, T("delete"));
 
   const titleSpan = el("span", { class:"card-title-display" }, "📁 " + real.title);
+  // Tlačítko Sloupce — patří do akcí složky, ne k tabulce. Otevře dialog pro výběr sloupců.
+  const colsBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Nastavení sloupců tabulky",
+    onclick: () => openFolderColumnsDialog(real, refreshFolderContent),
+  }, "⚙ Sloupce");
   const m = openModal({
     title: titleSpan,
     body,
@@ -7290,6 +7337,7 @@ function openFolderDetail(real, board, list) {
     footer: [
       renameBtn,
       goToBoardBtn,
+      colsBtn,
       unfolderBtn,
       delBtn,
       el("button", { class:"primary", onclick: () => m.close() }, T("close")),
