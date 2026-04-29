@@ -704,6 +704,88 @@ header.app-header h1 {
   flex-direction: column;
   gap: 16px;
 }
+.folder-add-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.folder-content-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+/* Tabulka složky */
+.folder-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.folder-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.folder-table th, .folder-table td {
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.folder-table th {
+  background: var(--bg-alt);
+  font-weight: 600;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.folder-table tr.done-row td { opacity: 0.6; }
+.folder-table tr:hover { background: var(--bg-alt); }
+.folder-actions-cell {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.folder-actions-cell button { padding: 2px 6px; font-size: 12px; min-width: 24px; }
+.folder-due-input {
+  width: 80px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.folder-due-input:focus {
+  outline: 2px solid var(--primary, #0a7);
+  width: 110px;
+}
+.label-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: white;
+  text-shadow: 0 0 2px rgba(0,0,0,.5);
+}
+/* Dialog Nastavení sloupců */
+.folder-cols-section {
+  margin-bottom: 12px;
+}
+.folder-cols-section h4 {
+  margin: 8px 0 4px;
+  font-size: 14px;
+}
+.checkbox-row {
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.checkbox-row label { cursor: pointer; }
 .folder-stats-section {
   padding: 12px;
   background: var(--bg-alt);
@@ -875,6 +957,39 @@ header.app-header h1 {
   text-decoration: line-through;
   opacity: 0.6;
 }
+/* Karta v kalendáři + tlačítko termínu vedle */
+.cal-card-wrap {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  margin-bottom: 1px;
+}
+.cal-card-wrap .cal-card { flex: 1; min-width: 0; }
+.cal-due-btn {
+  padding: 1px 4px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.cal-due-btn:hover, .cal-due-btn:focus {
+  background: var(--primary, #0a7);
+  color: white;
+  outline: none;
+}
+/* Planner */
+.planner-day-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.planner-card-row {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.planner-card-row:last-child { border-bottom: none; }
 @media (max-width: 700px) {
   /* Mobil: užší buňky, menší font */
   .cal-cell { min-height: 60px; padding: 2px; }
@@ -2108,7 +2223,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-folder-minimalist-detail";
+const MRELLO_BUILD = "2026-04-23-folder-table-with-cols-and-quick-due";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3713,7 +3828,7 @@ function newCard(listId, title, opts={}) {
     isTemplate: !!opts.isTemplate,
     cardType: opts.cardType || "normal",
     habit: opts.cardType === "habit" ? { frequency:"daily", streak:0, history:[], lastCompleted:null } : null,
-    folder: opts.cardType === "folder" ? { cardIds: [] } : null,
+    folder: opts.cardType === "folder" ? { cardIds: [], visibleColumns: null } : null,
     reminders: [],
     snoozedUntil: null,
     archived: false, deleted: false,
@@ -3893,9 +4008,62 @@ function toggleCardFavorite(cardId) {
 //
 // Ujistí, že karta má strukturu folder. Volat před manipulací s cardIds.
 function ensureCardFolder(card) {
-  if (!card.folder) card.folder = { cardIds: [] };
+  if (!card.folder) card.folder = { cardIds: [], visibleColumns: null };
   if (!Array.isArray(card.folder.cardIds)) card.folder.cardIds = [];
   return card.folder;
+}
+// Definice všech sloupců, které lze v tabulce složky zobrazit.
+// title a actions jsou povinné a vždy první dva sloupce. Ostatní lze zapínat/vypínat per složka.
+const FOLDER_COLUMN_DEFS = [
+  { key: "title",         label: "Název",          required: true,  default: true },
+  { key: "actions",       label: "Akce",           required: true,  default: true },
+  { key: "board",         label: "Nástěnka",       default: false },
+  { key: "list",          label: "Sloupec",        default: true },
+  { key: "description",   label: "Popis",          default: false },
+  { key: "members",       label: "Členové",        default: false },
+  { key: "labels",        label: "Štítky",         default: false },
+  { key: "due",           label: "Termín",         default: true },
+  { key: "estimate",      label: "Odhad času",     default: false },
+  { key: "spent",         label: "Strávený čas",   default: false },
+  { key: "attachments",   label: "Přílohy (odkazy)", default: false },
+  { key: "dependencies",  label: "Závislosti",     default: false },
+];
+const FOLDER_DEFAULT_COLUMNS = FOLDER_COLUMN_DEFS.filter(c => c.default).map(c => c.key);
+// Vrátí seznam definic vlastních polí, která jsou na nástěnkách obsahujících karty ve složce.
+function getFolderCustomFields(folderCard) {
+  const cards = getFolderCards(folderCard.id);
+  const boardIds = [...new Set(cards.map(c => c.boardId).filter(Boolean))];
+  const seen = new Set();
+  const result = [];
+  boardIds.forEach(bid => {
+    const b = getBoard(bid);
+    if (!b || !b.customFields) return;
+    b.customFields.forEach(cf => {
+      if (seen.has(cf.id)) return;
+      seen.add(cf.id);
+      result.push(cf);
+    });
+  });
+  return result;
+}
+function getFolderVisibleColumns(folderCard) {
+  const folder = ensureCardFolder(folderCard);
+  if (folder.visibleColumns && Array.isArray(folder.visibleColumns)) {
+    return folder.visibleColumns;
+  }
+  return FOLDER_DEFAULT_COLUMNS.slice();
+}
+function setFolderVisibleColumns(folderCard, columns) {
+  const folder = ensureCardFolder(folderCard);
+  const set = new Set(columns);
+  set.add("title"); set.add("actions");
+  const ordered = [];
+  FOLDER_COLUMN_DEFS.forEach(c => { if (set.has(c.key)) { ordered.push(c.key); set.delete(c.key); } });
+  // Zbytek = vlastní pole
+  [...set].forEach(k => ordered.push(k));
+  folder.visibleColumns = ordered;
+  folderCard.updatedAt = Date.now();
+  saveState();
 }
 // Převede běžnou kartu na složku. Cyklus zachytí (nelze převést, pokud už je v jiné složce).
 // Vrací true při úspěchu, false pokud je karta již složkou nebo cíl je sama sebou.
@@ -6021,6 +6189,7 @@ function renderBulkBar() {
     el("button", { class:"ghost", onclick: () => bulkAction("label") }, T("bulkLabel")),
     el("button", { class:"ghost", onclick: () => bulkAction("due") }, "Termín…"),
     el("button", { class:"ghost", onclick: () => bulkAction("subcardsOf") }, "Jako podkarty…"),
+    el("button", { class:"ghost", onclick: () => bulkAction("addToFolder") }, "Do složky…"),
     el("button", { class:"ghost", onclick: () => bulkAction("dependency") }, "Závislost…"),
     el("button", { class:"danger", onclick: () => bulkAction("delete") }, T("bulkDelete")),
     el("button", { class:"ghost", onclick: () => { state.ui.selectedCards = []; renderView(); } }, T("deselect")),
@@ -6127,6 +6296,29 @@ async function bulkAction(action) {
       announce(applied + " karet — nastavena závislost na kartu " + other.title + ".");
     }
     if (cycles) toast(cycles + " závislostí přeskočeno (cyklus).", "warning");
+  }
+  if (action === "addToFolder") {
+    // Vybereme cílovou složku přes pickCard (filter na cardType === "folder").
+    // Pak postupně přidáme každou vybranou kartu, počítáme úspěchy/selhání pro souhrnný toast.
+    const folderId = await pickCard({ filter: c => c.cardType === "folder", title: "Vybrat složku" });
+    if (!folderId) return;
+    const folder = getCard(folderId);
+    if (!folder) return;
+    let added = 0, skipped = 0;
+    sel.forEach(id => {
+      if (id === folderId) { skipped++; return; }
+      if (addCardToFolder(folderId, id)) added++;
+      else skipped++;
+    });
+    if (added) {
+      toast(added + " " + (added === 1 ? "karta přidána" : added < 5 ? "karty přidány" : "karet přidáno")
+        + " do složky „" + folder.title + "“"
+        + (skipped ? " (" + skipped + " přeskočeno — duplicita nebo cyklus)" : "") + ".", "success");
+      announce(added + " karet přidáno do složky " + folder.title + ".");
+      sound.add();
+    } else {
+      toast("Nic se nepřidalo (vše už ve složce nebo by vznikl cyklus).", "info");
+    }
   }
   state.ui.selectedCards = [];
   renderView();
@@ -6496,6 +6688,291 @@ function openIframeModal(attachment, card) {
 //   - Agregované komentáře z karet ve složce
 // Cíl: složka je *jen* organizační kontejner. Když uživatel chce komplexní práci s atributy,
 // převede ji zpátky na běžnou kartu.
+// Renderuje jednu buňku tabulky složky podle typu sloupce.
+// `card` je řádek, `colKey` identifikátor sloupce (title/actions/board/.../cf:id),
+// `cfMap` mapa { fieldId: cfDef }, `folderCard` referenční složka, `refresh` funkce pro překreslení,
+// `closeDetail` zavře detail (pro klik na název → otevře jinou kartu).
+function renderFolderCell(card, colKey, cfMap, folderCard, refresh, closeDetail) {
+  const td = el("td");
+  // Vlastní pole — cf:fieldId
+  if (colKey.startsWith("cf:")) {
+    const fid = colKey.slice(3);
+    const val = (card.customFields || {})[fid];
+    const cf = cfMap[fid];
+    if (val == null || val === "") {
+      td.appendChild(el("span", { class:"muted small" }, "—"));
+    } else if (cf && cf.type === "checkbox") {
+      td.textContent = val ? "✓" : "—";
+    } else if (cf && cf.type === "date") {
+      td.textContent = formatDate(val);
+    } else {
+      td.textContent = String(val);
+    }
+    return td;
+  }
+  switch (colKey) {
+    case "title": {
+      // Klikatelný odkaz na detail karty + případný indikátor hotovosti
+      const status = card.completed ? "✓ " : "";
+      const link = el("button", {
+        class: "link-btn",
+        onclick: () => { closeDetail(); openCardDetail(card.id); },
+        "aria-label": "Otevřít kartu „" + card.title + "“",
+      }, status + card.title);
+      td.appendChild(link);
+      // Pokud má karta nevyřízené podkarty, zobrazí se pod názvem drobný indikátor
+      const subs = getSubcards(card.id);
+      if (subs.length) {
+        const subsOpen = subs.filter(s => !s.completed).length;
+        td.appendChild(el("div", { class:"muted small" },
+          subsOpen > 0 ? "↳ " + subsOpen + "/" + subs.length + " podkaret"
+                       : "✓ všechny podkarty (" + subs.length + ")"));
+      }
+      break;
+    }
+    case "actions": {
+      // Inline akce: hotovo / časovač / termín / odebrat ze složky / archivovat
+      const wrap = el("div", { class:"folder-actions-cell" });
+      // Hotovo
+      const doneBtn = el("button", {
+        class: "ghost small", title: card.completed ? "Vrátit z hotových" : "Označit hotové",
+        "aria-label": (card.completed ? "Vrátit z hotových: " : "Označit hotové: ") + card.title,
+        onclick: () => { toggleCardComplete(card.id); sound.done(); refresh(); },
+      }, card.completed ? "↺" : "✓");
+      wrap.appendChild(doneBtn);
+      // Časovač start/stop
+      const isRunning = !!(card.time && card.time.runningSince);
+      const timerBtn = el("button", {
+        class: "ghost small", title: isRunning ? "Zastavit časovač" : "Spustit časovač",
+        "aria-label": (isRunning ? "Zastavit časovač: " : "Spustit časovač: ") + card.title,
+        onclick: () => { toggleCardTimer(card.id); refresh(); updateRunningTimersChip(); },
+      }, isRunning ? "⏸" : "▶");
+      wrap.appendChild(timerBtn);
+      // Termín — inline input s rozpoznáváním přirozeného jazyka, na enter potvrdí
+      const dueWrap = el("span", { class:"folder-due-input-wrap" });
+      const dueInp = el("input", {
+        type: "text", class: "folder-due-input",
+        placeholder: "termín…",
+        "aria-label": "Nastavit termín pro „" + card.title + "“ (např. „dnes“, „zítra“, „pondělí“, „2d“)",
+        title: "Termín přirozeným jazykem, Enter pro potvrzení",
+      });
+      dueInp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const txt = dueInp.value.trim();
+          if (!txt) {
+            // Prázdný = odebrat termín
+            setCardField(card.id, "dueDate", null);
+            toast("Termín odebrán u „" + card.title + "“.", "info");
+            sound.click(); refresh();
+            return;
+          }
+          const parsed = parseNaturalDate(txt);
+          if (!parsed) {
+            toast("Termín „" + txt + "“ nerozpoznán.", "error");
+            sound.err(); return;
+          }
+          setCardField(card.id, "dueDate", parsed.date);
+          logActivity(card, T("activityDueSet", formatDate(parsed.date)));
+          toast("Termín nastaven na " + formatDate(parsed.date) + ".", "success");
+          sound.click(); refresh();
+        }
+      });
+      dueWrap.appendChild(dueInp);
+      wrap.appendChild(dueWrap);
+      // Odebrat ze složky (× odkaz na složku, samotná karta zůstává)
+      const rmFolderBtn = el("button", {
+        class: "ghost small", title: "Odebrat ze složky (karta zůstane)",
+        "aria-label": "Odebrat ze složky: " + card.title,
+        onclick: () => { removeCardFromFolder(folderCard.id, card.id); sound.remove(); refresh(); },
+      }, "×");
+      wrap.appendChild(rmFolderBtn);
+      // Archivovat
+      const archBtn = el("button", {
+        class: "ghost small", title: card.archived ? "Obnovit z archivu" : "Archivovat kartu",
+        "aria-label": (card.archived ? "Obnovit z archivu: " : "Archivovat: ") + card.title,
+        onclick: () => {
+          if (card.archived) unarchiveCard(card.id); else archiveCard(card.id);
+          sound.click(); refresh();
+        },
+      }, card.archived ? "📤" : "📦");
+      wrap.appendChild(archBtn);
+      td.appendChild(wrap);
+      break;
+    }
+    case "board": {
+      const b = getBoard(card.boardId);
+      td.textContent = b ? b.name : "—";
+      break;
+    }
+    case "list": {
+      const l = getList(card.listId);
+      td.textContent = l ? l.name : "—";
+      break;
+    }
+    case "description": {
+      // Krátký výňatek (prvních ~80 znaků), bez markdown formátování
+      const desc = (card.description || "").replace(/\s+/g, " ").trim();
+      if (!desc) td.appendChild(el("span", { class:"muted small" }, "—"));
+      else {
+        const short = desc.length > 80 ? desc.slice(0, 77) + "…" : desc;
+        td.textContent = short;
+        td.title = desc;  // celý text v tooltipu
+      }
+      break;
+    }
+    case "members": {
+      const ms = (card.members || []).map(getMember).filter(Boolean);
+      if (!ms.length) td.appendChild(el("span", { class:"muted small" }, "—"));
+      else td.textContent = ms.map(m => m.name).join(", ");
+      break;
+    }
+    case "labels": {
+      const lbls = (card.labels || []).map(lid => getLabel(card.boardId, lid)).filter(Boolean);
+      if (!lbls.length) td.appendChild(el("span", { class:"muted small" }, "—"));
+      else {
+        lbls.forEach(lb => {
+          td.appendChild(el("span", {
+            class: "label-chip",
+            style: { backgroundColor: lb.color || "#ddd" },
+          }, lb.name));
+          td.appendChild(document.createTextNode(" "));
+        });
+      }
+      break;
+    }
+    case "due": {
+      if (!card.dueDate) { td.appendChild(el("span", { class:"muted small" }, "—")); break; }
+      const days = daysFromNow(card.dueDate);
+      let cls;
+      if (card.completed) cls = "muted";
+      else if (days < 0) cls = "danger-text";
+      else if (days <= 1) cls = "warning-text";
+      else if (days <= 7) cls = "info-text";
+      else cls = "";
+      const span = el("span", { class: cls + " small" });
+      if (card.completed) span.textContent = "✓ " + formatDate(card.dueDate);
+      else if (days < 0) span.textContent = "⚠ " + formatDate(card.dueDate);
+      else if (days === 0) span.textContent = "📅 dnes";
+      else if (days === 1) span.textContent = "📅 zítra";
+      else if (days <= 7) span.textContent = "📅 za " + days + " dní";
+      else span.textContent = "📅 " + formatDate(card.dueDate);
+      td.appendChild(span);
+      break;
+    }
+    case "estimate": {
+      const est = (card.time && card.time.estimateSec) || 0;
+      td.textContent = est ? formatHours(est) : "—";
+      if (!est) td.classList.add("muted");
+      break;
+    }
+    case "spent": {
+      let spent = (card.time && card.time.spentSec) || 0;
+      if (card.time && card.time.runningSince) spent += Math.round((Date.now() - card.time.runningSince) / 1000);
+      td.textContent = spent ? formatHours(spent) : "—";
+      if (!spent) td.classList.add("muted");
+      if (card.time && card.time.runningSince) {
+        td.appendChild(el("span", { class:"tt-run-badge", title:"Časovač běží" }, " ▶"));
+      }
+      break;
+    }
+    case "attachments": {
+      // Jen URL přílohy — soubory by se v tabulce stejně neotevřely smysluplně
+      const urls = (card.attachments || []).filter(a => a.url && !a.dataUrl);
+      if (!urls.length) { td.appendChild(el("span", { class:"muted small" }, "—")); break; }
+      urls.forEach((a, i) => {
+        if (i > 0) td.appendChild(document.createTextNode(", "));
+        td.appendChild(el("a", {
+          href: a.url, target: "_blank", rel: "noopener noreferrer",
+          title: a.url,
+        }, a.iframe ? "▶" : "🔗"));
+      });
+      break;
+    }
+    case "dependencies": {
+      const deps = card.dependencies || {};
+      const blockedBy = (deps.blockedBy || []).map(getCard).filter(Boolean);
+      const blocks = (deps.blocks || []).map(getCard).filter(Boolean);
+      const blockedByOpen = blockedBy.filter(c => !c.completed).length;
+      const parts = [];
+      if (blockedByOpen) parts.push(el("span", { class:"danger-text", title: blockedByOpen + " neukončených karet ji blokuje" }, "⛔ " + blockedByOpen));
+      else if (blockedBy.length) parts.push(el("span", { class:"muted", title:"Všechny blokující karty jsou hotové" }, "✓ " + blockedBy.length));
+      if (blocks.length) parts.push(el("span", { class:"info-text", title: "Blokuje " + blocks.length + " karet" }, "🚧 " + blocks.length));
+      if (!parts.length) td.appendChild(el("span", { class:"muted small" }, "—"));
+      else parts.forEach((p, i) => { if (i > 0) td.appendChild(document.createTextNode(" ")); td.appendChild(p); });
+      break;
+    }
+    default:
+      td.textContent = "?";
+  }
+  return td;
+}
+
+// Dialog „Nastavení sloupců" pro složku — checkboxy pro každý dostupný sloupec.
+// Po uložení překreslí detail složky.
+function openFolderColumnsDialog(folderCard, onSave) {
+  const current = new Set(getFolderVisibleColumns(folderCard));
+  const customFields = getFolderCustomFields(folderCard);
+  const body = el("div", {});
+  body.appendChild(el("p", { class:"muted small" },
+    "Vyber, které sloupce se mají zobrazovat v tabulce. Sloupce „Název“ a „Akce“ jsou vždy zobrazené."));
+  // Standardní sloupce
+  const stdSec = el("div", { class:"folder-cols-section" });
+  stdSec.appendChild(el("h4", {}, "Standardní sloupce"));
+  const checkboxes = [];
+  FOLDER_COLUMN_DEFS.forEach(def => {
+    const id = "fcol_" + def.key;
+    const cb = el("input", {
+      type: "checkbox", id, value: def.key,
+      checked: current.has(def.key),
+      disabled: def.required,
+    });
+    checkboxes.push(cb);
+    const row = el("div", { class:"checkbox-row" },
+      cb, el("label", { for: id }, def.label + (def.required ? " (povinné)" : ""))
+    );
+    stdSec.appendChild(row);
+  });
+  body.appendChild(stdSec);
+  // Vlastní pole
+  if (customFields.length) {
+    const cfSec = el("div", { class:"folder-cols-section" });
+    cfSec.appendChild(el("h4", {}, "Vlastní pole"));
+    customFields.forEach(cf => {
+      const key = "cf:" + cf.id;
+      const id = "fcol_" + key.replace(":", "_");
+      const cb = el("input", {
+        type: "checkbox", id, value: key, checked: current.has(key),
+      });
+      checkboxes.push(cb);
+      const typeLabel = { text:"text", number:"číslo", date:"datum", checkbox:"ano/ne", select:"výběr" }[cf.type] || cf.type;
+      const row = el("div", { class:"checkbox-row" },
+        cb, el("label", { for: id }, cf.name + " ", el("span", { class:"muted small" }, "(" + typeLabel + ")"))
+      );
+      cfSec.appendChild(row);
+    });
+    body.appendChild(cfSec);
+  } else {
+    body.appendChild(el("p", { class:"muted small" },
+      "Karty ve složce nemají žádná vlastní pole. Definuj je v nastavení nástěnky."));
+  }
+  const m = openModal({
+    title: "Nastavení sloupců",
+    body, size: "small",
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => {
+        const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+        setFolderVisibleColumns(folderCard, selected);
+        m.close();
+        if (onSave) onSave();
+        sound.click();
+        announce("Sloupce uloženy.");
+      } }, T("save")),
+    ],
+  });
+}
+
 function openFolderDetail(real, board, list) {
   const body = el("div", { class:"folder-detail" });
 
@@ -6509,13 +6986,21 @@ function openFolderDetail(real, board, list) {
 
   // ----- Seznam karet ve složce -----
   const contentSec = el("section", { "aria-label": "Obsah složky" });
-  const contentHeader = el("h3", {}, "Obsah složky");
-  contentSec.appendChild(contentHeader);
+  const contentHeader = el("h3", { style:{ flex:"1", margin:0 } }, "Obsah složky");
+  // Tlačítko pro nastavení sloupců — vedle nadpisu, ať je hned vidět
+  const colsBtn = el("button", {
+    class: "ghost small",
+    "aria-label": "Nastavení sloupců tabulky",
+    title: "Nastavení sloupců",
+    onclick: () => openFolderColumnsDialog(real, refreshFolderContent),
+  }, "⚙ Sloupce");
+  const headerRow = el("div", { class:"folder-content-header" }, contentHeader, colsBtn);
+  contentSec.appendChild(headerRow);
   const folderList = el("div", { class:"folder-content-list" });
   contentSec.appendChild(folderList);
   // Tlačítko pro přidání karty
   const addToFolderBtn = el("button", {
-    class: "primary",
+    class: "ghost",
     "aria-label": "Přidat existující kartu do této složky",
     onclick: async () => {
       const pickedId = await pickCard();
@@ -6533,8 +7018,58 @@ function openFolderDetail(real, board, list) {
       refreshFolderContent();
       announce("Karta přidána do složky.");
     },
-  }, "+ Přidat kartu do složky");
-  contentSec.appendChild(addToFolderBtn);
+  }, "+ Přidat existující");
+  // Tlačítko pro rychlé vytvoření nové karty rovnou ve stejném seznamu jako složka.
+  // Po vytvoření se karta automaticky přidá do složky — uživatel nemusí ji nejdřív vytvářet bokem
+  // a pak přidávat jako existující. To je nejčastější workflow při budování složky.
+  const createInFolderBtn = el("button", {
+    class: "primary",
+    "aria-label": "Vytvořit novou kartu ve stejném seznamu a přidat ji do složky",
+    onclick: () => {
+      const titleInp = el("input", {
+        type: "text",
+        placeholder: "Název nové karty",
+        "aria-label": "Název nové karty",
+        style: { width: "100%" },
+      });
+      const m2 = openModal({
+        title: "Nová karta v složce „" + real.title + "“",
+        body: el("div", {},
+          el("p", { class:"muted small" }, "Karta se vytvoří ve stejném seznamu („" + list.name + "“) a hned se přidá do této složky."),
+          titleInp,
+        ),
+        size: "small",
+        footer: [
+          el("button", { class:"ghost", onclick: () => m2.close() }, T("cancel")),
+          el("button", { class:"primary", onclick: () => {
+            const title = titleInp.value.trim();
+            if (!title) { titleInp.focus(); return; }
+            // Vytvoříme novou kartu ve stejném seznamu jako tato složka
+            const newC = newCard(real.listId, title);
+            if (!newC) { toast("Chyba při vytváření karty.", "error"); return; }
+            // A hned ji přidáme do složky
+            addCardToFolder(real.id, newC.id);
+            sound.add();
+            refreshFolderContent();
+            announce("Karta „" + title + "“ vytvořena a přidána do složky.");
+            m2.close();
+          } }, "Vytvořit a přidat"),
+        ],
+        onOpen: () => titleInp.focus(),
+      });
+      // Enter v textovém poli odešle (uživatel typuje název, Enter = potvrdit)
+      titleInp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const okBtn = m2.overlay.querySelector(".modal-footer .primary");
+          if (okBtn) okBtn.click();
+        }
+      });
+    },
+  }, "+ Vytvořit novou kartu");
+  // Tlačítka vedle sebe v jednom kontejneru
+  const addBtnsRow = el("div", { class:"folder-add-btns" }, createInFolderBtn, addToFolderBtn);
+  contentSec.appendChild(addBtnsRow);
   body.appendChild(contentSec);
 
   // ----- Vlastní komentáře složky -----
@@ -6604,7 +7139,7 @@ function openFolderDetail(real, board, list) {
           "Nedokončených ", el("strong", {}, String(open))));
       }
     }
-    // Seznam karet
+    // Tabulka karet podle nakonfigurovaných sloupců
     clear(folderList);
     const folder = ensureCardFolder(real);
     // Ošetři osamocené odkazy (na smazané karty)
@@ -6628,53 +7163,41 @@ function openFolderDetail(real, board, list) {
     if (!cards.length) {
       folderList.appendChild(el("div", { class:"muted small" }, "Složka je prázdná."));
     } else {
-      cards.forEach(c => {
-        const item = el("div", { class:"folder-content-item" });
-        const line1 = el("div", { class:"folder-content-line" });
-        const status = c.completed ? "✓ " : "";
-        const link = el("button", {
-          class: "link-btn",
-          onclick: () => { m.close(); openCardDetail(c.id); },
-        }, status + c.title);
-        line1.appendChild(link);
-        // Termín (pokud je)
-        if (c.dueDate) {
-          const days = daysFromNow(c.dueDate);
-          let dueTxt, cls;
-          if (c.completed) { dueTxt = "✓ " + formatDate(c.dueDate); cls = "muted"; }
-          else if (days < 0) { dueTxt = "⚠ po termínu"; cls = "danger-text"; }
-          else if (days === 0) { dueTxt = "📅 dnes"; cls = "warning-text"; }
-          else if (days === 1) { dueTxt = "📅 zítra"; cls = "warning-text"; }
-          else if (days <= 7) { dueTxt = "📅 za " + days + " dní"; cls = "info-text"; }
-          else { dueTxt = "📅 " + formatDate(c.dueDate); cls = "muted"; }
-          line1.appendChild(el("span", { class: cls + " small" }, " " + dueTxt));
+      // Sestavíme tabulku — sloupce dle visibleColumns. cf:xxx jsou vlastní pole.
+      const visibleCols = getFolderVisibleColumns(real);
+      const customFields = getFolderCustomFields(real);
+      const cfMap = Object.fromEntries(customFields.map(cf => [cf.id, cf]));
+      const table = el("table", { class:"folder-table" });
+      // Hlavička
+      const thead = el("thead");
+      const headRow = el("tr");
+      visibleCols.forEach(col => {
+        let label;
+        if (col.startsWith("cf:")) {
+          const cf = cfMap[col.slice(3)];
+          label = cf ? cf.name : col;
+        } else {
+          const def = FOLDER_COLUMN_DEFS.find(d => d.key === col);
+          label = def ? def.label : col;
         }
-        // Tlačítko odebrat ze složky
-        const rm = el("button", {
-          class: "ghost small",
-          "aria-label": "Odebrat „" + c.title + "“ ze složky",
-          onclick: () => {
-            removeCardFromFolder(real.id, c.id);
-            refreshFolderContent();
-            sound.remove();
-          },
-        }, "×");
-        line1.appendChild(rm);
-        item.appendChild(line1);
-        // Pomocný řádek: nevyřízené podkarty
-        const subs = getSubcards(c.id);
-        if (subs.length) {
-          const subsOpen = subs.filter(s => !s.completed).length;
-          const line2 = el("div", { class:"folder-content-meta muted small" });
-          if (subsOpen > 0) {
-            line2.textContent = "↳ " + subsOpen + " nevyřízených podkaret z " + subs.length;
-          } else {
-            line2.textContent = "↳ Všechny podkarty hotové (" + subs.length + ")";
-          }
-          item.appendChild(line2);
-        }
-        folderList.appendChild(item);
+        headRow.appendChild(el("th", { scope:"col" }, label));
       });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      // Tělo
+      const tbody = el("tbody");
+      cards.forEach(c => {
+        const tr = el("tr", { class: c.completed ? "done-row" : "" });
+        visibleCols.forEach(col => {
+          tr.appendChild(renderFolderCell(c, col, cfMap, real, refreshFolderContent, () => m.close()));
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      // Wrapper s overflow scroll pro mobil/tablet
+      const wrap = el("div", { class:"folder-table-wrap" });
+      wrap.appendChild(table);
+      folderList.appendChild(wrap);
     }
     // Header s počtem
     contentHeader.textContent = "Obsah složky (" + total + ")";
@@ -8439,14 +8962,23 @@ function pickLabels(card, board) {
       footer: [el("button", { class:"primary", onclick: () => { m.close(); resolve(true); } }, T("close"))] });
   });
 }
-function pickCard() {
+function pickCard(opts = {}) {
+  // opts.filter — funkce (card) => boolean. Pokud zadána, zobrazí jen vyhovující karty.
+  // opts.title — vlastní titulek modalu (default T("pickCard")).
   return new Promise(resolve => {
     const inp = el("input", { type:"search", placeholder:"Hledat kartu…", "aria-label":"Hledat kartu" });
     const ul = el("ul", { class:"picker-list", role:"listbox" });
     function refresh() {
       clear(ul);
       const q = inp.value.toLowerCase().trim();
-      const cs = state.cards.filter(c => !c.archived && (!q || c.title.toLowerCase().includes(q))).slice(0, 50);
+      const cs = state.cards
+        .filter(c => !c.archived && (!q || c.title.toLowerCase().includes(q)))
+        .filter(c => !opts.filter || opts.filter(c))
+        .slice(0, 50);
+      if (!cs.length) {
+        ul.appendChild(el("li", { class:"muted" }, "Nic nenalezeno."));
+        return;
+      }
       cs.forEach(c => {
         const b = getBoard(c.boardId);
         const l = getList(c.listId);
@@ -8462,7 +8994,7 @@ function pickCard() {
     }
     inp.addEventListener("input", refresh);
     refresh();
-    const m = openModal({ title: T("pickCard"), body: el("div", {}, inp, ul), size:"small",
+    const m = openModal({ title: opts.title || T("pickCard"), body: el("div", {}, inp, ul), size:"small",
       footer: [el("button", { class:"ghost", onclick: () => { m.close(); resolve(null); } }, T("cancel"))] });
     setTimeout(() => inp.focus(), 50);
   });
@@ -8567,6 +9099,55 @@ function renderTableView(container, board) {
 //#endregion
 
 //#region ============= CALENDAR VIEW =============
+// Rychlý popup pro nastavení / změnu termínu karty přes přirozený jazyk
+// (dnes, zítra, pondělí, 2d, 23.4. atd.). Použivá se v Calendar a Planner pohledech,
+// kde uživatel chce rychle přeplánovat bez otevírání plného detailu karty.
+function openQuickDueDialog(card) {
+  if (!card) return;
+  const inp = el("input", {
+    type: "text",
+    placeholder: "např. „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“",
+    "aria-label": "Termín přirozeným textem",
+    style: { width: "100%" },
+  });
+  const hint = el("div", { class:"muted small" },
+    "Aktuální termín: " + (card.dueDate ? formatDate(card.dueDate) : "(nenastaven)") + ". Prázdný text → odebrat termín.");
+  const m = openModal({
+    title: "Termín karty „" + card.title + "“",
+    body: el("div", {}, hint, el("div", { style:{ marginTop:"8px" } }, inp)),
+    size: "small",
+    footer: [
+      el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
+      el("button", { class:"primary", onclick: () => doSet() }, "Nastavit"),
+    ],
+    onOpen: () => setTimeout(() => inp.focus(), 50),
+  });
+  function doSet() {
+    const txt = inp.value.trim();
+    if (!txt) {
+      setCardField(card.id, "dueDate", null);
+      logActivity(card, "Termín odebrán");
+      toast("Termín odebrán u „" + card.title + "“.", "info");
+      sound.click();
+    } else {
+      const parsed = parseNaturalDate(txt);
+      if (!parsed) {
+        toast("Termín „" + txt + "“ nerozpoznán. Zkus „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“.", "error", 5000);
+        sound.err();
+        return;
+      }
+      setCardField(card.id, "dueDate", parsed.date);
+      logActivity(card, T("activityDueSet", formatDate(parsed.date)));
+      toast("Termín nastaven na " + formatDate(parsed.date) + ".", "success");
+      sound.click();
+    }
+    m.close();
+    renderView();  // překreslí Calendar/Planner aby se změna projevila
+  }
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); doSet(); }
+  });
+}
 function renderCalendarView(container, board) {
   const wrap = el("div", { class:"view-wrap calendar-view" });
   const cur = state.ui.calCursor ? new Date(state.ui.calCursor) : new Date();
@@ -8602,8 +9183,18 @@ function renderCalendarView(container, board) {
     const cell = el("div", { class:"cal-cell" + (isOther ? " other" : "") + (isTod ? " today" : ""), role:"gridcell" });
     cell.appendChild(el("div", { class:"cal-date" }, day.getDate()));
     (byDay[iso] || []).forEach(c => {
+      // Wrap pro kartu + tlačítko Termín, ať jsou v jednom elementu
+      const cWrap = el("div", { class:"cal-card-wrap" });
       const b = el("button", { class:"cal-card" + (c.completed ? " done" : ""), onclick: () => openCardDetail(c.id) }, c.title);
-      cell.appendChild(b);
+      cWrap.appendChild(b);
+      // Tlačítko 📅 — otevře malý popup pro rychlé přeplánování přirozeným jazykem
+      const dueBtn = el("button", {
+        class:"cal-due-btn", title:"Změnit termín…",
+        "aria-label": "Změnit termín karty „" + c.title + "“",
+        onclick: (e) => { e.stopPropagation(); openQuickDueDialog(c); },
+      }, "📅");
+      cWrap.appendChild(dueBtn);
+      cell.appendChild(cWrap);
     });
     grid.appendChild(cell);
   }
@@ -9204,20 +9795,28 @@ function renderPlannerView(container) {
     const cards = state.cards.filter(c =>
       !c.deleted && !c.archived && !c.completed && c.dueDate && isoLocalDate(c.dueDate) === iso
     );
-    const ul = el("ul");
-    if (!cards.length) ul.appendChild(el("li", { class:"muted" }, T("nothingHere")));
+    const cardsWrap = el("div", { class:"planner-day-cards" });
+    if (!cards.length) cardsWrap.appendChild(el("div", { class:"muted" }, T("nothingHere")));
     cards.forEach(c => {
-      const li = el("li");
+      const item = el("div", { class:"planner-card-row" });
       const b = getBoard(c.boardId);
       const l = getList(c.listId);
       const parts = [];
       if (b) parts.push(b.name);
       if (l) parts.push(l.name);
-      li.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
-      li.append(" ", el("span", { class:"muted" }, "(" + parts.join(", ") + ")"));
-      ul.appendChild(li);
+      item.appendChild(el("button", { class:"link-btn", onclick: () => openCardDetail(c.id) }, c.title));
+      item.append(" ", el("span", { class:"muted small" }, "(" + parts.join(", ") + ")"));
+      // Tlačítko Termín — rychlé přeplánování přirozeným jazykem (otevře malý dialog)
+      const dueBtn = el("button", {
+        class:"ghost small",
+        "aria-label": "Změnit termín karty „" + c.title + "“",
+        title:"Změnit termín…",
+        onclick: () => openQuickDueDialog(c),
+      }, "📅 Termín");
+      item.append(" ", dueBtn);
+      cardsWrap.appendChild(item);
     });
-    sec.appendChild(ul);
+    sec.appendChild(cardsWrap);
     wrap.appendChild(sec);
   }
   container.appendChild(wrap);
