@@ -541,6 +541,16 @@ header.app-header h1 {
   padding: 3px 0;
   font-size: 13px;
 }
+/* Toolbar pro aktivitu nástěnky — filtry + řazení */
+.board-activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
 /* Smart-list jako kontejner pro řádkové karty */
 .smart-list {
   display: flex;
@@ -2013,7 +2023,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-card-detail-summary-chips";
+const MRELLO_BUILD = "2026-04-23-activity-sort-and-filters";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4627,7 +4637,7 @@ function promptNewBoard() {
 let _kbdGrabbed = null;  // { cardId, listId, fromIndex }
 function openBoardActivityView(board) {
   // Spojí aktivitu ze všech nesmazaných karet nástěnky.
-  // Každý záznam má timestamp + action + referenci na kartu — seřadí chronologicky sestupně.
+  // Každý záznam má timestamp + action + referenci na kartu — seřadí chronologicky podle ovládacích prvků.
   const all = [];
   cardsInBoard(board.id, { includeArchived: true }).forEach(card => {
     (card.activity || []).forEach(a => {
@@ -4640,18 +4650,88 @@ function openBoardActivityView(board) {
       });
     });
   });
-  all.sort((a, b) => b.timestamp - a.timestamp);
-  const limit = 500;  // rozumná meze
-  const display = all.slice(0, limit);
+  // Stav UI — uloží se v lokálních proměnných modalu (ne v state, aby to neměnilo dirty)
+  let filterMode = "all";   // all | progress | comments | time
+  let sortDesc = true;      // true = nejnovější první, false = nejstarší první
+  // Klasifikace záznamu podle obsahu textu „action". Použije se jen pro filtraci.
+  // Texty jsou hardcoded podle jazyka — odpovídají tomu, co píše logActivity v ostatních funkcích.
+  // Hledáme klíčové substringy, ne přesné shody, protože activity texty mívají dynamické přípony
+  // („Časovač spuštěn", „Časovač zastaven, přidáno 1h 30m" atd.).
+  function classify(action) {
+    const t = (action || "").toLowerCase();
+    // Plnění: vytvoření karty, dokončení, znovuotevření, přidání podkarty
+    if (/(vytvořena|hotovo|dokončen|odznačen|odznačena|znovuotevřena)/i.test(action)) return "progress";
+    // Komentáře: přidání komentáře
+    if (/(komentář|komentován)/i.test(action)) return "comments";
+    // Čas: časovač, pomodoro, ručně přidán/odebrán čas, smazán záznam času
+    if (/(časovač|pomodoro|stráven|čas|záznam času|hodin)/i.test(action)) return "time";
+    return "other";
+  }
   const body = el("div", { class:"board-activity" });
-  body.appendChild(el("p", { class:"muted small" },
-    display.length === all.length
-      ? `Zobrazeno ${display.length} záznamů aktivity.`
-      : `Zobrazeno posledních ${limit} z celkem ${all.length} záznamů.`
-  ));
-  if (!display.length) {
-    body.appendChild(el("p", { class:"muted" }, "Zatím žádná aktivita na této nástěnce."));
-  } else {
+  // Toolbar — filtry + řazení
+  const tb = el("div", { class:"board-activity-toolbar" });
+  // Filtry jako tlačítka (přepínače). Aktivní = primární, neaktivní = ghost.
+  const filterDefs = [
+    ["all", "Vše"],
+    ["progress", "Plnění"],
+    ["comments", "Komentáře"],
+    ["time", "Čas"],
+  ];
+  const filterBtns = {};
+  filterDefs.forEach(([key, label]) => {
+    const btn = el("button", {
+      class: filterMode === key ? "primary" : "ghost",
+      "aria-pressed": filterMode === key ? "true" : "false",
+      onclick: () => { filterMode = key; refreshFilterButtons(); render(); },
+    }, label);
+    filterBtns[key] = btn;
+    tb.appendChild(btn);
+  });
+  function refreshFilterButtons() {
+    Object.entries(filterBtns).forEach(([key, btn]) => {
+      const active = filterMode === key;
+      btn.classList.toggle("primary", active);
+      btn.classList.toggle("ghost", !active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+  // Oddělovač
+  tb.appendChild(el("span", { style:{ flex:"1" } }));
+  // Tlačítko řazení
+  const sortBtn = el("button", { class:"ghost",
+    "aria-label": "Přepnout řazení podle data",
+    onclick: () => {
+      sortDesc = !sortDesc;
+      sortBtn.textContent = sortDesc ? "↓ Nejnovější první" : "↑ Nejstarší první";
+      render();
+      announce(sortDesc ? "Řazeno od nejnovějších." : "Řazeno od nejstarších.");
+    },
+  }, sortDesc ? "↓ Nejnovější první" : "↑ Nejstarší první");
+  tb.appendChild(sortBtn);
+  body.appendChild(tb);
+  // Container pro výsledný seznam
+  const listWrap = el("div", { class:"board-activity-results" });
+  body.appendChild(listWrap);
+  function render() {
+    clear(listWrap);
+    let filtered;
+    if (filterMode === "all") {
+      filtered = all.slice();
+    } else {
+      filtered = all.filter(a => classify(a.action) === filterMode);
+    }
+    filtered.sort((a, b) => sortDesc ? (b.timestamp - a.timestamp) : (a.timestamp - b.timestamp));
+    const limit = 500;
+    const display = filtered.slice(0, limit);
+    listWrap.appendChild(el("p", { class:"muted small" },
+      display.length === filtered.length
+        ? `Zobrazeno ${display.length} záznamů` + (filterMode !== "all" ? ` (filtr: ${filterDefs.find(f => f[0] === filterMode)[1]})` : "") + "."
+        : `Zobrazeno ${limit} z ${filtered.length} záznamů` + (filterMode !== "all" ? ` (filtr: ${filterDefs.find(f => f[0] === filterMode)[1]})` : "") + "."
+    ));
+    if (!display.length) {
+      listWrap.appendChild(el("p", { class:"muted" }, "Žádné záznamy odpovídající filtru."));
+      return;
+    }
     const wrap = el("div", { class:"activity-list board-activity-list" });
     display.forEach(a => {
       const item = el("div", { class:"activity-item" });
@@ -4664,8 +4744,9 @@ function openBoardActivityView(board) {
       item.appendChild(el("span", {}, " — " + a.action));
       wrap.appendChild(item);
     });
-    body.appendChild(wrap);
+    listWrap.appendChild(wrap);
   }
+  render();
   const m = openModal({
     title: "Aktivita nástěnky „" + board.name + "“",
     body,
@@ -6700,15 +6781,38 @@ function openCardDetail(cardId) {
 
   // Aktivita
   const actSection = el("section", { "aria-label": T("activity") });
-  actSection.appendChild(el("h3", {}, T("activity")));
+  // Hlavička s nadpisem + tlačítko pro přepnutí řazení
+  let actSortDesc = true;  // default: nejnovější první
+  const actHeader = el("div", { style:{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap" } });
+  actHeader.appendChild(el("h3", { style:{ margin:0, flex:"1" } }, T("activity")));
+  const actSortBtn = el("button", {
+    class: "ghost small",
+    "aria-label": "Přepnout řazení aktivity",
+    onclick: () => {
+      actSortDesc = !actSortDesc;
+      actSortBtn.textContent = actSortDesc ? "↓ Nejnovější první" : "↑ Nejstarší první";
+      refreshActivity();
+      announce(actSortDesc ? "Řazeno od nejnovějších." : "Řazeno od nejstarších.");
+    },
+  }, "↓ Nejnovější první");
+  actHeader.appendChild(actSortBtn);
+  actSection.appendChild(actHeader);
   const actList = el("div", { class:"activity-list" });
   function refreshActivity() {
     clear(actList);
-    const acts = (real.activity || []).slice(0, 50);
-    if (!acts.length) {
+    // Activity jsou v poli v pořadí přidání (nejnovější se logActivity přidává pravděpodobně doprostřed/konec).
+    // Vezmeme kopii, seřadíme dle aktuálního pref a omezíme na 50 nejnovějších/nejstarších.
+    const acts = (real.activity || []).slice();
+    acts.sort((a, b) => {
+      const ta = a.timestamp || a.at || 0;
+      const tb = b.timestamp || b.at || 0;
+      return actSortDesc ? (tb - ta) : (ta - tb);
+    });
+    const display = acts.slice(0, 50);
+    if (!display.length) {
       actList.appendChild(el("div", { class:"muted" }, "(zatím žádná aktivita)"));
     } else {
-      acts.forEach(a => {
+      display.forEach(a => {
         // Zpětná kompatibilita: nová pole jsou `timestamp` + `action`, stará byla `at` + `msg`
         const ts = a.timestamp || a.at;
         const msg = a.action || a.msg || "";
