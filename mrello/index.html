@@ -698,6 +698,91 @@ header.app-header h1 {
   border-color: #86efac;
   color: #166534;
 }
+/* Detail karty typu složka — minimalistický layout */
+.folder-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.folder-stats-section {
+  padding: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.folder-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.folder-stat-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-size: 14px;
+}
+.folder-stat-chip strong {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary, #0a7);
+}
+.folder-stat-chip.success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+.folder-stat-chip.success strong { color: #166534; }
+.folder-stat-chip.warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+.folder-stat-chip.warning strong { color: #9a3412; }
+/* Obsah složky v detailu karty typu folder */
+.folder-content-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+.folder-content-item {
+  padding: 6px 8px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary, #0a7);
+}
+.folder-content-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.folder-content-line .link-btn { flex: 1; min-width: 0; }
+.folder-content-meta {
+  margin-top: 2px;
+  padding-left: 4px;
+}
+.folder-orphan-warn {
+  padding: 6px 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+}
+.folder-aggregated-comments {
+  padding: 8px;
+  background: var(--bg-alt);
+  border-left: 3px solid var(--primary, #0a7);
+  border-radius: var(--radius-sm);
+}
+/* Stavové barvy pro termín v obsahu složky */
+.danger-text { color: #991b1b; font-weight: 600; }
+.warning-text { color: #9a3412; font-weight: 500; }
+.info-text { color: #1e40af; }
 .dep-items {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2023,7 +2108,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-activity-sort-and-filters";
+const MRELLO_BUILD = "2026-04-23-folder-minimalist-detail";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3628,6 +3713,7 @@ function newCard(listId, title, opts={}) {
     isTemplate: !!opts.isTemplate,
     cardType: opts.cardType || "normal",
     habit: opts.cardType === "habit" ? { frequency:"daily", streak:0, history:[], lastCompleted:null } : null,
+    folder: opts.cardType === "folder" ? { cardIds: [] } : null,
     reminders: [],
     snoozedUntil: null,
     archived: false, deleted: false,
@@ -3799,6 +3885,98 @@ function toggleCardFavorite(cardId) {
   logActivity(c, c.favorite ? "Označeno jako oblíbené" : "Odebráno z oblíbených");
   saveState();
   return c.favorite;
+}
+
+// ============ SLOŽKY ============
+// Karta typu „folder" je jednoduchý kontejner pro odkazy na jiné karty. Sama nemá podkarty,
+// nemá závislosti specifické pro typ — chová se jako běžná karta + má pole `folder.cardIds`.
+//
+// Ujistí, že karta má strukturu folder. Volat před manipulací s cardIds.
+function ensureCardFolder(card) {
+  if (!card.folder) card.folder = { cardIds: [] };
+  if (!Array.isArray(card.folder.cardIds)) card.folder.cardIds = [];
+  return card.folder;
+}
+// Převede běžnou kartu na složku. Cyklus zachytí (nelze převést, pokud už je v jiné složce).
+// Vrací true při úspěchu, false pokud je karta již složkou nebo cíl je sama sebou.
+function convertCardToFolder(cardId) {
+  const c = getCard(cardId); if (!c) return false;
+  if (c.cardType === "folder") return false;
+  c.cardType = "folder";
+  ensureCardFolder(c);
+  c.updatedAt = Date.now();
+  logActivity(c, "Převedeno na složku");
+  saveState();
+  return true;
+}
+// Vrátí složku zpět na běžnou kartu — uloží počet odkazů do logu, ale obsah cardIds vyhodí.
+function convertFolderToCard(cardId) {
+  const c = getCard(cardId); if (!c) return false;
+  if (c.cardType !== "folder") return false;
+  const count = (c.folder && c.folder.cardIds || []).length;
+  c.cardType = "normal";
+  c.folder = null;
+  c.updatedAt = Date.now();
+  logActivity(c, "Složka převedena zpět na kartu" + (count ? " (zahozeno " + count + " odkazů)" : ""));
+  saveState();
+  return true;
+}
+// Přidá kartu do složky. Vrátí false pokud:
+//   - target není složka
+//   - karta už je ve složce
+//   - by to způsobilo cyklus (folderA obsahuje folderB obsahuje folderA)
+function addCardToFolder(folderId, cardId) {
+  const folder = getCard(folderId);
+  const card = getCard(cardId);
+  if (!folder || !card) return false;
+  if (folder.cardType !== "folder") return false;
+  if (folderId === cardId) return false;
+  ensureCardFolder(folder);
+  if (folder.folder.cardIds.includes(cardId)) return false;
+  // Detekce cyklu: pokud přidávaná karta je sama složka, projdi její strom a zkontroluj
+  // jestli někde dole nezahrnuje folderId
+  if (card.cardType === "folder") {
+    const visited = new Set();
+    function containsRecursively(fId) {
+      if (visited.has(fId)) return false;
+      visited.add(fId);
+      const f = getCard(fId);
+      if (!f || !f.folder) return false;
+      const ids = f.folder.cardIds || [];
+      if (ids.includes(folderId)) return true;
+      return ids.some(id => {
+        const child = getCard(id);
+        return child && child.cardType === "folder" && containsRecursively(id);
+      });
+    }
+    if (containsRecursively(cardId)) return false;
+  }
+  folder.folder.cardIds.push(cardId);
+  folder.updatedAt = Date.now();
+  logActivity(folder, "Přidán odkaz na kartu „" + card.title + "“");
+  saveState();
+  return true;
+}
+function removeCardFromFolder(folderId, cardId) {
+  const folder = getCard(folderId);
+  if (!folder || folder.cardType !== "folder") return false;
+  ensureCardFolder(folder);
+  const idx = folder.folder.cardIds.indexOf(cardId);
+  if (idx < 0) return false;
+  folder.folder.cardIds.splice(idx, 1);
+  folder.updatedAt = Date.now();
+  const card = getCard(cardId);
+  logActivity(folder, "Odebrán odkaz na kartu „" + (card ? card.title : "(smazaná)") + "“");
+  saveState();
+  return true;
+}
+// Vrátí všechny karty obsažené ve složce (skipne smazané a tedy nedostupné odkazy).
+function getFolderCards(folderId) {
+  const folder = getCard(folderId);
+  if (!folder || folder.cardType !== "folder" || !folder.folder) return [];
+  return (folder.folder.cardIds || [])
+    .map(id => getCard(id))
+    .filter(c => c && !c.deleted);
 }
 
 // ============ ČASOVAČE ============
@@ -5409,10 +5587,11 @@ function renderCard(card, list, position) {
   }
   // title (skip if shown in cover)
   if (!(eff.cover && eff.cover.full && eff.cover.value)) {
-    // Oblíbené karty mají hvězdičku na začátku názvu (pro vizuální rozpoznání ve čtečce je aria-label karty
-    // doplněn v cardAriaLabel o zmínku "oblíbená").
+    // Oblíbené karty mají hvězdičku, složky mají ikonu složky. Obojí slouží i jako rychlá vizuální
+    // identifikace typu (čtečka má aria-label rozšířený v cardAriaLabel).
     const favMark = eff.favorite ? "⭐ " : "";
-    node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + favMark + eff.title));
+    const folderMark = eff.cardType === "folder" ? "📁 " : "";
+    node.appendChild(el("div", { class:"card-title" }, (isMirror ? "↪ " : "") + favMark + folderMark + eff.title));
   }
   // meta
   const meta = el("div", { class:"card-meta" });
@@ -5587,6 +5766,10 @@ function openRelationsPopup(card) {
 function cardAriaLabel(card, eff) {
   const parts = [eff.title];
   if (eff.favorite) parts.push("oblíbená");
+  if (eff.cardType === "folder") {
+    const cnt = (eff.folder && eff.folder.cardIds || []).length;
+    parts.push("složka, " + cnt + " " + (cnt === 1 ? "karta" : cnt < 5 ? "karty" : "karet"));
+  }
   if (eff.completed) parts.push("hotovo");
   if (eff.dueDate) {
     const days = daysFromNow(eff.dueDate);
@@ -6305,6 +6488,292 @@ function openIframeModal(attachment, card) {
   announce("Otevřena iframe příloha. Esc nebo tlačítko Zavřít pro návrat.");
 }
 
+// Detail karty typu „složka" — minimalistické UI bez atributů běžných karet (termín, štítky, podkarty, čas, …).
+// Obsahuje pouze:
+//   - Hlavičku se statistikami: celkem karet / hotových / %
+//   - Seznam odkazů na karty ve složce + tlačítko pro přidání
+//   - Vlastní komentáře
+//   - Agregované komentáře z karet ve složce
+// Cíl: složka je *jen* organizační kontejner. Když uživatel chce komplexní práci s atributy,
+// převede ji zpátky na běžnou kartu.
+function openFolderDetail(real, board, list) {
+  const body = el("div", { class:"folder-detail" });
+
+  // ----- Hlavička: statistiky složky -----
+  const headerSec = el("section", { "aria-label": "Statistiky složky", class: "folder-stats-section" });
+  // Statistiky se přepočítávají při každé změně (přidání/odebrání karet, hotová karta atd.).
+  // Odděleno do funkce, aby se daly volat z více míst (refresh po akci, init).
+  const statsRow = el("div", { class:"folder-stats" });
+  headerSec.appendChild(statsRow);
+  body.appendChild(headerSec);
+
+  // ----- Seznam karet ve složce -----
+  const contentSec = el("section", { "aria-label": "Obsah složky" });
+  const contentHeader = el("h3", {}, "Obsah složky");
+  contentSec.appendChild(contentHeader);
+  const folderList = el("div", { class:"folder-content-list" });
+  contentSec.appendChild(folderList);
+  // Tlačítko pro přidání karty
+  const addToFolderBtn = el("button", {
+    class: "primary",
+    "aria-label": "Přidat existující kartu do této složky",
+    onclick: async () => {
+      const pickedId = await pickCard();
+      if (!pickedId) return;
+      const ok = addCardToFolder(real.id, pickedId);
+      if (!ok) {
+        const picked = getCard(pickedId);
+        if (!picked) toast("Karta nenalezena.", "error");
+        else if (pickedId === real.id) toast("Nelze přidat sebe sama.", "warning");
+        else if ((real.folder?.cardIds || []).includes(pickedId)) toast("Karta už je ve složce.", "info");
+        else toast("Nelze přidat — vytvořil by se cyklus.", "error");
+        return;
+      }
+      sound.add();
+      refreshFolderContent();
+      announce("Karta přidána do složky.");
+    },
+  }, "+ Přidat kartu do složky");
+  contentSec.appendChild(addToFolderBtn);
+  body.appendChild(contentSec);
+
+  // ----- Vlastní komentáře složky -----
+  const cmSection = el("section", { "aria-label": T("comments") });
+  cmSection.appendChild(el("h3", {}, T("comments")));
+  const cmList = el("div", { class:"comments" });
+  function refreshComments() {
+    clear(cmList);
+    const cms = (real.comments || []).slice().reverse();
+    if (!cms.length) {
+      cmList.appendChild(el("div", { class:"muted small" }, "Žádné komentáře."));
+      return;
+    }
+    cms.forEach(c => {
+      const item = el("div", { class:"comment-item" });
+      const meta = el("div", { class:"comment-meta muted" }, formatDate(c.createdAt, true));
+      const text = el("div", { class:"comment-text md-rendered", html: mdRender(c.text) });
+      item.append(meta, text);
+      cmList.appendChild(item);
+    });
+  }
+  refreshComments();
+  cmSection.appendChild(cmList);
+  const cmInput = el("textarea", { rows:"2", placeholder: T("addComment"), "aria-label": T("addComment") });
+  const cmHint = el("div", { class:"muted small" }, "Markdown. Ctrl+Enter odešle komentář.");
+  const cmSubmit = () => {
+    if (!cmInput.value.trim()) return;
+    addComment(real.id, cmInput.value.trim());
+    cmInput.value = "";
+    refreshComments();
+    sound.add();
+    announce("Komentář přidán.");
+  };
+  cmInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); cmSubmit(); }
+  });
+  const cmBtn = el("button", { class:"primary", onclick: cmSubmit }, T("addComment"));
+  cmSection.append(cmInput, cmHint, cmBtn);
+  body.appendChild(cmSection);
+
+  // ----- Agregované komentáře z karet ve složce -----
+  const aggSec = el("section", { "aria-label": "Komentáře z karet ve složce" });
+  const aggHeader = el("h3", {}, "💬 Komentáře z karet ve složce");
+  aggSec.appendChild(aggHeader);
+  const aggList = el("div", { class:"comments folder-aggregated-comments" });
+  aggSec.appendChild(aggList);
+  body.appendChild(aggSec);
+
+  // ----- Refresh: stats + obsah + agregované komentáře -----
+  function refreshFolderContent() {
+    // Stats
+    clear(statsRow);
+    const cards = getFolderCards(real.id);
+    const total = cards.length;
+    const done = cards.filter(c => c.completed).length;
+    const open = total - done;
+    const pct = total > 0 ? Math.round(done * 100 / total) : 0;
+    statsRow.appendChild(el("span", { class:"folder-stat-chip" },
+      "📁 Celkem ", el("strong", {}, String(total)),
+      " " + (total === 1 ? "karta" : total < 5 ? "karty" : "karet")));
+    if (total > 0) {
+      const cls = done === total ? "folder-stat-chip success" : "folder-stat-chip";
+      statsRow.appendChild(el("span", { class: cls },
+        "✓ Hotových ", el("strong", {}, String(done)), " (" + pct + " %)"));
+      if (open > 0) {
+        statsRow.appendChild(el("span", { class:"folder-stat-chip warning" },
+          "Nedokončených ", el("strong", {}, String(open))));
+      }
+    }
+    // Seznam karet
+    clear(folderList);
+    const folder = ensureCardFolder(real);
+    // Ošetři osamocené odkazy (na smazané karty)
+    const validIds = new Set(cards.map(c => c.id));
+    const orphans = (folder.cardIds || []).filter(id => !validIds.has(id));
+    if (orphans.length) {
+      const warn = el("div", { class:"folder-orphan-warn" });
+      warn.appendChild(el("span", { class:"muted small" },
+        orphans.length + " odkaz" + (orphans.length === 1 ? "" : "ů") + " na smazané karty. "));
+      warn.appendChild(el("button", {
+        class: "ghost small",
+        onclick: () => {
+          folder.cardIds = folder.cardIds.filter(id => validIds.has(id));
+          saveState();
+          refreshFolderContent();
+          sound.click();
+        },
+      }, "Vyčistit"));
+      folderList.appendChild(warn);
+    }
+    if (!cards.length) {
+      folderList.appendChild(el("div", { class:"muted small" }, "Složka je prázdná."));
+    } else {
+      cards.forEach(c => {
+        const item = el("div", { class:"folder-content-item" });
+        const line1 = el("div", { class:"folder-content-line" });
+        const status = c.completed ? "✓ " : "";
+        const link = el("button", {
+          class: "link-btn",
+          onclick: () => { m.close(); openCardDetail(c.id); },
+        }, status + c.title);
+        line1.appendChild(link);
+        // Termín (pokud je)
+        if (c.dueDate) {
+          const days = daysFromNow(c.dueDate);
+          let dueTxt, cls;
+          if (c.completed) { dueTxt = "✓ " + formatDate(c.dueDate); cls = "muted"; }
+          else if (days < 0) { dueTxt = "⚠ po termínu"; cls = "danger-text"; }
+          else if (days === 0) { dueTxt = "📅 dnes"; cls = "warning-text"; }
+          else if (days === 1) { dueTxt = "📅 zítra"; cls = "warning-text"; }
+          else if (days <= 7) { dueTxt = "📅 za " + days + " dní"; cls = "info-text"; }
+          else { dueTxt = "📅 " + formatDate(c.dueDate); cls = "muted"; }
+          line1.appendChild(el("span", { class: cls + " small" }, " " + dueTxt));
+        }
+        // Tlačítko odebrat ze složky
+        const rm = el("button", {
+          class: "ghost small",
+          "aria-label": "Odebrat „" + c.title + "“ ze složky",
+          onclick: () => {
+            removeCardFromFolder(real.id, c.id);
+            refreshFolderContent();
+            sound.remove();
+          },
+        }, "×");
+        line1.appendChild(rm);
+        item.appendChild(line1);
+        // Pomocný řádek: nevyřízené podkarty
+        const subs = getSubcards(c.id);
+        if (subs.length) {
+          const subsOpen = subs.filter(s => !s.completed).length;
+          const line2 = el("div", { class:"folder-content-meta muted small" });
+          if (subsOpen > 0) {
+            line2.textContent = "↳ " + subsOpen + " nevyřízených podkaret z " + subs.length;
+          } else {
+            line2.textContent = "↳ Všechny podkarty hotové (" + subs.length + ")";
+          }
+          item.appendChild(line2);
+        }
+        folderList.appendChild(item);
+      });
+    }
+    // Header s počtem
+    contentHeader.textContent = "Obsah složky (" + total + ")";
+    // Agregované komentáře
+    const allComments = [];
+    cards.forEach(c => {
+      (c.comments || []).forEach(cm => {
+        allComments.push({ cardId: c.id, cardTitle: c.title, createdAt: cm.createdAt, text: cm.text });
+      });
+    });
+    allComments.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    aggHeader.textContent = "💬 Komentáře z karet ve složce (" + allComments.length + ")";
+    clear(aggList);
+    if (!allComments.length) {
+      aggList.appendChild(el("div", { class:"muted small" }, "Žádné komentáře na kartách v této složce."));
+    } else {
+      const limit = 100;
+      const display = allComments.slice(0, limit);
+      if (allComments.length > limit) {
+        aggList.appendChild(el("div", { class:"muted small" },
+          "Zobrazeno " + limit + " nejnovějších z " + allComments.length + " komentářů."));
+      }
+      display.forEach(cm => {
+        const item = el("div", { class:"comment-item" });
+        const meta = el("div", { class:"comment-meta muted" });
+        meta.appendChild(el("span", {}, formatDate(cm.createdAt, true) + " · "));
+        meta.appendChild(el("button", {
+          class: "link-btn small",
+          onclick: () => { m.close(); openCardDetail(cm.cardId); },
+          title: "Otevřít kartu „" + cm.cardTitle + "“",
+        }, cm.cardTitle));
+        const text = el("div", { class:"comment-text md-rendered", html: mdRender(cm.text) });
+        item.append(meta, text);
+        aggList.appendChild(item);
+      });
+    }
+  }
+  refreshFolderContent();
+
+  // ----- Footer akce: přejmenovat, otevřít nástěnku, zrušit složku, smazat -----
+  const renameBtn = el("button", { class:"ghost", onclick: () => {
+    const nm = prompt("Nový název složky:", real.title);
+    if (!nm || nm.trim() === real.title) return;
+    setCardField(real.id, "title", nm.trim());
+    saveState();
+    titleSpan.textContent = real.title;
+    sound.click();
+  } }, "Přejmenovat");
+  const goToBoardBtn = el("button", {
+    class: "ghost",
+    onclick: () => {
+      m.close();
+      state.ui.currentView = { type:"board", boardId: board.id, viewType: state.ui.currentView.viewType || "board" };
+      state.ui.focusListId = null;
+      saveStateUi();
+      renderAll();
+      setTimeout(() => {
+        const listHead = document.getElementById("lname_" + list.id);
+        if (listHead) listHead.scrollIntoView({ behavior:"smooth", block:"start" });
+      }, 100);
+    },
+  }, "📋 " + board.name + " / " + list.name);
+  const unfolderBtn = el("button", { class:"ghost", onclick: async () => {
+    const cnt = (real.folder?.cardIds || []).length;
+    const ok = await confirm2(
+      cnt > 0
+        ? `Zrušit složku? Bude smazáno ${cnt} odkazů (samotné karty zůstanou).`
+        : "Zrušit složku?",
+      { danger: cnt > 0 }
+    );
+    if (!ok) return;
+    convertFolderToCard(real.id);
+    sound.click();
+    m.close();
+    openCardDetail(real.id);  // znovu otevřít už jako běžnou kartu
+  } }, "📁 Zrušit složku");
+  const delBtn = el("button", { class:"ghost danger", onclick: async () => {
+    if (!await confirm2("Smazat tuto složku? Karty uvnitř zůstanou, jen ztratí své odkazy.", { danger:true })) return;
+    deleteCard(real.id);
+    sound.remove();
+    m.close();
+    renderAll();
+  } }, T("delete"));
+
+  const titleSpan = el("span", { class:"card-title-display" }, "📁 " + real.title);
+  const m = openModal({
+    title: titleSpan,
+    body,
+    size: "large",
+    footer: [
+      renameBtn,
+      goToBoardBtn,
+      unfolderBtn,
+      delBtn,
+      el("button", { class:"primary", onclick: () => m.close() }, T("close")),
+    ],
+  });
+}
+
 function openCardDetail(cardId) {
   const card = getCard(cardId);
   if (!card) return;
@@ -6312,6 +6781,12 @@ function openCardDetail(cardId) {
   const board = getBoard(real.boardId);
   const list = getList(real.listId);
   if (!board || !list) return;
+
+  // Karta typu „složka" má vlastní zjednodušený detail — jen seznam odkazů, statistiky a komentáře.
+  // Žádné termíny, štítky, podkarty, akce typu Pomodoro atd. — to se ke složce nehodí.
+  if (real.cardType === "folder") {
+    return openFolderDetail(real, board, list);
+  }
 
   // Nadpis karty = čistý text (bez editace). Přejmenování se dělá z Akcí (tlačítko níže).
   const titleDisplay = el("span", { class:"card-title-display" }, real.title);
@@ -6469,6 +6944,16 @@ function openCardDetail(cardId) {
     // 9) Archivovaná
     if (real.archived) {
       chips.push(el("span", { class:"summary-chip warning" }, "📦 Archivovaná"));
+    }
+    // 10) Složka — počet odkazů + nedokončené v rámci složky
+    if (real.cardType === "folder") {
+      const fCards = getFolderCards(real.id);
+      const fOpen = fCards.filter(c => !c.completed).length;
+      const fDone = fCards.length - fOpen;
+      const cls = fCards.length === 0 ? "summary-chip" : (fOpen === 0 ? "summary-chip success" : "summary-chip");
+      chips.push(el("span", { class: cls, title: "Karet ve složce: " + fCards.length + " (" + fDone + " hotových)" },
+        "📁 Složka — " + fCards.length + " " + (fCards.length === 1 ? "karta" : fCards.length < 5 ? "karty" : "karet")
+        + (fOpen > 0 && fCards.length > 1 ? " (" + fOpen + " nedokončeno)" : "")));
     }
     // Pokud nic, ukázat „Bez metrik" — krátká hláška ať uživatel ví, že je tu prázdno (ne render bug)
     if (!chips.length) {
@@ -7691,7 +8176,32 @@ function openCardDetail(cardId) {
       if (typeof refreshActivity === "function") refreshActivity();
     },
   }, real.favorite ? "⭐ Oblíbené (odebrat)" : "☆ Označit jako oblíbené");
-  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, bumpBtn, favBtn, reportBtn, delBtn);
+  // Tlačítko Převést na složku / zrušit složku — záleží na aktuálním typu karty.
+  // Složka je jednoduchý kontejner pro odkazy na jiné karty (vlastní obsah pak vidíš v sekci „Obsah složky").
+  const folderBtn = el("button", {
+    class: "ghost",
+    "aria-label": real.cardType === "folder" ? "Zrušit složku (vrátí na běžnou kartu)" : "Převést kartu na složku",
+    onclick: async () => {
+      if (real.cardType === "folder") {
+        const cnt = (real.folder && real.folder.cardIds || []).length;
+        const ok = await confirm2(
+          cnt > 0
+            ? `Zrušit složku? Bude smazáno ${cnt} odkazů (samotné karty zůstanou).`
+            : "Zrušit složku?",
+          { danger: cnt > 0 }
+        );
+        if (!ok) return;
+        convertFolderToCard(real.id);
+      } else {
+        convertCardToFolder(real.id);
+      }
+      sound.click();
+      // Zavřít a znovu otevřít, ať se UI správně přerendruje (sekce "Obsah složky" závisí na typu karty)
+      m.close();
+      openCardDetail(real.id);
+    },
+  }, real.cardType === "folder" ? "📁 Zrušit složku" : "📁 Převést na složku");
+  actBox.append(renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn, focusBtn, pomoBtn, bumpBtn, favBtn, folderBtn, reportBtn, delBtn);
   right.appendChild(actBox);
 
   // --- Ruční automatizace: tlačítka pro každé manual pravidlo aktivní na této nástěnce ---
