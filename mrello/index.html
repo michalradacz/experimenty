@@ -566,6 +566,31 @@ header.app-header h1 {
   top: 0;
   z-index: 1;
 }
+/* Skupina záznamů (stejná karta v rámci jedné minuty) */
+.activity-group {
+  padding: 4px 0;
+  margin-bottom: 2px;
+}
+.activity-group-head {
+  font-size: 13px;
+}
+.activity-card-name {
+  font-weight: 500;
+}
+.activity-group-single {
+  margin-left: 12px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.activity-group-list {
+  margin: 2px 0 2px 24px;
+  padding: 0;
+  list-style: disc;
+}
+.activity-group-list li {
+  font-size: 13px;
+  padding: 1px 0;
+}
 /* Smart-list jako kontejner pro řádkové karty */
 .smart-list {
   display: flex;
@@ -2318,7 +2343,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-global-activity-view";
+const MRELLO_BUILD = "2026-04-23-comment-text-in-activity-512";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3995,9 +4020,28 @@ function newCard(listId, title, opts={}) {
   return card;
 }
 function logActivity(card, msg) {
-  card.activity.unshift({ id: uid("a_"), action: msg, timestamp: Date.now() });
+  if (!card.activity) card.activity = [];
+  const now = Date.now();
+  // Deduplikace: pokud nejnovější záznam má stejnou akci a stejnou minutu (zaokrouhleno),
+  // nepřidávat duplicitu. Tohle se stávalo třeba při toggle hotovo/nehotovo a okamžitém vrácení,
+  // nebo při hromadných operacích s rychlým renderem.
+  const last = card.activity[0];
+  if (last) {
+    const lastMsg = last.action || last.msg || "";
+    const lastTs = last.timestamp || last.at || 0;
+    // Stejná minuta (60_000 ms) — porovnáváme zaokrouhlené minuty, ne difference, ať
+    // nezachytíme záznamy přes minutovou hranici (např. 12:00:30 + 12:01:10 = ne dedupe)
+    const sameMinute = Math.floor(lastTs / 60000) === Math.floor(now / 60000);
+    if (sameMinute && lastMsg === msg) {
+      // Aktualizujme timestamp na novější (uživatel ví, že akce se opakovala) ale nepřidávejme duplicitu
+      last.timestamp = now;
+      card.updatedAt = now;
+      return;
+    }
+  }
+  card.activity.unshift({ id: uid("a_"), action: msg, timestamp: now });
   card.activity = card.activity.slice(0, 200);
-  card.updatedAt = Date.now();
+  card.updatedAt = now;
 }
 function moveCard(cardId, toListId, toIndex) {
   const card = getCard(cardId);
@@ -4577,10 +4621,17 @@ function toggleCardMember(cardId, memberId) {
 }
 function addComment(cardId, text) {
   const c = getCard(cardId); if (!c || !text.trim()) return;
-  c.comments.unshift({ id: uid("cm_"), text: text.trim(), createdAt: Date.now() });
-  logActivity(c, T("activityCommented"));
+  const txt = text.trim();
+  c.comments.unshift({ id: uid("cm_"), text: txt, createdAt: Date.now() });
+  // Do aktivity zaneseme i samotný text komentáře, ať je vidět v Aktivitě nástěnky a v Celkové
+  // aktivitě. Pro velmi dlouhé komentáře oříznem na 512 znaků (pak „…“) — kompromis mezi
+  // přehledností a tím, aby uživatel viděl o čem ten komentář byl.
+  // Newliny nahradíme mezerou, aby aktivita byla na jeden řádek.
+  const oneLine = txt.replace(/\s+/g, " ");
+  const short = oneLine.length > 512 ? oneLine.slice(0, 509) + "…" : oneLine;
+  logActivity(c, T("activityCommented") + ": „" + short + "“");
   saveState();
-  runAutomationsFor("card.commentAdded", { card: c, commentText: text.trim() });
+  runAutomationsFor("card.commentAdded", { card: c, commentText: txt });
 }
 function addChecklist(cardId, name) {
   const c = getCard(cardId); if (!c) return null;
@@ -5508,27 +5559,53 @@ function openGlobalActivityView() {
       sec.appendChild(el("h3", { class:"global-activity-day-header" },
         dayLabel(iso) + " ", el("span", { class:"muted small" },
           "(" + items.length + " záznam" + (items.length === 1 ? "" : items.length < 5 ? "y" : "ů") + ")")));
-      const dayList = el("div", { class:"activity-list" });
+      // V rámci dne seskupíme záznamy podle (cardId + HH:MM) — když člověk během minuty udělal víc
+      // akcí na stejné kartě, zobrazí se jako jeden blok s hlavičkou + odrážky pod sebou.
+      // Klíč: cardId + "@" + HH:MM. Map zachovává pořadí, takže respektuje aktuální sort.
+      const groups = new Map();
       items.forEach(a => {
-        const item = el("div", { class:"activity-item" });
         const d = new Date(a.timestamp);
-        const time = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-        item.appendChild(el("span", { class:"muted small" }, time + " · "));
-        item.appendChild(el("span", { class:"muted small" },
+        const hhmm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        const key = a.cardId + "@" + hhmm;
+        if (!groups.has(key)) {
+          groups.set(key, { time: hhmm, cardEntry: a, entries: [] });
+        }
+        groups.get(key).entries.push(a);
+      });
+      const dayList = el("div", { class:"activity-list" });
+      for (const grp of groups.values()) {
+        const a = grp.cardEntry;  // referenční záznam pro metadata karty
+        const block = el("div", { class:"activity-group" });
+        // Hlavička skupiny: čas + nástěnka/sloupec + karta (klikatelná)
+        const head = el("div", { class:"activity-group-head" });
+        head.appendChild(el("span", { class:"muted small" }, grp.time + " · "));
+        head.appendChild(el("span", { class:"muted small" },
           a.boardName + (a.listName ? " / " + a.listName : "") + " · "));
         const cardLabel = a.cardTitle + (a.cardDeleted ? " (smazaná)" : a.cardArchived ? " (archivovaná)" : "");
         if (a.cardDeleted) {
-          item.appendChild(el("span", {}, cardLabel));
+          head.appendChild(el("span", { class:"activity-card-name" }, cardLabel));
         } else {
-          item.appendChild(el("button", {
-            class: "link-btn",
+          head.appendChild(el("button", {
+            class: "link-btn activity-card-name",
             onclick: () => { m.close(); openCardDetail(a.cardId); },
             title: "Otevřít kartu",
           }, cardLabel));
         }
-        item.appendChild(el("span", {}, " — " + a.action));
-        dayList.appendChild(item);
-      });
+        block.appendChild(head);
+        // Pokud je v skupině jen jeden záznam, zobrazíme ho jako inline jednořádkový text
+        // (bez odrážky — vypadalo by to zbytečně).
+        if (grp.entries.length === 1) {
+          block.appendChild(el("div", { class:"activity-group-single" }, "— " + grp.entries[0].action));
+        } else {
+          // Více záznamů → odrážky pod sebou
+          const ul = el("ul", { class:"activity-group-list" });
+          grp.entries.forEach(e => {
+            ul.appendChild(el("li", {}, e.action));
+          });
+          block.appendChild(ul);
+        }
+        dayList.appendChild(block);
+      }
       sec.appendChild(dayList);
       listWrap.appendChild(sec);
     }
