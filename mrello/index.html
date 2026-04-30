@@ -551,6 +551,21 @@ header.app-header h1 {
   margin-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+/* Globální aktivita — seskupení po dnech */
+.global-activity-day {
+  margin-bottom: 16px;
+}
+.global-activity-day-header {
+  margin: 0 0 6px 0;
+  padding: 4px 8px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
 /* Smart-list jako kontejner pro řádkové karty */
 .smart-list {
   display: flex;
@@ -640,14 +655,26 @@ header.app-header h1 {
 /* Focus mode na seznam — jeden sloupec přes celou šířku, ostatní skryty.
    Při zapnutém focus modu skryjeme i hlavní menu, navigaci a postranní panel,
    aby se uživatel maximálně soustředil na obsah jednoho seznamu. */
-body.body-focus-list .app-header,
+body.body-focus-list header.app-header,
 body.body-focus-list .app-nav,
-body.body-focus-list .app-sidebar {
+body.body-focus-list aside.sidebar,
+body.body-focus-list #sidebar {
   display: none !important;
 }
 body.body-focus-list main.app-main {
   margin-left: 0 !important;
   padding-top: 0 !important;
+  width: 100% !important;
+}
+.icon-btn.focus-active {
+  background: var(--primary, #0a7);
+  color: white;
+  border-color: var(--primary, #0a7);
+  font-weight: 600;
+  padding: 4px 10px;
+}
+.icon-btn.focus-active:hover {
+  background: #088a5d;
 }
 .focus-mode-bar {
   display: flex;
@@ -2263,6 +2290,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
     <button class="icon-btn" id="inboxBtn" title="Inbox (I)" data-i18n-title="inbox">In<span class="inbox-badge" id="inboxBadge" hidden aria-hidden="true">0</span></button>
     <button class="icon-btn" id="plannerBtn" title="Plánovač (P)" data-i18n-title="planner">Pl</button>
     <button class="icon-btn" id="stickyBtn" title="Poznámky (M vytvoří novou)" data-i18n-title="stickies">Lp</button>
+    <button class="icon-btn" id="globalActivityBtn" title="Celková aktivita všech nástěnek a karet">Ak</button>
     <button class="icon-btn" id="membersBtn" title="Členové" data-i18n-title="members">Čl</button>
     <button class="icon-btn" id="helpBtn" title="Nápověda (?)" data-i18n-title="help">?</button>
     <button class="icon-btn" id="settingsBtn" title="Nastavení" data-i18n-title="settings">Na</button>
@@ -2290,7 +2318,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-card-show-containing-folders";
+const MRELLO_BUILD = "2026-04-23-global-activity-view";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4183,6 +4211,12 @@ function convertCardToFolder(cardId) {
   if (c.cardType === "folder") return false;
   c.cardType = "folder";
   ensureCardFolder(c);
+  // Vyčistit pole, která se ke složce nehodí. Složka je organizační kontejner — nemá smysl mít
+  // u ní termín, členy, cover, sledování času.
+  c.dueDate = null;
+  c.startDate = null;
+  c.members = [];
+  c.cover = null;
   // Přidat 📁 přímo do názvu, ať je viditelné všude (frontpage, exporty, reporty, hromadné akce).
   // Idempotentní: pokud už tam je, nepřidávat znovu.
   if (!/^📁\s/.test(c.title || "")) {
@@ -4928,24 +4962,73 @@ async function openMoveCardDialog(cardId) {
 function openSetDueDialog(cardId) {
   const card = getCard(cardId);
   if (!card) return;
-  const inp = el("input", { type:"date", value: card.dueDate ? isoLocalDate(card.dueDate) : "", "aria-label": T("dueDate") });
+  // Textové pole s přirozeným jazykem (dnes, zítra, pondělí, 2d, 23.4.) — Michal preferuje
+  // tento formát všude, kde se nastavuje termín. Pro fallback k klasickému date pickeru
+  // přidáme i klasický date input vedle.
+  const txtInp = el("input", {
+    type: "text",
+    placeholder: "např. „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“",
+    "aria-label": "Termín přirozeným textem",
+    autocomplete: "off",
+    style: { width: "100%", marginBottom: "6px" },
+  });
+  const dateInp = el("input", {
+    type: "date",
+    value: card.dueDate ? isoLocalDate(card.dueDate) : "",
+    "aria-label": "Termín přesným datem (alternativa)",
+  });
+  const hint = el("div", { class:"muted small" },
+    "Aktuální termín: " + (card.dueDate ? formatDate(card.dueDate) : "(nenastaven)") + ".");
+  function doSet() {
+    const txt = txtInp.value.trim();
+    let parsed;
+    if (txt) {
+      const r = parseNaturalDate(txt);
+      if (!r) {
+        toast("Termín „" + txt + "“ nerozpoznán. Zkus „dnes“, „zítra“, „pondělí“, „2d“, „23.4.“.", "error", 5000);
+        sound.err();
+        return;
+      }
+      parsed = r.date;
+    } else if (dateInp.value) {
+      parsed = dateInp.value;
+    } else {
+      // Obě prázdná = odebrat termín
+      setCardField(card.id, "dueDate", null);
+      logActivity(card, T("activityDueRemoved"));
+      saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click();
+      announce("Termín odebrán.");
+      return;
+    }
+    setCardField(card.id, "dueDate", parsed);
+    logActivity(card, T("activityDueSet", formatDate(parsed)));
+    saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click();
+    announce("Termín nastaven na " + formatDate(parsed) + ".");
+  }
   const m = openModal({
     title: T("setDueShort") + " — „" + card.title + "“",
-    body: el("div", { class:"field-row" }, el("label", {}, T("dueDate")), inp),
+    body: el("div", {},
+      hint,
+      txtInp,
+      el("div", { class:"muted small", style:{ marginBottom:"4px" } }, "Nebo vyber datum:"),
+      dateInp,
+    ),
     footer: [
       el("button", { class:"ghost", onclick: () => m.close() }, T("cancel")),
-      el("button", { class:"danger", onclick: () => { setCardField(card.id, "dueDate", null); logActivity(card, T("activityDueRemoved")); saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click(); announce("Termín odebrán."); } }, T("delete")),
-      el("button", { class:"primary", onclick: () => {
-        if (!inp.value) return;
-        setCardField(card.id, "dueDate", inp.value);
-        logActivity(card, T("activityDueSet", formatDate(inp.value)));
+      el("button", { class:"danger", onclick: () => {
+        setCardField(card.id, "dueDate", null);
+        logActivity(card, T("activityDueRemoved"));
         saveState(); renderView(); m.close(); _refocusCard(cardId); sound.click();
-        announce("Termín nastaven na " + formatDate(inp.value));
-      } }, T("save")),
+        announce("Termín odebrán.");
+      } }, T("delete")),
+      el("button", { class:"primary", onclick: doSet }, T("save")),
     ],
     size:"small",
   });
-  setTimeout(() => inp.focus(), 50);
+  txtInp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); doSet(); }
+  });
+  setTimeout(() => txtInp.focus(), 50);
 }
 
 // Rychlý picker štítků pro fokusovanou kartu (samostatný modal).
@@ -5266,6 +5349,201 @@ function openBoardActivityView(board) {
   });
 }
 
+// Globální aktivita — agreguje záznamy ze VŠECH karet napříč všemi nástěnkami a workspace.
+// Seskupení podle dne, filtry (Vše / Plnění / Komentáře / Čas), časové filtry (Vše / 7 dní / 30 dní)
+// a přepínač řazení (nejnovější/nejstarší).
+function openGlobalActivityView() {
+  // Sběr všech záznamů aktivit ze všech karet
+  const all = [];
+  state.cards.forEach(card => {
+    (card.activity || []).forEach(a => {
+      const board = getBoard(card.boardId);
+      const list = getList(card.listId);
+      all.push({
+        timestamp: a.timestamp || a.at || 0,
+        action: a.action || a.msg || "",
+        cardId: card.id,
+        cardTitle: card.title,
+        cardArchived: !!card.archived,
+        cardDeleted: !!card.deleted,
+        boardId: card.boardId,
+        boardName: board ? board.name : "(neznámá nástěnka)",
+        listName: list ? list.name : "",
+      });
+    });
+  });
+  // Stav UI — neukládá se do dat, jen v lifecyklu modalu
+  let typeFilter = "all";
+  let timeFilter = "30d";
+  let sortDesc = true;
+  function classify(action) {
+    const t = (action || "");
+    if (/(vytvořena|hotovo|dokončen|odznačen|odznačena|znovuotevřena)/i.test(t)) return "progress";
+    if (/(komentář|komentován)/i.test(t)) return "comments";
+    if (/(časovač|pomodoro|stráven|čas|záznam času|hodin)/i.test(t)) return "time";
+    return "other";
+  }
+  function getTimeCutoff() {
+    const now = Date.now();
+    const day = 86400000;
+    if (timeFilter === "today") {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return start.getTime();
+    }
+    if (timeFilter === "7d") return now - 7 * day;
+    if (timeFilter === "30d") return now - 30 * day;
+    return 0;
+  }
+  const body = el("div", { class:"global-activity" });
+  const tb = el("div", { class:"board-activity-toolbar" });
+  // Typ filtr
+  const typeBtns = {};
+  [["all","Vše"], ["progress","Plnění"], ["comments","Komentáře"], ["time","Čas"]].forEach(([key, label]) => {
+    const btn = el("button", {
+      class: typeFilter === key ? "primary" : "ghost",
+      "aria-pressed": typeFilter === key ? "true" : "false",
+      onclick: () => { typeFilter = key; refreshTypeBtns(); render(); },
+    }, label);
+    typeBtns[key] = btn;
+    tb.appendChild(btn);
+  });
+  function refreshTypeBtns() {
+    Object.entries(typeBtns).forEach(([key, btn]) => {
+      const active = typeFilter === key;
+      btn.classList.toggle("primary", active);
+      btn.classList.toggle("ghost", !active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+  tb.appendChild(el("span", { style:{ width:"12px" } }));
+  // Čas filtr
+  const timeBtns = {};
+  [["today","Dnes"], ["7d","7 dní"], ["30d","30 dní"], ["all","Vše"]].forEach(([key, label]) => {
+    const btn = el("button", {
+      class: timeFilter === key ? "primary" : "ghost",
+      "aria-pressed": timeFilter === key ? "true" : "false",
+      onclick: () => { timeFilter = key; refreshTimeBtns(); render(); },
+    }, label);
+    timeBtns[key] = btn;
+    tb.appendChild(btn);
+  });
+  function refreshTimeBtns() {
+    Object.entries(timeBtns).forEach(([key, btn]) => {
+      const active = timeFilter === key;
+      btn.classList.toggle("primary", active);
+      btn.classList.toggle("ghost", !active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+  tb.appendChild(el("span", { style:{ flex:"1" } }));
+  // Tlačítko řazení
+  const sortBtn = el("button", { class:"ghost",
+    "aria-label": "Přepnout řazení podle data",
+    onclick: () => {
+      sortDesc = !sortDesc;
+      sortBtn.textContent = sortDesc ? "↓ Nejnovější první" : "↑ Nejstarší první";
+      render();
+      announce(sortDesc ? "Řazeno od nejnovějších." : "Řazeno od nejstarších.");
+    },
+  }, sortDesc ? "↓ Nejnovější první" : "↑ Nejstarší první");
+  tb.appendChild(sortBtn);
+  body.appendChild(tb);
+  const listWrap = el("div", { class:"global-activity-results" });
+  body.appendChild(listWrap);
+  function dayKey(ts) {
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return y + "-" + mo + "-" + da;
+  }
+  function dayLabel(iso) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const yest = new Date(today.getTime() - 86400000);
+    const todayIso = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
+    const yestIso = yest.getFullYear() + "-" + String(yest.getMonth()+1).padStart(2,"0") + "-" + String(yest.getDate()).padStart(2,"0");
+    if (iso === todayIso) return "Dnes (" + formatDate(iso) + ")";
+    if (iso === yestIso) return "Včera (" + formatDate(iso) + ")";
+    return formatDate(iso);
+  }
+  function render() {
+    clear(listWrap);
+    let filtered = all.slice();
+    const cutoff = getTimeCutoff();
+    if (cutoff > 0) filtered = filtered.filter(a => a.timestamp >= cutoff);
+    if (typeFilter !== "all") {
+      filtered = filtered.filter(a => classify(a.action) === typeFilter);
+    }
+    filtered.sort((a, b) => sortDesc ? (b.timestamp - a.timestamp) : (a.timestamp - b.timestamp));
+    const limit = 1000;
+    const limited = filtered.slice(0, limit);
+    const filterLabels = [];
+    if (typeFilter !== "all") {
+      const lbl = ({progress:"Plnění", comments:"Komentáře", time:"Čas"})[typeFilter];
+      if (lbl) filterLabels.push("typ: " + lbl);
+    }
+    if (timeFilter !== "all") {
+      const lbl = ({today:"dnes", "7d":"posledních 7 dní", "30d":"posledních 30 dní"})[timeFilter];
+      if (lbl) filterLabels.push("období: " + lbl);
+    }
+    const summary = limited.length === filtered.length
+      ? `Zobrazeno ${limited.length} záznamů`
+      : `Zobrazeno ${limit} z ${filtered.length} záznamů`;
+    listWrap.appendChild(el("p", { class:"muted small" },
+      summary + (filterLabels.length ? " (" + filterLabels.join(", ") + ")" : "") + "."));
+    if (!limited.length) {
+      listWrap.appendChild(el("p", { class:"muted" }, "Žádné záznamy odpovídající filtru."));
+      return;
+    }
+    // Seskupení podle dne — Map zachová pořadí (sortováno výše)
+    const byDay = new Map();
+    limited.forEach(a => {
+      const k = dayKey(a.timestamp);
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(a);
+    });
+    for (const [iso, items] of byDay) {
+      const sec = el("section", { class:"global-activity-day", "aria-label": "Aktivita za " + iso });
+      sec.appendChild(el("h3", { class:"global-activity-day-header" },
+        dayLabel(iso) + " ", el("span", { class:"muted small" },
+          "(" + items.length + " záznam" + (items.length === 1 ? "" : items.length < 5 ? "y" : "ů") + ")")));
+      const dayList = el("div", { class:"activity-list" });
+      items.forEach(a => {
+        const item = el("div", { class:"activity-item" });
+        const d = new Date(a.timestamp);
+        const time = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        item.appendChild(el("span", { class:"muted small" }, time + " · "));
+        item.appendChild(el("span", { class:"muted small" },
+          a.boardName + (a.listName ? " / " + a.listName : "") + " · "));
+        const cardLabel = a.cardTitle + (a.cardDeleted ? " (smazaná)" : a.cardArchived ? " (archivovaná)" : "");
+        if (a.cardDeleted) {
+          item.appendChild(el("span", {}, cardLabel));
+        } else {
+          item.appendChild(el("button", {
+            class: "link-btn",
+            onclick: () => { m.close(); openCardDetail(a.cardId); },
+            title: "Otevřít kartu",
+          }, cardLabel));
+        }
+        item.appendChild(el("span", {}, " — " + a.action));
+        dayList.appendChild(item);
+      });
+      sec.appendChild(dayList);
+      listWrap.appendChild(sec);
+    }
+  }
+  render();
+  const m = openModal({
+    title: "Celková aktivita",
+    body,
+    size: "large",
+    footer: [
+      el("button", { class:"primary", onclick: () => m.close() }, T("close")),
+    ],
+  });
+}
+
 function renderBoardView(container, board) {
   // toolbar
   const tb = el("div", { class:"board-bar" });
@@ -5507,20 +5785,53 @@ function renderListColumn(board, list, idx) {
       : (openCount + " nedokončených, " + doneCount + " hotových"),
   }, headerText);
   head.appendChild(nameHeading);
-  // Tlačítko Focus — schová všechny ostatní seznamy a tento roztáhne na celou šířku.
-  // Cíl: soustředění na jeden seznam bez ruchu (cards visible normálně, klávesy/dnd fungují).
-  const focusBtn = el("button", {
+  // Tlačítko „+ Přidat kartu" hned za nadpisem — Michal preferuje tuto pozici, aby nemusel scrollovat
+  // dolů na konec seznamu kvůli přidání nové karty. Stejné tlačítko zůstává i dole na konci seznamu
+  // (záměrná duplikace).
+  const addCardTopBtn = el("button", {
     class: "icon-btn",
-    "aria-label": `Focus na seznam „${list.name}“ (skryje ostatní seznamy)`,
-    title: "Focus na tento seznam",
+    "aria-label": `Přidat kartu do seznamu „${list.name}“`,
+    title: "Přidat kartu",
     onclick: () => {
-      state.ui.focusListId = list.id;
-      saveStateUi();
-      renderView();
-      announce(`Focus na seznam „${list.name}“. Ostatní seznamy skryty.`);
+      // Volá stejnou inline-add funkci jako spodní tlačítko. Spoléháme se, že addArea/cardsEl
+      // existují v DOM (vytvoří se v dolní části sloupce při renderu).
+      const colEl = head.closest(".list");
+      if (!colEl) return;
+      const addArea = colEl.querySelector(".list-add");
+      const cardsEl = colEl.querySelector(".list-cards");
+      if (addArea && cardsEl) {
+        addCardInline(list, addArea, cardsEl);
+        // Scrollnout dolů na addArea, aby uživatel viděl input
+        setTimeout(() => addArea.scrollIntoView({ behavior:"smooth", block:"nearest" }), 50);
+      }
+    },
+  }, "+ Přidat kartu");
+  head.appendChild(addCardTopBtn);
+  // Tlačítko Focus — schová všechny ostatní seznamy a tento roztáhne na celou šířku.
+  // Pokud je už tento seznam focusován, místo zapnutí dáme tlačítko pro UKONČENÍ focusu —
+  // jinak by uživatel viděl dvě tlačítka „End focus" (v focus-baru i v hlavičce) na různých místech.
+  const isThisFocused = state.ui.focusListId === list.id;
+  const focusBtn = el("button", {
+    class: "icon-btn" + (isThisFocused ? " focus-active" : ""),
+    "aria-label": isThisFocused
+      ? `Ukončit focus na seznam „${list.name}“`
+      : `Focus na seznam „${list.name}“ (skryje ostatní seznamy)`,
+    title: isThisFocused ? "Ukončit focus" : "Focus na tento seznam",
+    onclick: () => {
+      if (isThisFocused) {
+        state.ui.focusListId = null;
+        saveStateUi();
+        renderView();
+        announce("Focus ukončen, zobrazeny všechny seznamy.");
+      } else {
+        state.ui.focusListId = list.id;
+        saveStateUi();
+        renderView();
+        announce(`Focus na seznam „${list.name}“. Ostatní seznamy skryty.`);
+      }
       sound.click();
     },
-  }, "⌖");
+  }, isThisFocused ? "✕ Ukončit focus" : "⌖");
   head.appendChild(focusBtn);
   // Tlačítko pro skrytí sloupce
   const hideBtn = el("button", {
@@ -7533,6 +7844,12 @@ function openFolderDetail(real, board, list) {
     title: titleSpan,
     body,
     size: "large",
+    onClose: () => {
+      // Po zavření detailu složky přerendruj nástěnku — počty, stavy karet ve složce
+      // mohly být změněné a musí se to projevit i venku.
+      renderView();
+      if (typeof updateSyncButtonLabel === "function") updateSyncButtonLabel();
+    },
     footer: [
       completeBtn,
       renameBtn,
@@ -9037,9 +9354,19 @@ function openCardDetail(cardId) {
       openCardDetail(real.id);
     },
   }, real.cardType === "resource" ? "📚 Zrušit zdroj" : "📚 Převést na zdroj");
+  // Tlačítko Termín — otevře dialog s textovým polem (přirozený jazyk) pro nastavení termínu.
+  // Pro typ resource skipnuto (zdroj nemá termín).
+  const dueBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Nastavit termín přirozeným textem",
+    onclick: () => {
+      m.close();
+      openSetDueDialog(real.id);
+    },
+  }, "📅 Termín");
   // Pomodoro a focus card mode — pro resource skrýt
   const actionButtons = [renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn];
-  if (!isResource) actionButtons.push(focusBtn, pomoBtn, bumpBtn);
+  if (!isResource) actionButtons.push(focusBtn, pomoBtn, bumpBtn, dueBtn);
   actionButtons.push(favBtn, folderBtn, resourceBtn, reportBtn, delBtn);
   actBox.append(...actionButtons);
   right.appendChild(actBox);
@@ -9206,11 +9533,20 @@ function openCardDetail(cardId) {
   };
   m.overlay.addEventListener("keydown", modalKeyHandler);
 
-  function close() { m.close(); }
+  function close() {
+    m.close();
+    // Po každém zavření detailu přerendrujem hlavní pohled, ať se na nástěnce projeví všechny změny
+    // (přejmenování karty, přidání/změna termínu, dokončení, přesun atd.). Bez toho zůstávala
+    // nástěnka v zastaralém stavu a uživatel musel ručně přepnout pohled.
+    renderView();
+    if (typeof updateSyncButtonLabel === "function") updateSyncButtonLabel();
+  }
   function refresh() {
     completeBtn.textContent = real.completed ? "✓ Hotovo (vrátit)" : "Označit hotovo";
     // Po jakékoliv změně přepočítej souhrnné chipy nahoře
     if (typeof refreshSummary === "function") refreshSummary();
+    // Také překreslit pohled na pozadí — uživatel pak vidí změny, i když má detail otevřený
+    if (typeof renderView === "function") renderView();
   }
 }
 //#endregion
@@ -12129,6 +12465,7 @@ async function init() {
   $("#inboxBtn").addEventListener("click", () => { state.ui.currentView = { type:"inbox" }; renderAll(); });
   $("#plannerBtn").addEventListener("click", () => { state.ui.currentView = { type:"planner" }; renderAll(); });
   $("#stickyBtn").addEventListener("click", () => { state.ui.currentView = { type:"stickies" }; renderAll(); });
+  $("#globalActivityBtn").addEventListener("click", () => openGlobalActivityView());
   $("#membersBtn").addEventListener("click", () => { state.ui.currentView = { type:"members" }; renderAll(); });
   $("#helpBtn").addEventListener("click", openHelp);
   $("#settingsBtn").addEventListener("click", openSettings);
