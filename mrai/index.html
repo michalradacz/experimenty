@@ -3797,7 +3797,38 @@ function buildCardEditFields(body, card) {
           ipt.addEventListener('input', function (e) { card.headers[i] = e.target.value; saveAutosaveDebounced(); });
           row.appendChild(ipt);
           row.appendChild(el('button', {
+            class: 'btn',
+            'aria-label': 'Posunout sloupec ' + (i + 1) + ' vlevo',
+            disabled: i === 0,
+            onclick: function () {
+              if (i > 0) {
+                const tmpH = card.headers[i - 1]; card.headers[i - 1] = card.headers[i]; card.headers[i] = tmpH;
+                card.rows.forEach(function (r) {
+                  const tmpC = r[i - 1]; r[i - 1] = r[i]; r[i] = tmpC;
+                });
+                rebuildHeaders(); rebuildRows(); saveAutosaveDebounced();
+                announce('Sloupec přesunut vlevo');
+              }
+            }
+          }, '\u2190'));
+          row.appendChild(el('button', {
+            class: 'btn',
+            'aria-label': 'Posunout sloupec ' + (i + 1) + ' vpravo',
+            disabled: i === card.headers.length - 1,
+            onclick: function () {
+              if (i < card.headers.length - 1) {
+                const tmpH = card.headers[i + 1]; card.headers[i + 1] = card.headers[i]; card.headers[i] = tmpH;
+                card.rows.forEach(function (r) {
+                  const tmpC = r[i + 1]; r[i + 1] = r[i]; r[i] = tmpC;
+                });
+                rebuildHeaders(); rebuildRows(); saveAutosaveDebounced();
+                announce('Sloupec přesunut vpravo');
+              }
+            }
+          }, '\u2192'));
+          row.appendChild(el('button', {
             class: 'btn danger',
+            'aria-label': 'Smazat sloupec ' + (i + 1),
             onclick: function () {
               if (card.headers.length <= 1) { toast('Tabulka musí mít aspoň jeden sloupec', 'error'); return; }
               card.headers.splice(i, 1);
@@ -3821,10 +3852,39 @@ function buildCardEditFields(body, card) {
             r.appendChild(cIpt);
             rwrap.appendChild(r);
           });
-          rwrap.appendChild(el('button', {
-            class: 'btn danger', style: { fontSize: '0.75rem', marginTop: '0.25rem' },
+          const actions = el('div', { style: { display: 'flex', gap: '0.3rem', marginTop: '0.25rem' } });
+          actions.appendChild(el('button', {
+            class: 'btn',
+            style: { fontSize: '0.75rem' },
+            'aria-label': 'Posunout řádek ' + (ri + 1) + ' nahoru',
+            disabled: ri === 0,
+            onclick: function () {
+              if (ri > 0) {
+                const tmp = card.rows[ri - 1]; card.rows[ri - 1] = card.rows[ri]; card.rows[ri] = tmp;
+                rebuildRows(); saveAutosaveDebounced();
+                announce('Řádek přesunut nahoru');
+              }
+            }
+          }, '\u2191 Nahoru'));
+          actions.appendChild(el('button', {
+            class: 'btn',
+            style: { fontSize: '0.75rem' },
+            'aria-label': 'Posunout řádek ' + (ri + 1) + ' dolů',
+            disabled: ri === card.rows.length - 1,
+            onclick: function () {
+              if (ri < card.rows.length - 1) {
+                const tmp = card.rows[ri + 1]; card.rows[ri + 1] = card.rows[ri]; card.rows[ri] = tmp;
+                rebuildRows(); saveAutosaveDebounced();
+                announce('Řádek přesunut dolů');
+              }
+            }
+          }, '\u2193 Dolů'));
+          actions.appendChild(el('button', {
+            class: 'btn danger', style: { fontSize: '0.75rem' },
+            'aria-label': 'Smazat řádek ' + (ri + 1),
             onclick: function () { card.rows.splice(ri, 1); rebuildRows(); saveAutosaveDebounced(); }
           }, 'Smazat řádek'));
+          rwrap.appendChild(actions);
           rowsHost.appendChild(rwrap);
         });
       }
@@ -3878,10 +3938,46 @@ function buildCardEditFields(body, card) {
           txt.value = it.text || '';
           txt.addEventListener('input', function (e) { it.text = e.target.value; saveAutosaveDebounced(); });
           wrap.appendChild(txt);
-          wrap.appendChild(el('button', {
-            class: 'btn danger', style: { fontSize: '0.75rem', marginTop: '0.4rem' },
+
+          const actions = el('div', { style: { display: 'flex', gap: '0.3rem', marginTop: '0.4rem' } });
+          actions.appendChild(el('button', {
+            class: 'btn',
+            style: { fontSize: '0.75rem' },
+            'aria-label': 'Posunout položku ' + (i + 1) + ' nahoru',
+            disabled: i === 0,
+            onclick: function () {
+              if (i > 0) {
+                const tmp = card.items[i - 1];
+                card.items[i - 1] = card.items[i];
+                card.items[i] = tmp;
+                rebuild(); saveAutosaveDebounced();
+                announce('Položka přesunuta nahoru');
+              }
+            }
+          }, '\u2191 Nahoru'));
+          actions.appendChild(el('button', {
+            class: 'btn',
+            style: { fontSize: '0.75rem' },
+            'aria-label': 'Posunout položku ' + (i + 1) + ' dolů',
+            disabled: i === card.items.length - 1,
+            onclick: function () {
+              if (i < card.items.length - 1) {
+                const tmp = card.items[i + 1];
+                card.items[i + 1] = card.items[i];
+                card.items[i] = tmp;
+                rebuild(); saveAutosaveDebounced();
+                announce('Položka přesunuta dolů');
+              }
+            }
+          }, '\u2193 Dolů'));
+          actions.appendChild(el('button', {
+            class: 'btn danger',
+            style: { fontSize: '0.75rem' },
+            'aria-label': 'Smazat položku ' + (i + 1),
             onclick: function () { card.items.splice(i, 1); rebuild(); saveAutosaveDebounced(); }
           }, 'Smazat položku'));
+          wrap.appendChild(actions);
+
           host.appendChild(wrap);
         });
       }
@@ -3984,7 +4080,32 @@ function buildImageListEditor(card, allowAdd) {
       }, 'Nahrát'));
       if (allowAdd) {
         row.appendChild(el('button', {
-          class: 'btn danger', 'aria-label': 'Smazat obrázek',
+          class: 'btn',
+          'aria-label': 'Posunout obrázek ' + (i + 1) + ' nahoru',
+          disabled: i === 0,
+          onclick: function () {
+            if (i > 0) {
+              const tmp = card.images[i - 1]; card.images[i - 1] = card.images[i]; card.images[i] = tmp;
+              rebuild(); saveAutosaveDebounced();
+              announce('Obrázek přesunut nahoru');
+            }
+          }
+        }, '\u2191'));
+        row.appendChild(el('button', {
+          class: 'btn',
+          'aria-label': 'Posunout obrázek ' + (i + 1) + ' dolů',
+          disabled: i === card.images.length - 1,
+          onclick: function () {
+            if (i < card.images.length - 1) {
+              const tmp = card.images[i + 1]; card.images[i + 1] = card.images[i]; card.images[i] = tmp;
+              rebuild(); saveAutosaveDebounced();
+              announce('Obrázek přesunut dolů');
+            }
+          }
+        }, '\u2193'));
+        row.appendChild(el('button', {
+          class: 'btn danger',
+          'aria-label': 'Smazat obrázek ' + (i + 1),
           onclick: function () { card.images.splice(i, 1); rebuild(); saveAutosaveDebounced(); }
         }, '\u2716'));
       }
