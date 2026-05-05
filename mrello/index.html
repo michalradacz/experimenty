@@ -2344,7 +2344,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-folders-view-key-a-counts";
+const MRELLO_BUILD = "2026-04-23-folder-export-xlsx";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -7936,6 +7936,28 @@ function openFolderDetail(real, board, list) {
     "aria-label": "Nastavení sloupců tabulky",
     onclick: () => openFolderColumnsDialog(real, refreshFolderContent),
   }, "⚙ Sloupce");
+  // Export složky do Excelu — využije sdílenou logiku exportFolderToXlsx, která pracuje
+  // s kartami napříč nástěnkami a sloučenými custom fields.
+  const exportXlsxBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Exportovat obsah složky do Excelu",
+    onclick: async () => {
+      try {
+        exportXlsxBtn.disabled = true;
+        exportXlsxBtn.textContent = "Exportuji…";
+        await exportFolderToXlsx(real);
+        toast("Export složky do Excelu hotov.", "success");
+        sound.click();
+      } catch (e) {
+        console.error("[exportFolderToXlsx]", e);
+        toast("Export selhal: " + (e.message || e), "error", 5000);
+        sound.err();
+      } finally {
+        exportXlsxBtn.disabled = false;
+        exportXlsxBtn.textContent = "📊 Excel";
+      }
+    },
+  }, "📊 Excel");
   const m = openModal({
     title: titleSpan,
     body,
@@ -7951,6 +7973,7 @@ function openFolderDetail(real, board, list) {
       renameBtn,
       goToBoardBtn,
       colsBtn,
+      exportXlsxBtn,
       unfolderBtn,
       delBtn,
       el("button", { class:"primary", onclick: () => m.close() }, T("close")),
@@ -11744,6 +11767,150 @@ async function exportBoardToXlsx(board) {
   const dateStr = isoLocalDate(new Date());
   const filename = "mrello-" + safeName + "-" + dateStr + ".xlsx";
 
+  XLSX.writeFile(wb, filename);
+}
+
+// Export složky do Excelu — analogie exportBoardToXlsx, ale karty jdou napříč nástěnkami.
+// Custom fields se sloučí ze všech nástěnek, jichž se karty týkají. Sloupec navíc: Nástěnka.
+async function exportFolderToXlsx(folderCard) {
+  if (!folderCard) throw new Error("Složka není zadána");
+  const XLSX = await loadXlsxLib();
+  const cards = getFolderCards(folderCard.id);
+  if (!cards.length) {
+    toast("Složka je prázdná, není co exportovat.", "info");
+    return;
+  }
+  // Sloučená custom fields ze všech nástěnek, kde jsou karty ve složce.
+  // Helper getFolderCustomFields už máme — vrací deduplikované pole.
+  const cfFields = getFolderCustomFields(folderCard);
+  // Hlavičky — analogie boardového exportu, navíc Nástěnka jako první sloupec
+  const headers = [
+    "Nástěnka", "Seznam",
+    "Název", "Popis", "Hotové",
+    "Termín", "Začátek", "Odloženo do",
+    "Aktualizováno", "Vytvořeno", "Dokončeno",
+    "Štítky", "Členové",
+    "Odhad (h)", "Stráveno (h)", "Časovač běží",
+    "Checklist hotovo", "Checklist celkem", "Checklist %",
+    "Přílohy", "Komentáře", "Podkarty", "Rodič",
+    "Blokuje", "Blokována", "Souvisí",
+    "Oblíbené", "Archivováno", "Typ karty", "ID karty",
+  ];
+  cfFields.forEach(cf => headers.push("CF: " + (cf.name || cf.id)));
+  const subcardsMap = {};
+  state.cards.forEach(c => {
+    const parentId = c.parentCardId;
+    if (parentId) {
+      if (!subcardsMap[parentId]) subcardsMap[parentId] = [];
+      subcardsMap[parentId].push(c);
+    }
+  });
+  const rows = [headers];
+  cards.forEach(c => {
+    const board = getBoard(c.boardId);
+    const list = getList(c.listId);
+    const labels = (c.labels || []).map(id => { const l = getLabel(c.boardId, id); return l ? l.name : ""; }).filter(Boolean).join(", ");
+    const members = (c.members || []).map(id => { const m = getMember(id); return m ? m.name : ""; }).filter(Boolean).join(", ");
+    const dueDateObj = c.dueDate ? dueDateAsDate(c.dueDate) : null;
+    const startDateObj = c.startDate ? dueDateAsDate(c.startDate) : null;
+    const snoozeObj = c.snoozeUntil ? dueDateAsDate(c.snoozeUntil) : null;
+    const updatedTs = cardLastUpdatedTimestamp(c);
+    const updatedObj = updatedTs ? new Date(updatedTs) : null;
+    const createdObj = c.createdAt ? new Date(c.createdAt) : null;
+    const completedObj = c.completedAt ? new Date(c.completedAt) : null;
+    let clDone = 0, clTotal = 0;
+    (c.checklists || []).forEach(cl => (cl.items || []).forEach(it => { clTotal++; if (it.completed) clDone++; }));
+    const clPct = clTotal > 0 ? (clDone / clTotal) : null;
+    const estH = (c.time && c.time.estimateSec) ? (c.time.estimateSec / 3600) : null;
+    let spentSec = (c.time && c.time.spentSec) || 0;
+    if (c.time && c.time.runningSince) spentSec += Math.round((Date.now() - c.time.runningSince) / 1000);
+    const spentH = spentSec > 0 ? (spentSec / 3600) : null;
+    const blocks = (c.dependencies && c.dependencies.blocks) || [];
+    const blockedBy = (c.dependencies && c.dependencies.blockedBy) || [];
+    const related = (c.dependencies && c.dependencies.related) || [];
+    const depNames = ids => ids.map(id => { const o = getCard(id); return o ? o.title : ""; }).filter(Boolean).join(", ");
+    const parent = c.parentCardId ? getCard(c.parentCardId) : null;
+    const mySubs = subcardsMap[c.id] || [];
+    const subsText = mySubs.map(s => (s.completed ? "✓ " : "") + s.title).join(", ");
+    const row = [
+      board ? board.name : "",
+      list ? list.name : "",
+      c.title || "",
+      (c.description || "").replace(/\r?\n/g, " "),
+      !!c.completed,
+      dueDateObj, startDateObj, snoozeObj,
+      updatedObj, createdObj, completedObj,
+      labels, members,
+      estH, spentH,
+      !!(c.time && c.time.runningSince),
+      clTotal ? clDone : null,
+      clTotal ? clTotal : null,
+      clPct,
+      (c.attachments || []).length,
+      (c.comments || []).length,
+      mySubs.length > 0 ? subsText : "",
+      parent ? parent.title : "",
+      depNames(blocks), depNames(blockedBy), depNames(related),
+      !!c.favorite, !!c.archived,
+      c.cardType || "normal",
+      c.id,
+    ];
+    cfFields.forEach(cf => {
+      const v = (c.customFieldValues || {})[cf.id];
+      if (v == null || v === "") { row.push(null); return; }
+      if (cf.type === "date") row.push(dueDateAsDate(v));
+      else if (cf.type === "checkbox") row.push(v === true || v === "true" || v === 1 || v === "1");
+      else if (cf.type === "number") { const n = Number(v); row.push(isNaN(n) ? v : n); }
+      else row.push(String(v));
+    });
+    rows.push(row);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const widthMap = {
+    "Nástěnka": 18, "Seznam": 15, "Název": 40, "Popis": 50, "Hotové": 8,
+    "Termín": 12, "Začátek": 12, "Odloženo do": 14,
+    "Aktualizováno": 18, "Vytvořeno": 18, "Dokončeno": 18,
+    "Štítky": 20, "Členové": 20,
+    "Odhad (h)": 10, "Stráveno (h)": 12, "Časovač běží": 12,
+    "Checklist hotovo": 14, "Checklist celkem": 14, "Checklist %": 12,
+    "Přílohy": 8, "Komentáře": 9, "Podkarty": 30, "Rodič": 25,
+    "Blokuje": 30, "Blokována": 30, "Souvisí": 30,
+    "Oblíbené": 9, "Archivováno": 12, "Typ karty": 10, "ID karty": 18,
+  };
+  ws["!cols"] = headers.map(h => ({ wch: widthMap[h] || 18 }));
+  const headerIdx = {};
+  headers.forEach((h, i) => { headerIdx[h] = i; });
+  const setColFormat = (colName, fmt) => {
+    const cIdx = headerIdx[colName];
+    if (cIdx == null) return;
+    for (let r = 1; r < rows.length; r++) {
+      const addr = XLSX.utils.encode_cell({ c: cIdx, r });
+      if (ws[addr] && ws[addr].v != null) ws[addr].z = fmt;
+    }
+  };
+  setColFormat("Termín", "yyyy-mm-dd");
+  setColFormat("Začátek", "yyyy-mm-dd");
+  setColFormat("Odloženo do", "yyyy-mm-dd");
+  setColFormat("Aktualizováno", "yyyy-mm-dd hh:mm");
+  setColFormat("Vytvořeno", "yyyy-mm-dd hh:mm");
+  setColFormat("Dokončeno", "yyyy-mm-dd hh:mm");
+  setColFormat("Checklist %", "0.0%");
+  cfFields.forEach(cf => {
+    if (cf.type === "date") setColFormat("CF: " + (cf.name || cf.id), "yyyy-mm-dd");
+  });
+  headers.forEach((_, i) => {
+    const addr = XLSX.utils.encode_cell({ c: i, r: 0 });
+    if (!ws[addr]) return;
+    ws[addr].s = ws[addr].s || {};
+    ws[addr].s.font = { bold: true };
+  });
+  const wb = XLSX.utils.book_new();
+  // Název listu = název složky (čištěný od emoji a zakázaných znaků), max 30 znaků
+  const sheetTitle = (folderCard.title || "Složka").replace(/^📁\s*/, "").substring(0, 30).replace(/[\\/?*[\]]/g, "_") || "Složka";
+  XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
+  const safeName = (folderCard.title || "slozka").replace(/^📁\s*/, "").replace(/[^\p{L}\p{N}_\- ]/gu, "").trim().replace(/\s+/g, "_") || "slozka";
+  const dateStr = isoLocalDate(new Date());
+  const filename = "mrello-slozka-" + safeName + "-" + dateStr + ".xlsx";
   XLSX.writeFile(wb, filename);
 }
 //#endregion
