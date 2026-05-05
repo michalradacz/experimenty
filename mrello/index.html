@@ -984,6 +984,7 @@ body.body-focus-list main.app-main {
 .danger-text { color: #991b1b; font-weight: 600; }
 .warning-text { color: #9a3412; font-weight: 500; }
 .info-text { color: #1e40af; }
+.folder-counts { font-size: 13px; }
 .dep-items {
   display: inline-flex;
   flex-wrap: wrap;
@@ -2343,7 +2344,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-keys-s-sync-o-fav-no-a-activity-as-view";
+const MRELLO_BUILD = "2026-04-23-folders-view-key-a-counts";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -4808,7 +4809,7 @@ function renderHeader() {
     const b = getBoard(v.boardId);
     title.textContent = b ? b.name : "";
   } else if (v.type === "smart") {
-    const labels = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), completed: T("completed"), archive: T("archive"), trash: T("trash") };
+    const labels = { today: T("today"), week: T("thisWeek"), overdue: T("overdue"), nodate: T("noDate"), folders: "Složky", completed: T("completed"), archive: T("archive"), trash: T("trash") };
     title.textContent = labels[v.smart] || v.smart;
   } else if (v.type === "inbox") title.textContent = T("inbox");
   else if (v.type === "planner") title.textContent = T("planner");
@@ -4830,6 +4831,7 @@ function renderSidebar() {
     ["openChecklists", "Nedokončené checklisty"],
     ["attachments", "Přílohy"],
     ["favorites", "Oblíbené"],
+    ["folders", "Složky"],
     ["timeTracking", "Sledování času"],
     ["timeReport", "Přehled času"],
     ["completed", T("completed")],
@@ -4892,6 +4894,9 @@ function countSmart(key) {
   if (key === "favorites") {
     // Všechny oblíbené (i archivované/hotové — oblíbené je napříč stavem)
     return all.filter(c => c.favorite && !c.archived).length;
+  }
+  if (key === "folders") {
+    return all.filter(c => !c.archived && !c.completed && c.cardType === "folder").length;
   }
   if (key === "timeTracking") {
     // Nehotové karty, které mají nějaký strávený čas nebo běžící časovač
@@ -5176,7 +5181,7 @@ function viewHeadlineText(v) {
     const suffix = { board:"", table:" – tabulka", calendar:" – kalendář", timeline:" – časová osa", dashboard:" – přehled", eisenhower:" – matice priorit" }[t] || "";
     return b.name + suffix;
   }
-  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", attachments:"Přílohy", favorites:"Oblíbené", timeTracking:"Sledování času", timeReport:"Přehled času", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
+  if (v.type === "smart") return ({ today:"Dnes", week:"Tento týden", overdue:"Po termínu", nodate:"Bez termínu", openChecklists:"Nedokončené checklisty", attachments:"Přílohy", favorites:"Oblíbené", folders:"Složky", timeTracking:"Sledování času", timeReport:"Přehled času", completed:"Hotové", archive:"Archiv", trash:"Koš" }[v.smart]) || "";
   if (v.type === "inbox") return T("inbox");
   if (v.type === "planner") return T("planner");
   if (v.type === "stickies") return T("stickies");
@@ -6351,6 +6356,13 @@ function renderCard(card, list, position) {
   if (eff.cardType === "habit" && eff.habit) {
     meta.appendChild(el("span", { class:"habit-streak", title:"Série dní" }, "🔥 " + (eff.habit.streak || 0)));
   }
+  if (eff.cardType === "folder") {
+    const inside = getFolderCards(eff.id);
+    const total = inside.length;
+    const open = inside.filter(c => !c.completed).length;
+    meta.appendChild(el("span", { class:"meta-chip", title:"Karet ve složce — celkem / nedokončených" },
+      `📁 ${open}/${total}`));
+  }
   // members on the right
   if (eff.members && eff.members.length) {
     const mr = el("div", { class:"card-members" });
@@ -6496,8 +6508,10 @@ function cardAriaLabel(card, eff) {
   const parts = [eff.title];
   if (eff.favorite) parts.push("oblíbená");
   if (eff.cardType === "folder") {
-    const cnt = (eff.folder && eff.folder.cardIds || []).length;
-    parts.push("složka, " + cnt + " " + (cnt === 1 ? "karta" : cnt < 5 ? "karty" : "karet"));
+    const inside = getFolderCards(eff.id);
+    const total = inside.length;
+    const open = inside.filter(c => !c.completed).length;
+    parts.push("složka, celkem " + total + ", nedokončených " + open);
   }
   if (eff.cardType === "resource") parts.push("zdroj");
   if (eff.completed) parts.push("hotovo");
@@ -7619,48 +7633,60 @@ function openFolderDetail(real, board, list) {
     },
   }, "+ Přidat existující");
   // Tlačítko pro rychlé vytvoření nové karty rovnou ve stejném seznamu jako složka.
+  // Logika je v samostatné funkci `triggerCreateCardInFolder`, ať ji jde volat i klávesou A.
+  function triggerCreateCardInFolder() {
+    const titleInp = el("input", {
+      type: "text",
+      placeholder: "Název nové karty",
+      "aria-label": "Název nové karty",
+      style: { width: "100%" },
+    });
+    const m2 = openModal({
+      title: "Nová karta v složce „" + real.title + "“",
+      body: el("div", {},
+        el("p", { class:"muted small" }, "Karta se vytvoří ve stejném seznamu („" + list.name + "“) a hned se přidá do této složky."),
+        titleInp,
+      ),
+      size: "small",
+      footer: [
+        el("button", { class:"ghost", onclick: () => m2.close() }, T("cancel")),
+        el("button", { class:"primary", onclick: () => {
+          const title = titleInp.value.trim();
+          if (!title) { titleInp.focus(); return; }
+          const newC = newCard(real.listId, title);
+          if (!newC) { toast("Chyba při vytváření karty.", "error"); return; }
+          addCardToFolder(real.id, newC.id);
+          sound.add();
+          refreshFolderContent();
+          announce("Karta „" + title + "“ vytvořena a přidána do složky.");
+          m2.close();
+        } }, "Vytvořit a přidat"),
+      ],
+      onOpen: () => titleInp.focus(),
+    });
+    titleInp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const okBtn = m2.overlay.querySelector(".modal-footer .primary");
+        if (okBtn) okBtn.click();
+      }
+    });
+  }
   const createInFolderBtn = el("button", {
     class: "primary",
-    "aria-label": "Vytvořit novou kartu ve stejném seznamu a přidat ji do složky",
-    onclick: () => {
-      const titleInp = el("input", {
-        type: "text",
-        placeholder: "Název nové karty",
-        "aria-label": "Název nové karty",
-        style: { width: "100%" },
-      });
-      const m2 = openModal({
-        title: "Nová karta v složce „" + real.title + "“",
-        body: el("div", {},
-          el("p", { class:"muted small" }, "Karta se vytvoří ve stejném seznamu („" + list.name + "“) a hned se přidá do této složky."),
-          titleInp,
-        ),
-        size: "small",
-        footer: [
-          el("button", { class:"ghost", onclick: () => m2.close() }, T("cancel")),
-          el("button", { class:"primary", onclick: () => {
-            const title = titleInp.value.trim();
-            if (!title) { titleInp.focus(); return; }
-            const newC = newCard(real.listId, title);
-            if (!newC) { toast("Chyba při vytváření karty.", "error"); return; }
-            addCardToFolder(real.id, newC.id);
-            sound.add();
-            refreshFolderContent();
-            announce("Karta „" + title + "“ vytvořena a přidána do složky.");
-            m2.close();
-          } }, "Vytvořit a přidat"),
-        ],
-        onOpen: () => titleInp.focus(),
-      });
-      titleInp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const okBtn = m2.overlay.querySelector(".modal-footer .primary");
-          if (okBtn) okBtn.click();
-        }
-      });
-    },
-  }, "+ Vytvořit novou kartu");
+    "aria-label": "Vytvořit novou kartu ve stejném seznamu a přidat ji do složky (klávesa A)",
+    onclick: triggerCreateCardInFolder,
+  }, "+ Vytvořit novou kartu (A)");
+  // Klávesa A v detailu složky — spustí stejnou akci. Listener přidáme přímo na body modalu,
+  // aby se neaktivoval, když je v textovém poli (komentář, hledání atd.).
+  body.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea, select, [contenteditable]")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "a" || e.key === "A") {
+      e.preventDefault();
+      triggerCreateCardInFolder();
+    }
+  });
   // Tlačítka přidání NAD tabulkou
   const addBtnsRow = el("div", { class:"folder-add-btns" }, createInFolderBtn, addToFolderBtn);
   contentSec.appendChild(addBtnsRow);
@@ -7803,8 +7829,8 @@ function openFolderDetail(real, board, list) {
           "Skryto " + (cards.length - tableCards.length) + " hotových karet."));
       }
     }
-    // Header s počtem
-    contentHeader.textContent = "Obsah složky (" + total + ")";
+    // Header s počty (celkem a nedokončené, ať uživatel rovnou vidí stav složky)
+    contentHeader.textContent = "Obsah složky — celkem " + total + ", nedokončených " + open;
     // Agregované komentáře
     const allComments = [];
     cards.forEach(c => {
@@ -10404,6 +10430,11 @@ function renderSmartView(container, smart) {
   else if (smart === "favorites") {
     cards = state.cards.filter(c => !c.deleted && !c.archived && c.favorite);
   }
+  else if (smart === "folders") {
+    // Všechny nehotové složky napříč nástěnkami — uživatel rychle vidí seznam svých „kontejnerů"
+    // a může otevřít detail kterékoli z nich.
+    cards = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.cardType === "folder");
+  }
   else if (smart === "timeReport") {
     renderTimeReportView(wrap);
     container.appendChild(wrap);
@@ -10432,6 +10463,40 @@ function renderSmartView(container, smart) {
       trashWrap.appendChild(item);
     });
     wrap.appendChild(trashWrap);
+    container.appendChild(wrap);
+    return;
+  }
+  if (smart === "folders") {
+    // Speciální render: každá složka jako řádek s názvem + počty (celkem / nedokončených)
+    if (!cards.length) {
+      wrap.appendChild(el("p", { class:"muted" }, "Žádné složky."));
+      container.appendChild(wrap);
+      return;
+    }
+    cards.sort((a, b) => (a.title || "").localeCompare(b.title || "", "cs"));
+    const wrapList = el("div", { class:"smart-list" });
+    cards.forEach(f => {
+      const item = el("div", { class:"smart-card-item" });
+      const b = getBoard(f.boardId);
+      const l = getList(f.listId);
+      const inside = getFolderCards(f.id);
+      const total = inside.length;
+      const open = inside.filter(c => !c.completed).length;
+      const done = total - open;
+      const btn = el("button", { class:"link-btn", onclick: () => openCardDetail(f.id) }, f.title);
+      const metaParts = [];
+      if (b) metaParts.push(b.name);
+      if (l) metaParts.push(l.name);
+      const ctxMeta = el("span", { class:"muted" }, " — " + metaParts.join(", "));
+      const counts = el("span", { class:"folder-counts" },
+        " — celkem ", el("strong", {}, String(total)),
+        ", nedokončených ", el("strong", { class: open > 0 ? "warning-text" : "" }, String(open)),
+        " (hotových " + done + ")"
+      );
+      item.append(btn, ctxMeta, counts);
+      wrapList.appendChild(item);
+    });
+    wrap.appendChild(wrapList);
     container.appendChild(wrap);
     return;
   }
