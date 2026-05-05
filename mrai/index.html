@@ -4147,35 +4147,89 @@ function openLoadDialog() {
   openModal('Otevřít soubor', function () {
     const wrap = el('div');
     wrap.appendChild(el('p', null, 'Vyberte soubor s uloženým příběhem (.mrai nebo libovolný JSON).'));
-    const fileBtn = el('button', { class: 'btn primary' }, 'Vybrat soubor');
-    fileBtn.addEventListener('click', function () {
-      const ipt = document.createElement('input');
-      ipt.type = 'file';
-      ipt.addEventListener('change', function (e) {
-        const f = e.target.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = function () {
-          try {
-            const doc = JSON.parse(r.result);
-            if (!doc || !Array.isArray(doc.chapters)) throw new Error('Neplatný formát souboru');
-            State.doc = doc;
-            State.ui.focusedCardId = null;
-            saveAutosave();
-            renderEditor();
-            closeModal();
-            toast('Příběh načten', 'success');
-          } catch (e) {
-            toast('Chyba při načítání: ' + e.message, 'error');
-          }
-        };
-        r.readAsText(f);
-      });
-      ipt.click();
+
+    const fileLabel = el('label', { for: 'mrai-file-input' }, 'Soubor');
+    fileLabel.style.display = 'block';
+    fileLabel.style.marginBottom = '0.4rem';
+    fileLabel.style.fontWeight = '600';
+    fileLabel.style.fontSize = '0.85rem';
+    wrap.appendChild(fileLabel);
+
+    const fileInput = el('input', {
+      type: 'file',
+      id: 'mrai-file-input',
+      'aria-describedby': 'mrai-file-status'
     });
-    wrap.appendChild(fileBtn);
+    fileInput.style.display = 'block';
+    fileInput.style.marginBottom = '1rem';
+    fileInput.style.width = '100%';
+    wrap.appendChild(fileInput);
+
+    const status = el('p', {
+      id: 'mrai-file-status',
+      class: 'field-hint',
+      role: 'status',
+      'aria-live': 'polite'
+    }, 'Žádný soubor nevybrán.');
+    wrap.appendChild(status);
+
+    const doLoad = function () {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) {
+        status.textContent = 'Nejprve vyberte soubor.';
+        toast('Nejprve vyberte soubor.', 'error');
+        fileInput.focus();
+        return;
+      }
+      status.textContent = 'Načítám soubor ' + f.name + '\u2026';
+      const r = new FileReader();
+      r.onload = function () {
+        try {
+          const doc = JSON.parse(r.result);
+          if (!doc || !Array.isArray(doc.chapters)) throw new Error('Neplatný formát souboru');
+          State.doc = doc;
+          State.ui.focusedCardId = null;
+          saveAutosave();
+          renderEditor();
+          closeModal();
+          toast('Příběh načten', 'success');
+        } catch (e) {
+          status.textContent = 'Chyba: ' + e.message;
+          toast('Chyba při načítání: ' + e.message, 'error');
+        }
+      };
+      r.onerror = function () {
+        status.textContent = 'Nelze přečíst soubor.';
+        toast('Nelze přečíst soubor.', 'error');
+      };
+      r.readAsText(f);
+    };
+
+    fileInput.addEventListener('change', function () {
+      if (fileInput.files && fileInput.files[0]) {
+        status.textContent = 'Vybráno: ' + fileInput.files[0].name + '. Klikněte Načíst.';
+      }
+    });
+
+    const actions = el('div', { style: { display: 'flex', gap: '0.5rem', marginTop: '1rem' } });
+    const loadBtn = el('button', {
+      class: 'btn primary',
+      onclick: doLoad
+    }, 'Načíst');
+    const cancelBtn = el('button', {
+      class: 'btn',
+      onclick: function () { closeModal(); }
+    }, 'Zrušit');
+    actions.appendChild(loadBtn);
+    actions.appendChild(cancelBtn);
+    wrap.appendChild(actions);
+
     wrap.appendChild(el('p', { class: 'field-hint', style: { marginTop: '1rem' } },
       'Aplikace také automaticky uchovává poslední verzi v paměti prohlížeče.'));
+
+    // Po vykreslení dej focus na file input
+    setTimeout(function () { fileInput.focus(); }, 100);
+
     return wrap;
   });
 }
