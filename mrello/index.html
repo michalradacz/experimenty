@@ -301,6 +301,24 @@ header.app-header h1 {
 }
 .sidebar-item:hover { background: var(--bg-hover); }
 .sidebar-item.active { background: var(--bg-active); font-weight: 600; }
+/* Připnuté karty v sidebaru — jako odkazy (a element), ne tlačítka */
+.sidebar-pinned-link {
+  display: block;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--fg);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-pinned-link:hover, .sidebar-pinned-link:focus {
+  background: var(--bg-hover);
+  text-decoration: underline;
+  outline: 2px solid var(--primary, #0a7);
+  outline-offset: -2px;
+}
 
 /* Pořadí seznamů v nastavení nástěnky */
 .list-order-list {
@@ -2326,6 +2344,8 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
   <aside class="sidebar" id="sidebar" role="complementary" aria-label="Postranní panel">
     <h2 data-i18n="smartViews">Rychlé pohledy</h2>
     <ul class="sidebar-list" id="smartViewsList"></ul>
+    <h2 id="pinnedHeading" hidden>Připnuté</h2>
+    <ul class="sidebar-list" id="pinnedList" hidden></ul>
     <h2 data-i18n="boards">Nástěnky</h2>
     <ul class="sidebar-list" id="boardsList"></ul>
     <button class="sidebar-item" id="newBoardBtn" data-i18n="newBoard">+ Nová nástěnka</button>
@@ -2344,7 +2364,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-folders-view-key-a-counts";
+const MRELLO_BUILD = "2026-04-23-board-archive-all-completed";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -3988,6 +4008,7 @@ function newCard(listId, title, opts={}) {
     folder: opts.cardType === "folder" ? { cardIds: [], visibleColumns: null } : null,
     reminders: [],
     snoozedUntil: null,
+    pinned: false,
     archived: false, deleted: false,
     createdAt: Date.now(), updatedAt: Date.now(), completedAt: null,
   };
@@ -4184,6 +4205,19 @@ function toggleCardFavorite(cardId) {
   logActivity(c, c.favorite ? "Označeno jako oblíbené" : "Odebráno z oblíbených");
   saveState();
   return c.favorite;
+}
+// Připnutí karty do postranního panelu pod sekci „Připnuté".
+// Nezávislé na oblíbených — uživatel může chtít kartu připnout, ale nemít ji jako favorite a naopak.
+function toggleCardPinned(cardId) {
+  const c = getCard(cardId); if (!c) return false;
+  c.pinned = !c.pinned;
+  c.updatedAt = Date.now();
+  logActivity(c, c.pinned ? "Připnuto do panelu" : "Odepnuto z panelu");
+  saveState();
+  return c.pinned;
+}
+function getPinnedCards() {
+  return state.cards.filter(c => c.pinned && !c.deleted && !c.archived);
 }
 
 // ============ SLOŽKY ============
@@ -4841,12 +4875,70 @@ function renderSidebar() {
   smarts.forEach(([key, label]) => {
     const count = countSmart(key);
     const isActive = state.ui.currentView.type === "smart" && state.ui.currentView.smart === key;
+    // Pro pohled „Složky" dáváme do badge dvě čísla: celkem složek / nedokončených karet uvnitř
+    // (mimo zdrojů). Uživatel z toho vidí, jestli má co dělat — bez nutnosti otevřít pohled.
+    let badgeLabel = null;
+    if (key === "folders") {
+      const folders = state.cards.filter(c => !c.deleted && !c.archived && !c.completed && c.cardType === "folder");
+      if (folders.length > 0) {
+        // Spočítej nedokončené karty (mimo zdrojů a smazaných) napříč všemi složkami
+        let openInsideTotal = 0;
+        const seenIds = new Set();
+        folders.forEach(f => {
+          (f.folder?.cardIds || []).forEach(id => {
+            if (seenIds.has(id)) return;  // nepočítej kartu dvakrát, pokud je v více složkách
+            seenIds.add(id);
+            const c = getCard(id);
+            if (!c || c.deleted || c.completed) return;
+            if (c.cardType === "resource") return;  // zdroje neplánujeme dokončovat
+            openInsideTotal++;
+          });
+        });
+        badgeLabel = folders.length + "/" + openInsideTotal;
+      }
+    } else if (count > 0) {
+      badgeLabel = String(count);
+    }
     const btn = el("button", {
       class:"sidebar-item " + (isActive ? "active" : ""),
       onclick: () => { state.ui.currentView = { type:"smart", smart:key }; saveStateUi(); renderAll(); }
-    }, label, count > 0 ? el("span", { class:"badge" }, String(count)) : null);
+    }, label, badgeLabel ? el("span", { class:"badge" }, badgeLabel) : null);
     const li = el("li", {}, btn); sv.appendChild(li);
   });
+  // Sekce „Připnuté" — zobrazí se pouze pokud je aspoň jedna připnutá karta.
+  // Položky jsou <a> odkazy (ne tlačítka), tak jak Michal chtěl. href="#" + onclick → openCardDetail.
+  const pinnedHeading = $("#pinnedHeading");
+  const pinnedList = $("#pinnedList");
+  if (pinnedHeading && pinnedList) {
+    clear(pinnedList);
+    const pinned = getPinnedCards();
+    if (pinned.length === 0) {
+      pinnedHeading.hidden = true;
+      pinnedList.hidden = true;
+    } else {
+      pinnedHeading.hidden = false;
+      pinnedList.hidden = false;
+      // Seřaď abecedně, čeština
+      pinned.sort((a, b) => (a.title || "").localeCompare(b.title || "", "cs", { sensitivity: "base" }));
+      pinned.forEach(c => {
+        // Vizuální prefix: pro hotové ✓, pro připnuté přímo z kartového typu:
+        // 📁 (folder mark už je v titulu samotném) / 📚 přidáme my u zdroje pro odlišení
+        const prefix = c.completed ? "✓ " : "";
+        const link = el("a", {
+          href: "#",
+          class: "sidebar-pinned-link",
+          "aria-label": "Otevřít připnutou kartu „" + c.title + "“",
+          title: c.title,
+          onclick: (e) => {
+            e.preventDefault();
+            openCardDetail(c.id);
+          },
+        }, prefix + c.title);
+        const li = el("li", {}, link);
+        pinnedList.appendChild(li);
+      });
+    }
+  }
   const bl = $("#boardsList"); clear(bl);
   // Nástěnky seřazené abecedně, case-insensitive, dle českého locale
   const sortedBoards = boardsInWorkspace().slice().sort((a, b) =>
@@ -6119,6 +6211,45 @@ function renderBoardSettingsBody(board, closeModal) {
   }
   refreshColumnOrder();
   wrap.appendChild(colList);
+  // Hromadné akce nad celou nástěnkou
+  wrap.appendChild(el("h3", {}, "Hromadné akce"));
+  // Tlačítko: archivovat všechny hotové karty napříč všemi seznamy nástěnky.
+  // Nepočítá karty, které už jsou archivované, ani smazané. Po stisku ukáže potvrzovací dialog
+  // a po archivaci toast s počtem.
+  const archiveAllBtn = el("button", { class:"ghost" });
+  function refreshArchiveAllBtn() {
+    const done = state.cards.filter(c =>
+      c.boardId === board.id && c.completed && !c.archived && !c.deleted
+    );
+    archiveAllBtn.disabled = done.length === 0;
+    archiveAllBtn.textContent = done.length
+      ? `Archivovat všechny hotové karty na nástěnce (${done.length})`
+      : "Archivovat všechny hotové karty na nástěnce (žádné)";
+    archiveAllBtn.setAttribute("aria-label",
+      done.length
+        ? `Archivovat ${done.length} hotových karet na nástěnce`
+        : "Žádné hotové karty k archivaci");
+  }
+  archiveAllBtn.addEventListener("click", async () => {
+    const done = state.cards.filter(c =>
+      c.boardId === board.id && c.completed && !c.archived && !c.deleted
+    );
+    if (!done.length) return;
+    const ok = await confirm2(
+      `Archivovat ${done.length} hotových karet napříč všemi seznamy nástěnky „${board.name}“?`,
+      { okLabel: "Archivovat" }
+    );
+    if (!ok) return;
+    done.forEach(c => archiveCard(c.id));
+    saveState();
+    sound.click();
+    toast(`Archivováno ${done.length} karet.`, "success");
+    announce(`Archivováno ${done.length} hotových karet z nástěnky.`);
+    refreshArchiveAllBtn();
+    renderView();
+  });
+  refreshArchiveAllBtn();
+  wrap.appendChild(el("div", { class:"field-row" }, archiveAllBtn));
   // labels
   wrap.appendChild(el("h3", {}, T("labels")));
   const lblList = el("div", { class:"tag-row" });
@@ -7936,6 +8067,42 @@ function openFolderDetail(real, board, list) {
     "aria-label": "Nastavení sloupců tabulky",
     onclick: () => openFolderColumnsDialog(real, refreshFolderContent),
   }, "⚙ Sloupce");
+  // Export složky do Excelu — využije sdílenou logiku exportFolderToXlsx, která pracuje
+  // s kartami napříč nástěnkami a sloučenými custom fields.
+  const exportXlsxBtn = el("button", {
+    class: "ghost",
+    "aria-label": "Exportovat obsah složky do Excelu",
+    onclick: async () => {
+      try {
+        exportXlsxBtn.disabled = true;
+        exportXlsxBtn.textContent = "Exportuji…";
+        await exportFolderToXlsx(real);
+        toast("Export složky do Excelu hotov.", "success");
+        sound.click();
+      } catch (e) {
+        console.error("[exportFolderToXlsx]", e);
+        toast("Export selhal: " + (e.message || e), "error", 5000);
+        sound.err();
+      } finally {
+        exportXlsxBtn.disabled = false;
+        exportXlsxBtn.textContent = "📊 Excel";
+      }
+    },
+  }, "📊 Excel");
+  // Připnutí složky do postranního panelu — funguje stejně jako u běžné karty.
+  const pinBtn = el("button", {
+    class: "ghost",
+    "aria-label": real.pinned ? "Odepnout z postranního panelu" : "Připnout do postranního panelu",
+    onclick: () => {
+      const isPinned = toggleCardPinned(real.id);
+      pinBtn.textContent = isPinned ? "📌 Připnuto (odepnout)" : "📌 Připnout";
+      pinBtn.setAttribute("aria-label", isPinned ? "Odepnout z postranního panelu" : "Připnout do postranního panelu");
+      sound.click();
+      announce(isPinned ? "Složka připnuta." : "Složka odepnuta.");
+      renderSidebar();
+    },
+  }, real.pinned ? "📌 Připnuto (odepnout)" : "📌 Připnout");
+
   const m = openModal({
     title: titleSpan,
     body,
@@ -7948,9 +8115,11 @@ function openFolderDetail(real, board, list) {
     },
     footer: [
       completeBtn,
+      pinBtn,
       renameBtn,
       goToBoardBtn,
       colsBtn,
+      exportXlsxBtn,
       unfolderBtn,
       delBtn,
       el("button", { class:"primary", onclick: () => m.close() }, T("close")),
@@ -9409,6 +9578,22 @@ function openCardDetail(cardId) {
       if (typeof refreshActivity === "function") refreshActivity();
     },
   }, real.favorite ? "⭐ Oblíbené (odebrat)" : "☆ Označit jako oblíbené");
+  // Připnutí karty do postranního panelu — funguje pro libovolný typ karty (běžná, složka, zdroj).
+  // V sekci „Připnuté" v sidebaru se pak zobrazí jako odkaz, klik otevře detail.
+  const pinBtn = el("button", {
+    class: "ghost",
+    "aria-label": real.pinned ? "Odepnout z postranního panelu" : "Připnout do postranního panelu",
+    onclick: () => {
+      const isPinned = toggleCardPinned(real.id);
+      pinBtn.textContent = isPinned ? "📌 Připnuto (odepnout)" : "📌 Připnout";
+      pinBtn.setAttribute("aria-label", isPinned ? "Odepnout z postranního panelu" : "Připnout do postranního panelu");
+      sound.click();
+      announce(isPinned ? "Karta připnuta." : "Karta odepnuta.");
+      if (typeof refreshActivity === "function") refreshActivity();
+      // Aktualizuj sidebar — sekce „Připnuté" musí reagovat hned
+      renderSidebar();
+    },
+  }, real.pinned ? "📌 Připnuto (odepnout)" : "📌 Připnout");
   // Tlačítko Převést na složku / zrušit složku — záleží na aktuálním typu karty.
   // Složka je jednoduchý kontejner pro odkazy na jiné karty (vlastní obsah pak vidíš v sekci „Obsah složky").
   const folderBtn = el("button", {
@@ -9463,7 +9648,7 @@ function openCardDetail(cardId) {
   // Pomodoro a focus card mode — pro resource skrýt
   const actionButtons = [renameBtn, moveBtn, mirrorBtn, archBtn, tplBtn];
   if (!isResource) actionButtons.push(focusBtn, pomoBtn, bumpBtn, dueBtn);
-  actionButtons.push(favBtn, folderBtn, resourceBtn, reportBtn, delBtn);
+  actionButtons.push(favBtn, pinBtn, folderBtn, resourceBtn, reportBtn, delBtn);
   actBox.append(...actionButtons);
   right.appendChild(actBox);
 
@@ -11744,6 +11929,150 @@ async function exportBoardToXlsx(board) {
   const dateStr = isoLocalDate(new Date());
   const filename = "mrello-" + safeName + "-" + dateStr + ".xlsx";
 
+  XLSX.writeFile(wb, filename);
+}
+
+// Export složky do Excelu — analogie exportBoardToXlsx, ale karty jdou napříč nástěnkami.
+// Custom fields se sloučí ze všech nástěnek, jichž se karty týkají. Sloupec navíc: Nástěnka.
+async function exportFolderToXlsx(folderCard) {
+  if (!folderCard) throw new Error("Složka není zadána");
+  const XLSX = await loadXlsxLib();
+  const cards = getFolderCards(folderCard.id);
+  if (!cards.length) {
+    toast("Složka je prázdná, není co exportovat.", "info");
+    return;
+  }
+  // Sloučená custom fields ze všech nástěnek, kde jsou karty ve složce.
+  // Helper getFolderCustomFields už máme — vrací deduplikované pole.
+  const cfFields = getFolderCustomFields(folderCard);
+  // Hlavičky — analogie boardového exportu, navíc Nástěnka jako první sloupec
+  const headers = [
+    "Nástěnka", "Seznam",
+    "Název", "Popis", "Hotové",
+    "Termín", "Začátek", "Odloženo do",
+    "Aktualizováno", "Vytvořeno", "Dokončeno",
+    "Štítky", "Členové",
+    "Odhad (h)", "Stráveno (h)", "Časovač běží",
+    "Checklist hotovo", "Checklist celkem", "Checklist %",
+    "Přílohy", "Komentáře", "Podkarty", "Rodič",
+    "Blokuje", "Blokována", "Souvisí",
+    "Oblíbené", "Archivováno", "Typ karty", "ID karty",
+  ];
+  cfFields.forEach(cf => headers.push("CF: " + (cf.name || cf.id)));
+  const subcardsMap = {};
+  state.cards.forEach(c => {
+    const parentId = c.parentCardId;
+    if (parentId) {
+      if (!subcardsMap[parentId]) subcardsMap[parentId] = [];
+      subcardsMap[parentId].push(c);
+    }
+  });
+  const rows = [headers];
+  cards.forEach(c => {
+    const board = getBoard(c.boardId);
+    const list = getList(c.listId);
+    const labels = (c.labels || []).map(id => { const l = getLabel(c.boardId, id); return l ? l.name : ""; }).filter(Boolean).join(", ");
+    const members = (c.members || []).map(id => { const m = getMember(id); return m ? m.name : ""; }).filter(Boolean).join(", ");
+    const dueDateObj = c.dueDate ? dueDateAsDate(c.dueDate) : null;
+    const startDateObj = c.startDate ? dueDateAsDate(c.startDate) : null;
+    const snoozeObj = c.snoozeUntil ? dueDateAsDate(c.snoozeUntil) : null;
+    const updatedTs = cardLastUpdatedTimestamp(c);
+    const updatedObj = updatedTs ? new Date(updatedTs) : null;
+    const createdObj = c.createdAt ? new Date(c.createdAt) : null;
+    const completedObj = c.completedAt ? new Date(c.completedAt) : null;
+    let clDone = 0, clTotal = 0;
+    (c.checklists || []).forEach(cl => (cl.items || []).forEach(it => { clTotal++; if (it.completed) clDone++; }));
+    const clPct = clTotal > 0 ? (clDone / clTotal) : null;
+    const estH = (c.time && c.time.estimateSec) ? (c.time.estimateSec / 3600) : null;
+    let spentSec = (c.time && c.time.spentSec) || 0;
+    if (c.time && c.time.runningSince) spentSec += Math.round((Date.now() - c.time.runningSince) / 1000);
+    const spentH = spentSec > 0 ? (spentSec / 3600) : null;
+    const blocks = (c.dependencies && c.dependencies.blocks) || [];
+    const blockedBy = (c.dependencies && c.dependencies.blockedBy) || [];
+    const related = (c.dependencies && c.dependencies.related) || [];
+    const depNames = ids => ids.map(id => { const o = getCard(id); return o ? o.title : ""; }).filter(Boolean).join(", ");
+    const parent = c.parentCardId ? getCard(c.parentCardId) : null;
+    const mySubs = subcardsMap[c.id] || [];
+    const subsText = mySubs.map(s => (s.completed ? "✓ " : "") + s.title).join(", ");
+    const row = [
+      board ? board.name : "",
+      list ? list.name : "",
+      c.title || "",
+      (c.description || "").replace(/\r?\n/g, " "),
+      !!c.completed,
+      dueDateObj, startDateObj, snoozeObj,
+      updatedObj, createdObj, completedObj,
+      labels, members,
+      estH, spentH,
+      !!(c.time && c.time.runningSince),
+      clTotal ? clDone : null,
+      clTotal ? clTotal : null,
+      clPct,
+      (c.attachments || []).length,
+      (c.comments || []).length,
+      mySubs.length > 0 ? subsText : "",
+      parent ? parent.title : "",
+      depNames(blocks), depNames(blockedBy), depNames(related),
+      !!c.favorite, !!c.archived,
+      c.cardType || "normal",
+      c.id,
+    ];
+    cfFields.forEach(cf => {
+      const v = (c.customFieldValues || {})[cf.id];
+      if (v == null || v === "") { row.push(null); return; }
+      if (cf.type === "date") row.push(dueDateAsDate(v));
+      else if (cf.type === "checkbox") row.push(v === true || v === "true" || v === 1 || v === "1");
+      else if (cf.type === "number") { const n = Number(v); row.push(isNaN(n) ? v : n); }
+      else row.push(String(v));
+    });
+    rows.push(row);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const widthMap = {
+    "Nástěnka": 18, "Seznam": 15, "Název": 40, "Popis": 50, "Hotové": 8,
+    "Termín": 12, "Začátek": 12, "Odloženo do": 14,
+    "Aktualizováno": 18, "Vytvořeno": 18, "Dokončeno": 18,
+    "Štítky": 20, "Členové": 20,
+    "Odhad (h)": 10, "Stráveno (h)": 12, "Časovač běží": 12,
+    "Checklist hotovo": 14, "Checklist celkem": 14, "Checklist %": 12,
+    "Přílohy": 8, "Komentáře": 9, "Podkarty": 30, "Rodič": 25,
+    "Blokuje": 30, "Blokována": 30, "Souvisí": 30,
+    "Oblíbené": 9, "Archivováno": 12, "Typ karty": 10, "ID karty": 18,
+  };
+  ws["!cols"] = headers.map(h => ({ wch: widthMap[h] || 18 }));
+  const headerIdx = {};
+  headers.forEach((h, i) => { headerIdx[h] = i; });
+  const setColFormat = (colName, fmt) => {
+    const cIdx = headerIdx[colName];
+    if (cIdx == null) return;
+    for (let r = 1; r < rows.length; r++) {
+      const addr = XLSX.utils.encode_cell({ c: cIdx, r });
+      if (ws[addr] && ws[addr].v != null) ws[addr].z = fmt;
+    }
+  };
+  setColFormat("Termín", "yyyy-mm-dd");
+  setColFormat("Začátek", "yyyy-mm-dd");
+  setColFormat("Odloženo do", "yyyy-mm-dd");
+  setColFormat("Aktualizováno", "yyyy-mm-dd hh:mm");
+  setColFormat("Vytvořeno", "yyyy-mm-dd hh:mm");
+  setColFormat("Dokončeno", "yyyy-mm-dd hh:mm");
+  setColFormat("Checklist %", "0.0%");
+  cfFields.forEach(cf => {
+    if (cf.type === "date") setColFormat("CF: " + (cf.name || cf.id), "yyyy-mm-dd");
+  });
+  headers.forEach((_, i) => {
+    const addr = XLSX.utils.encode_cell({ c: i, r: 0 });
+    if (!ws[addr]) return;
+    ws[addr].s = ws[addr].s || {};
+    ws[addr].s.font = { bold: true };
+  });
+  const wb = XLSX.utils.book_new();
+  // Název listu = název složky (čištěný od emoji a zakázaných znaků), max 30 znaků
+  const sheetTitle = (folderCard.title || "Složka").replace(/^📁\s*/, "").substring(0, 30).replace(/[\\/?*[\]]/g, "_") || "Složka";
+  XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
+  const safeName = (folderCard.title || "slozka").replace(/^📁\s*/, "").replace(/[^\p{L}\p{N}_\- ]/gu, "").trim().replace(/\s+/g, "_") || "slozka";
+  const dateStr = isoLocalDate(new Date());
+  const filename = "mrello-slozka-" + safeName + "-" + dateStr + ".xlsx";
   XLSX.writeFile(wb, filename);
 }
 //#endregion
