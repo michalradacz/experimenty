@@ -4,7 +4,12 @@
 
 # ✏️O Mrojectu
 
+Sem asi nějakej about, co...
+
+
 # ✏️Příručka
+
+...bude, snad...
 
 # Další informace
 
@@ -20,3 +25,5 @@ Pokus o jakousi tabulku změn a revizí, ha ha
 
 
 ## Vztah k MSP
+
+nic
