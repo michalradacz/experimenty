@@ -11,7 +11,7 @@
   },
 
   "menu_links": [
-    { "label": "Aplikace Mroject", "url": "https://michalradacz.github.io/experimenty/mroject/app }
+    { "label": "Aplikace", "url": "https://michalradacz.github.io/experimenty/mroject/app" }
   ],
 
   "footer_links": [
