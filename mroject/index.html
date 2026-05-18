@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Projektor — plánovač projektů</title>
+<title>Mroject 1.4.1 — plánovač projektů</title>
 <style>
 /* ============================================================
    THEME TOKENS
@@ -164,6 +164,20 @@ header.app-header h1 {
   font-family: var(--serif);
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+header.app-header .version-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 400;
+  padding: 1px 6px;
+  margin-left: 4px;
+  background: var(--paper-2, rgba(255,255,255,0.15));
+  color: var(--ink, inherit);
+  border-radius: 3px;
+  letter-spacing: 0;
+  vertical-align: 1px;
 }
 
 header.app-header .project-name {
@@ -1140,7 +1154,7 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
 
   <!-- ==================== HEADER ==================== -->
   <header class="app-header" role="banner">
-    <h1>Projektor</h1>
+    <h1>Mroject <span id="appVersion" class="version-badge" aria-label="Verze aplikace" title="Verze aplikace"></span></h1>
     <span class="project-name" id="projectNameDisplay" aria-live="polite"></span>
     <span class="spacer"></span>
     <button type="button" id="btnFile" accesskey="s" aria-haspopup="menu">Soubor</button>
@@ -1195,15 +1209,15 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
       <button type="button" id="btnRisks">Rizika</button>
       <button type="button" id="btnMonteCarlo">Monte Carlo</button>
       <button type="button" id="btnCustomFields">Vlastní pole</button>
+      <button type="button" id="btnResources">Zdroje</button>
+      <button type="button" id="btnAssignments">Přiřazení</button>
     </div>
 
     <div class="toolbar-group" role="group" aria-label="Úložiště">
       <span class="label">Úložiště</span>
-      <button type="button" id="btnSave" accesskey="l" title="Uložit (Ctrl+S)">Uložit</button>
-      <button type="button" id="btnLoad" accesskey="o" title="Načíst (Ctrl+O)">Načíst</button>
-      <button type="button" id="btnExport">Export</button>
-      <button type="button" id="btnImport">Import</button>
-      <button type="button" id="btnGitHub">GitHub</button>
+      <button type="button" id="btnSave" accesskey="l" title="Uložit MSP XML (Ctrl+S)">Uložit</button>
+      <button type="button" id="btnLoad" accesskey="o" title="Načíst MSP XML (Ctrl+O)">Načíst</button>
+      <button type="button" id="btnExport">Export reportu</button>
     </div>
   </nav>
 
@@ -1240,6 +1254,7 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
     <span id="statusProgress">Progres: 0 %</span>
     <span class="sep">|</span>
     <span id="statusCritical">Kritické: 0</span>
+    <span id="statusMspdiSource" class="chip info" hidden style="margin-left:8px;">MS Project XML</span>
     <span class="spacer"></span>
     <span id="statusSelection"></span>
     <span class="sep">|</span>
@@ -1274,9 +1289,9 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
 <dialog id="dlgMonteCarlo" aria-labelledby="dlgMonteCarloTitle"></dialog>
 <dialog id="dlgValidate" aria-labelledby="dlgValidateTitle"></dialog>
 <dialog id="dlgReports" aria-labelledby="dlgReportsTitle"></dialog>
+<dialog id="dlgResources" aria-labelledby="dlgResourcesTitle"></dialog>
+<dialog id="dlgAssignments" aria-labelledby="dlgAssignmentsTitle"></dialog>
 <dialog id="dlgExport" aria-labelledby="dlgExportTitle"></dialog>
-<dialog id="dlgImport" aria-labelledby="dlgImportTitle"></dialog>
-<dialog id="dlgGitHub" aria-labelledby="dlgGitHubTitle"></dialog>
 <dialog id="dlgRecurring" aria-labelledby="dlgRecurringTitle"></dialog>
 <dialog id="dlgStatusDate" aria-labelledby="dlgStatusDateTitle"></dialog>
 <dialog id="dlgHelp" aria-labelledby="dlgHelpTitle"></dialog>
@@ -1297,7 +1312,7 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
    - Views (sheet, gantt, calendar, timeline, kanban, network)
    - Dialogs (task, calendars, baselines, filters, ...)
    - Import/export (JSON, CSV, MS Project XML, Markdown)
-   - GitHub integration (Contents API + Git Blob API)
+   - MSPDI (MS Project XML) import/export — primary format
    - Undo/redo, full-text search, NL input
    - Audio feedback (Web Audio API)
    - Accessibility throughout
@@ -1306,11 +1321,18 @@ details.collapsible > *:not(summary) { padding: 8px 10px; }
 "use strict";
 
 /* ===============================================================
+   APP VERSION
+   Bump this on every build. 1.4.x line is the MSPDI rebuild.
+   1.5 is reserved for the next feature-cycle bump (Michal will say when).
+   =============================================================== */
+const APP_VERSION = "1.4.1";
+
+/* ===============================================================
    I18N
    =============================================================== */
 const I18N = {
   cs: {
-    app_title: "Projektor",
+    app_title: "Mroject",
     untitled_project: "Nepojmenovaný projekt",
     task: "Úkol",
     tasks: "Úkoly",
@@ -1382,7 +1404,7 @@ const I18N = {
     no: "Ne",
   },
   en: {
-    app_title: "Projektor",
+    app_title: "Mroject",
     untitled_project: "Untitled project",
     task: "Task",
     tasks: "Tasks",
@@ -1679,35 +1701,224 @@ function sfx(kind) {
   }
 */
 
+function newCalendar(props) {
+  // Default working times: Mon-Fri 8:00-12:00, 13:00-17:00 (480 min = 8 hours)
+  const defaultWorkingTimes = [
+    { from: "08:00", to: "12:00" },
+    { from: "13:00", to: "17:00" },
+  ];
+  const weekDays = [];
+  for (let dt = 1; dt <= 7; dt++) {
+    // MSPDI DayType: 1=Sun, 2=Mon, ..., 7=Sat
+    const isWorking = dt >= 2 && dt <= 6;
+    weekDays.push({
+      dayType: dt,
+      dayWorking: isWorking,
+      workingTimes: isWorking ? defaultWorkingTimes.map(w => ({...w})) : [],
+    });
+  }
+  return Object.assign({
+    id: "cal_" + uid(),
+    uid: null,                   // MSPDI integer UID, assigned at export
+    name: currentLang === "cs" ? "Standardní" : "Standard",
+    isBaseCalendar: true,
+    baseCalendarId: null,         // for derived calendars
+    weekDays,                     // [{dayType, dayWorking, workingTimes:[{from,to}]}]
+    exceptions: [],               // [{name, fromDate, toDate, dayWorking, workingTimes,
+                                  //   type, occurrences, daysOfWeek, monthDay, monthItem, monthPosition, month}]
+    workWeeks: [],                // Project 2010+ (preservation only)
+    _mspdiOpaque: null,           // raw XML fragments for round-trip
+    // Legacy convenience accessors (computed):
+    get workdays() { return this.weekDays.filter(w => w.dayWorking).map(w => (w.dayType - 1) % 7); },
+    get workHoursPerDay() {
+      // Average hours/day from working times
+      let totalMin = 0, count = 0;
+      for (const w of this.weekDays) {
+        if (!w.dayWorking) continue;
+        for (const wt of w.workingTimes) totalMin += parseTimeMin(wt.to) - parseTimeMin(wt.from);
+        count++;
+      }
+      return count ? (totalMin / 60 / count) : 8;
+    },
+    get holidays() {
+      // Return list of YYYY-MM-DD for exceptions that are single-day non-working
+      const out = [];
+      for (const ex of this.exceptions) {
+        if (ex.dayWorking) continue;
+        if (ex.fromDate && ex.fromDate === ex.toDate) out.push(ex.fromDate);
+      }
+      return out;
+    },
+  }, props || {});
+}
+
+function parseTimeMin(timeStr) {
+  // "HH:MM" → minutes since midnight
+  if (!timeStr) return 0;
+  const m = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function formatTimeMin(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return pad2(h) + ":" + pad2(m);
+}
+
+function newResource(props) {
+  return Object.assign({
+    id: "res_" + uid(),
+    uid: null,                    // MSPDI integer UID
+    name: currentLang === "cs" ? "Nový zdroj" : "New resource",
+    type: 1,                      // 0=Material, 1=Work, 2=Cost
+    isGeneric: false,
+    isInactive: false,
+    initials: "",
+    group: "",
+    code: "",
+    emailAddress: "",
+    calendarId: null,             // resource calendar (optional)
+    materialLabel: "",            // for Material resources
+    maxUnits: 1.0,                // 1.0 = 100%
+    peakUnits: 0,
+    overAllocated: false,
+    standardRate: 0,              // currency per hour (for Work) or per unit (Material)
+    standardRateFormat: 2,        // 1=m, 2=h, 3=d, 4=w, 5=mo, 6=y
+    overtimeRate: 0,
+    overtimeRateFormat: 2,
+    costPerUse: 0,
+    accrueAt: 3,                  // 1=Start, 2=End, 3=Prorated
+    workgroup: 0,
+    notes: "",
+    hyperlink: null,              // {name, address, subAddress}
+    availabilityPeriods: [],      // [{from, to, units}]
+    costRateTables: [],           // up to 5 (A-E) cost rate tables
+    customValues: {},
+    _mspdiOpaque: null,
+  }, props || {});
+}
+
+function newAssignment(props) {
+  return Object.assign({
+    id: "asg_" + uid(),
+    uid: null,                    // MSPDI integer UID
+    taskId: null,
+    resourceId: null,
+    units: 1.0,                   // 1.0 = 100%
+    work: 0,                      // duration in days
+    workUnit: "d",
+    actualWork: 0,
+    remainingWork: 0,
+    overtimeWork: 0,
+    actualOvertimeWork: 0,
+    percentWorkComplete: 0,
+    start: null,
+    finish: null,
+    actualStart: null,
+    actualFinish: null,
+    cost: 0,
+    costRateTable: 0,             // 0 = table A
+    delay: 0,                     // assignment delay (days)
+    levelingDelay: 0,
+    notes: "",
+    hyperlink: null,
+    workContour: 0,               // 0=Flat, 1=BackLoaded, 2=FrontLoaded, 3=DoubleBell, 4=EarlyPeak, 5=LatePeak, 6=Bell, 7=Turtle, 8=Contoured
+    customValues: {},
+    _mspdiOpaque: null,
+  }, props || {});
+}
+
 function newProject(name) {
   const projectId = uid();
   const todayStr = formatDate(new Date());
-  const defaultCal = {
+  const defaultCal = newCalendar({
     id: "cal_default",
+    uid: 1,
     name: currentLang === "cs" ? "Standardní" : "Standard",
-    workdays: [1,2,3,4,5], // Mon-Fri
-    workHoursPerDay: 8,
-    holidays: [],
-  };
+  });
   return {
     id: projectId,
-    version: 1,
+    version: 2,                                       // bumped: MSPDI-compatible model
+    // === Project metadata (MSPDI <Project> root attributes) ===
     name: name || T("untitled_project"),
+    title: "",
+    subject: "",
+    category: "",
+    company: "",
+    manager: "",
+    author: "",
+    keywords: "",
     description: "",
+    revision: 1,
+    creationDate: todayStr,
+    lastSaved: todayStr,
+    saveVersion: 14,                                  // 14 = MS Project 2010+
+    // === Scheduling defaults ===
+    scheduleFromStart: true,
     startDate: todayStr,
+    finishDate: null,                                 // used when scheduling backward
     statusDate: todayStr,
+    currentDate: todayStr,
     projectCalendarId: "cal_default",
+    fyStartMonth: 1,                                  // 1 = January
+    weekStartDay: 1,                                  // 0=Sunday, 1=Monday, ... 6=Saturday
+    defaultStartTime: "08:00",
+    defaultFinishTime: "17:00",
+    minutesPerDay: 480,
+    minutesPerWeek: 2400,
+    daysPerMonth: 20,
+    defaultTaskType: 1,                               // 0=FixedUnits, 1=FixedDuration, 2=FixedWork
+    defaultFixedCostAccrual: 3,                       // 1=Start, 2=Prorated, 3=End
+    defaultStandardRate: 0,
+    defaultOvertimeRate: 0,
+    defaultTaskEVMethod: 0,                           // 0=%Complete, 1=Physical%
+    durationFormat: 7,                                // 7=days
+    workFormat: 2,                                    // 2=hours
+    newTasksEstimated: false,
+    splitsInProgressTasks: true,
+    taskUpdatesResource: true,
+    fiscalYearStart: false,
+    honorConstraints: true,
+    autolink: true,
+    inserteddProjectsLikeSummary: true,
+    multipleCriticalPaths: false,
+    newTasksEffortDriven: false,
+    movedCompleted: false,
+    movedRemaining: false,
+    actualsInSync: true,
+    removeFileProperties: false,
+    adminProject: false,
+    extendedCreationDate: todayStr,
+    currentEndDate: null,                             // computed
     nextId: 1,
+    // === Currency ===
+    currencyDigits: 2,
+    currencySymbol: "Kč",
+    currencySymbolPosition: 1,                        // 0=Before, 1=After, 2=BeforeWithSpace, 3=AfterWithSpace
+    currencyCode: "CZK",
+    // === Critical path ===
+    criticalSlackLimit: 0,
+    // === Collections ===
     tasks: [],
     links: [],
     calendars: [ defaultCal ],
+    resources: [],
+    assignments: [],
     baselines: [],
     customFields: [],
+    outlineCodes: [],
+    wbsMasks: [],
     risks: [],
+    // === MSPDI preservation buffer ===
+    _mspdiOpaque: {
+      rawAttributes: {},          // root-level fields we don't model
+      taskPlaceholderForUid1: false, // MSPDI requires UID=0 task; we synthesize
+    },
+    // === UI settings ===
     settings: {
       theme: "light",
       lang: currentLang,
-      zoom: 3, // 0..6 (day..year scale)
+      zoom: 3,
       ganttTimeScale: "week",
       currentView: "sheet",
       showCritical: true,
@@ -1718,7 +1929,7 @@ function newProject(name) {
       groupDef: null,
       soundEnabled: true,
       autosave: true,
-      firstDayOfWeek: 1, // Monday
+      firstDayOfWeek: 1,
       expandedTasks: {},
     },
     soundEnabled: true,
@@ -1727,34 +1938,121 @@ function newProject(name) {
 
 function newTask(props) {
   return Object.assign({
+    // === Identity ===
     id: uid(),
+    uid: null,                                        // MSPDI integer UID, assigned at export
     name: currentLang === "cs" ? "Nový úkol" : "New task",
+    wbs: "",
+    outlineNumber: "",
     outlineLevel: 0,
+    parentId: null,
+    createDate: formatDate(new Date()),
+    // === Duration / Schedule ===
     duration: 1,
-    durationUnit: "d",
+    durationUnit: "d",                                // d, h, m, w, mo, ed, em, eh, ew, emo, %
+    durationEstimated: false,                         // "?" flag
     start: null,
     finish: null,
-    percentComplete: 0,
-    physicalPercentComplete: 0,
+    earlyStart: null,
+    earlyFinish: null,
+    lateStart: null,
+    lateFinish: null,
+    preLeveledStart: null,
+    preLeveledFinish: null,
     actualStart: null,
     actualFinish: null,
-    constraint: "asap",
+    actualDuration: 0,
+    actualDurationUnit: "d",
+    remainingDuration: null,
+    stop: null,
+    resume: null,
+    resumeValid: true,
+    // === Progress ===
+    percentComplete: 0,
+    physicalPercentComplete: 0,
+    percentWorkComplete: 0,
+    earnedValueMethod: 0,                             // 0=%Complete, 1=Physical%
+    // === Constraints ===
+    constraint: "asap",                               // asap, alap, sneт, snlt, fnet, fnlt, mso, mfo
     constraintDate: null,
     deadline: null,
     priority: 500,
+    // === Flags ===
     manual: false,
-    calendarId: null,
     isMilestone: false,
     isRecurring: false,
-    recurrenceRule: null,
-    parentId: null,
+    isSummary: false,                                 // computed, but stored
+    isActive: true,
+    isNull: false,
+    isPublished: true,
+    isSubproject: false,
+    isSubprojectReadOnly: false,
+    estimated: false,
+    isCritical: false,                                // computed
+    rollup: false,
+    hideBar: false,
+    effortDriven: false,
+    ignoreResourceCalendar: false,
+    levelAssignments: true,
+    levelingCanSplit: true,
+    levelingDelay: 0,
+    levelingDelayFormat: 8,                           // 8=ed (elapsed days)
+    externalTask: false,
+    externalTaskProject: "",
+    // === Manual scheduling (Project 2010+) ===
+    manualStart: null,
+    manualFinish: null,
+    manualDuration: null,
+    manualDurationUnit: "d",
+    startText: "",                                    // when manual & freely typed
+    finishText: "",
+    durationText: "",
+    // === Type & Calendar ===
+    type: 1,                                          // 0=FixedUnits, 1=FixedDuration, 2=FixedWork
+    calendarId: null,                                 // task-specific calendar (uses project default if null)
+    fixedCostAccrual: 3,                              // 1=Start, 2=Prorated, 3=End
+    fixedCost: 0,
+    // === Work / Cost (resources) ===
+    work: 0,                                          // total work in selected unit
+    workUnit: "d",                                    // for work field
+    actualWork: 0,
+    actualOvertimeWork: 0,
+    actualOvertimeWorkProtected: 0,
+    actualWorkProtected: 0,
+    remainingWork: 0,
+    overtimeWork: 0,
+    regularWork: 0,
+    cost: 0,
+    overtimeCost: 0,
+    actualCost: 0,
+    remainingCost: 0,
+    actualOvertimeCost: 0,
+    remainingOvertimeCost: 0,
+    // === Recurring ===
+    recurringInfo: null,                              // {type, frequency, ...} per MSPDI
+    recurrenceRule: null,                             // legacy
+    // === Notes / Hyperlink ===
     notes: "",
+    notesRTF: null,                                   // preserved RTF if imported
+    hyperlink: null,                                  // {name, address, subAddress}
+    // === Content / Baselines ===
     customValues: {},
+    baselines: {},                                    // {0: {start, finish, duration, work, cost}, ...}
+    splits: null,                                     // [{start, finish}]
+    // === 3-point estimate ===
     optDuration: null,
     likelyDuration: null,
     pessDuration: null,
-    splits: null,
+    // === MSPDI preservation buffer ===
+    _mspdiOpaque: null,                               // {rawXml, fields:{}}
+    _dirty: false,                                    // set by action()
   }, props || {});
+}
+
+/* Internal: helpers used by computed accessors */
+function getTaskField(t, k) {
+  if (k in t) return t[k];
+  return null;
 }
 
 /* Global state */
@@ -1777,20 +2075,103 @@ function getTaskCalendar(task) {
   return getCalendar(task.calendarId || project.projectCalendarId);
 }
 
+/** Resolve the actual calendar entry for a given day, walking up the base-calendar chain. */
+function resolveCalendarDay(date, cal) {
+  // 1. Check exceptions (most-specific wins). If date is within an exception range, use it.
+  const dStr = formatDate(date);
+  if (cal && cal.exceptions) {
+    for (const ex of cal.exceptions) {
+      if (isExceptionApplicable(ex, date)) {
+        return { dayWorking: ex.dayWorking, workingTimes: ex.workingTimes || [] };
+      }
+    }
+  }
+  // 2. Check WeekDay definition in this calendar
+  const dow = date.getDay();              // 0=Sun..6=Sat
+  const dayType = dow + 1;                // MSPDI 1=Sun..7=Sat
+  if (cal && cal.weekDays) {
+    const wd = cal.weekDays.find(w => w.dayType === dayType);
+    if (wd) {
+      if (wd.dayWorking !== undefined) return { dayWorking: wd.dayWorking, workingTimes: wd.workingTimes || [] };
+    }
+  }
+  // 3. Fall back to base calendar
+  if (cal && cal.baseCalendarId) {
+    const base = getCalendar(cal.baseCalendarId);
+    if (base && base.id !== cal.id) return resolveCalendarDay(date, base);
+  }
+  // 4. Default: Mon-Fri 8h
+  return { dayWorking: dow >= 1 && dow <= 5, workingTimes: dow >= 1 && dow <= 5 ? [{from:"08:00", to:"12:00"}, {from:"13:00", to:"17:00"}] : [] };
+}
+
+/** Check whether an exception applies to a given date. Handles recurring and range types. */
+function isExceptionApplicable(ex, date) {
+  if (!ex.fromDate) return false;
+  const d = startOfDay(date);
+  const from = startOfDay(parseDate(ex.fromDate));
+  const to = ex.toDate ? startOfDay(parseDate(ex.toDate)) : from;
+  if (d < from || d > to) return false;
+  // Type: 1=Daily, 2=Yearly_by_day (specific date each year), 3=Yearly_by_position,
+  // 4=Monthly_by_day, 5=Monthly_by_position, 6=Weekly, 7=Daily(every N days)
+  // For simplicity: if no type set, treat as a date range exception (always applicable inside [from,to]).
+  if (!ex.type || ex.type === 0) return true;
+  // Daily (every N days)
+  if (ex.type === 1 || ex.type === 7) {
+    const step = ex.period || 1;
+    const diff = diffDays(from, d);
+    return diff >= 0 && diff % step === 0;
+  }
+  // Weekly: ex.daysOfWeek = array of 0..6
+  if (ex.type === 6) {
+    const step = ex.period || 1;
+    const weekDiff = Math.floor(diffDays(from, d) / 7);
+    if (weekDiff % step !== 0) return false;
+    return Array.isArray(ex.daysOfWeek) && ex.daysOfWeek.includes(d.getDay());
+  }
+  // Monthly by day: ex.monthDay = 1..31
+  if (ex.type === 4) {
+    return d.getDate() === ex.monthDay;
+  }
+  // Monthly by position: ex.monthItem = which (1..5 / -1 for last), ex.monthPosition = day of week 0..6
+  if (ex.type === 5) {
+    return matchesMonthlyPosition(d, ex.monthItem, ex.monthPosition);
+  }
+  // Yearly by day: ex.month=1..12, ex.monthDay=1..31
+  if (ex.type === 2) {
+    return d.getMonth() + 1 === ex.month && d.getDate() === ex.monthDay;
+  }
+  // Yearly by position: ex.month, ex.monthItem, ex.monthPosition
+  if (ex.type === 3) {
+    return d.getMonth() + 1 === ex.month && matchesMonthlyPosition(d, ex.monthItem, ex.monthPosition);
+  }
+  return true; // fallback: in range
+}
+
+function matchesMonthlyPosition(date, ord, dow) {
+  // ord: 1=first, 2=second, 3=third, 4=fourth, 5=fifth, -1=last
+  // dow: 0=Sun..6=Sat
+  if (date.getDay() !== dow) return false;
+  if (ord === -1 || ord === 5) {
+    // last occurrence of this DOW in the month: same DOW + (date + 7) is in next month
+    const probe = new Date(date); probe.setDate(probe.getDate() + 7);
+    return probe.getMonth() !== date.getMonth();
+  }
+  // Nth occurrence
+  const which = Math.floor((date.getDate() - 1) / 7) + 1;
+  return which === ord;
+}
+
 function isWorkingDay(date, cal) {
   cal = cal || getCalendar();
-  const dow = date.getDay();
-  if (!cal.workdays.includes(dow)) return false;
-  const dStr = formatDate(date);
-  if (cal.holidays && cal.holidays.includes(dStr)) return false;
-  return true;
+  return resolveCalendarDay(date, cal).dayWorking;
 }
 
 function nextWorkingDay(date, cal, inclusive) {
   const d = startOfDay(date);
   if (inclusive && isWorkingDay(d, cal)) return d;
   d.setDate(d.getDate() + (inclusive ? 0 : 1));
-  while (!isWorkingDay(d, cal)) {
+  let safety = 366;
+  while (!isWorkingDay(d, cal) && safety-- > 0) {
     d.setDate(d.getDate() + 1);
   }
   return d;
@@ -1800,27 +2181,56 @@ function prevWorkingDay(date, cal, inclusive) {
   const d = startOfDay(date);
   if (inclusive && isWorkingDay(d, cal)) return d;
   d.setDate(d.getDate() - (inclusive ? 0 : 1));
-  while (!isWorkingDay(d, cal)) {
+  let safety = 366;
+  while (!isWorkingDay(d, cal) && safety-- > 0) {
     d.setDate(d.getDate() - 1);
   }
   return d;
 }
 
-/** Add N working days to date. Returns date that is N working days later.
- *  If addDays=0, returns date itself (snapped to working day forward if not working). */
+/** Get total working minutes available in a day under the calendar. */
+function workingMinutesInDay(date, cal) {
+  cal = cal || getCalendar();
+  const r = resolveCalendarDay(date, cal);
+  if (!r.dayWorking) return 0;
+  let total = 0;
+  for (const wt of (r.workingTimes || [])) {
+    total += parseTimeMin(wt.to) - parseTimeMin(wt.from);
+  }
+  return total;
+}
+
+/** Compute the project's typical minutes per working day (avg over Mon-Fri default or workweek). */
+function avgMinutesPerWorkingDay(cal) {
+  cal = cal || getCalendar();
+  // Sample 14 days from today, average over working days
+  let total = 0, count = 0;
+  const today = startOfDay(new Date());
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(today, i);
+    if (isWorkingDay(d, cal)) {
+      total += workingMinutesInDay(d, cal);
+      count++;
+    }
+  }
+  if (count === 0) return project.minutesPerDay || 480;
+  return Math.round(total / count);
+}
+
 function addWorkingDays(date, workDays, cal) {
   cal = cal || getCalendar();
   let d = startOfDay(date);
   if (workDays === 0) return d;
+  let safety = 10000;
   if (workDays > 0) {
     let remaining = workDays;
-    while (remaining > 0) {
+    while (remaining > 0 && safety-- > 0) {
       d.setDate(d.getDate() + 1);
       if (isWorkingDay(d, cal)) remaining--;
     }
   } else {
     let remaining = -workDays;
-    while (remaining > 0) {
+    while (remaining > 0 && safety-- > 0) {
       d.setDate(d.getDate() - 1);
       if (isWorkingDay(d, cal)) remaining--;
     }
@@ -1828,87 +2238,228 @@ function addWorkingDays(date, workDays, cal) {
   return d;
 }
 
-/** Working days from `from` (inclusive) to `to` (inclusive). */
 function countWorkingDays(from, to, cal) {
   cal = cal || getCalendar();
-  let n = 0;
   let d = startOfDay(from);
   const e = startOfDay(to);
   if (d > e) {
-    // swap
-    const tmp = d; d = e; return -countWorkingDays(e, tmp, cal);
+    return -countWorkingDays(e, from, cal);
   }
-  while (d <= e) {
+  let n = 0, safety = 100000;
+  while (d <= e && safety-- > 0) {
     if (isWorkingDay(d, cal)) n++;
     d.setDate(d.getDate() + 1);
   }
   return n;
 }
 
-/** Given start date and duration (in working days), compute finish date.
- *  Finish date is inclusive last working day. If duration=0 (milestone), finish = start.
- *  If elapsed (unit="ed"), use calendar days. */
 function computeFinish(startDate, duration, unit, cal) {
   cal = cal || getCalendar();
   const start = startOfDay(startDate);
   const durDays = durationToDays(duration, unit, cal);
-  if (unit === "ed") {
+  if ((unit || "").startsWith("e")) {
     // elapsed — finish = start + (durDays-1) calendar days
     if (durDays <= 0) return start;
     return addDays(start, Math.ceil(durDays) - 1);
   }
   if (durDays <= 0) return start;
-  // find (durDays-1) additional working days after start (which must be working)
   let s = isWorkingDay(start, cal) ? start : nextWorkingDay(start, cal, false);
   let remaining = Math.ceil(durDays) - 1;
   let d = new Date(s);
-  while (remaining > 0) {
+  let safety = 100000;
+  while (remaining > 0 && safety-- > 0) {
     d.setDate(d.getDate() + 1);
     if (isWorkingDay(d, cal)) remaining--;
   }
   return d;
 }
 
+/** Convert duration value to working-days, given unit and project/calendar context. */
 function durationToDays(duration, unit, cal) {
   cal = cal || getCalendar();
-  const hpd = cal.workHoursPerDay || 8;
-  switch (unit || "d") {
-    case "d":  return duration;
-    case "h":  return duration / hpd;
-    case "w":  return duration * cal.workdays.length;
-    case "mo": return duration * 20; // approx
-    case "ed": return duration;
-    default:   return duration;
+  const mpd = (project && project.minutesPerDay) || 480;
+  const mpw = (project && project.minutesPerWeek) || 2400;
+  const dpm = (project && project.daysPerMonth) || 20;
+  const u = (unit || "d").toLowerCase();
+  switch (u) {
+    case "m":
+    case "em":
+      return duration / mpd;
+    case "h":
+    case "eh":
+      return duration * 60 / mpd;
+    case "d":
+    case "ed":
+      return duration;
+    case "w":
+    case "ew":
+      return duration * (mpw / mpd);
+    case "mo":
+    case "emo":
+      return duration * dpm;
+    default:
+      return duration;
   }
 }
 
-function formatDuration(duration, unit) {
-  const u = unit || "d";
-  let label = "";
+/** Convert duration value to minutes. */
+function durationToMinutes(duration, unit) {
+  const mpd = (project && project.minutesPerDay) || 480;
+  const mpw = (project && project.minutesPerWeek) || 2400;
+  const dpm = (project && project.daysPerMonth) || 20;
+  const u = (unit || "d").toLowerCase();
   switch (u) {
-    case "h":  label = currentLang === "cs" ? "h" : "h"; break;
-    case "w":  label = currentLang === "cs" ? "t" : "w"; break;
-    case "mo": label = currentLang === "cs" ? "m" : "m"; break;
-    case "ed": label = currentLang === "cs" ? "ed" : "ed"; break;
-    default:   label = currentLang === "cs" ? "d" : "d"; break;
+    case "m": case "em": return duration;
+    case "h": case "eh": return duration * 60;
+    case "d": case "ed": return duration * mpd;
+    case "w": case "ew": return duration * mpw;
+    case "mo": case "emo": return duration * dpm * mpd;
+    default: return duration * mpd;
   }
-  return `${Math.round(duration * 100) / 100} ${label}`;
+}
+
+/** Convert minutes back to duration value in given unit. */
+function minutesToDuration(minutes, unit) {
+  const mpd = (project && project.minutesPerDay) || 480;
+  const mpw = (project && project.minutesPerWeek) || 2400;
+  const dpm = (project && project.daysPerMonth) || 20;
+  const u = (unit || "d").toLowerCase();
+  switch (u) {
+    case "m": case "em": return minutes;
+    case "h": case "eh": return minutes / 60;
+    case "d": case "ed": return minutes / mpd;
+    case "w": case "ew": return minutes / mpw;
+    case "mo": case "emo": return minutes / (dpm * mpd);
+    default: return minutes / mpd;
+  }
+}
+
+function formatDuration(duration, unit, estimated) {
+  const u = unit || "d";
+  const isElapsed = u.startsWith("e");
+  const base = isElapsed ? u.slice(1) : u;
+  let label;
+  if (currentLang === "cs") {
+    switch (base) {
+      case "m":  label = "min"; break;
+      case "h":  label = "h"; break;
+      case "w":  label = "t"; break;
+      case "mo": label = "měs"; break;
+      default:   label = "d"; break;
+    }
+    if (isElapsed) label = "e" + label;
+  } else {
+    switch (base) {
+      case "m":  label = "min"; break;
+      case "h":  label = "h"; break;
+      case "w":  label = "w"; break;
+      case "mo": label = "mo"; break;
+      default:   label = "d"; break;
+    }
+    if (isElapsed) label = "e" + label;
+  }
+  let out = (Math.round(duration * 100) / 100) + " " + label;
+  if (estimated) out += "?";
+  return out;
 }
 
 function parseDurationString(s) {
-  if (s == null || s === "") return { duration: 1, unit: "d" };
-  const str = String(s).trim().toLowerCase();
-  const m = str.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(h|hod|hours?|d|den|dny|dn[ií]|days?|w|t|tyd|týdn[yuůí]|weeks?|mo|mes|měs|months?|ed|e)?$/);
-  if (!m) return { duration: parseFloat(str) || 1, unit: "d" };
+  if (s == null || s === "") return { duration: 1, unit: "d", estimated: false };
+  let str = String(s).trim().toLowerCase();
+  // Check for estimated suffix "?"
+  let estimated = false;
+  if (str.endsWith("?")) { estimated = true; str = str.slice(0, -1).trim(); }
+  // Allow optional "e" prefix on the unit for elapsed durations
+  const m = str.match(/^([\-]?[0-9]+(?:[.,][0-9]+)?)\s*(e?)\s*(min(?:ut[yaouůí]?)?|m|h|hod(?:in[yuaá]?)?|hours?|d|den|dny|dn[ií]|days?|w|t|tyd|týdn[yuůí]?|weeks?|mo|mes|měs|months?|ed|eh|em|ew|emo)?$/);
+  if (!m) {
+    const num = parseFloat(str.replace(",", "."));
+    return { duration: isNaN(num) ? 1 : num, unit: "d", estimated };
+  }
   const num = parseFloat(m[1].replace(",", "."));
-  const u = (m[2] || "d").toLowerCase();
+  const explicitElapsed = m[2] === "e";
+  const u = (m[3] || "d").toLowerCase();
   let unit = "d";
-  if (/^h|hod|hour/.test(u)) unit = "h";
+  let elapsed = explicitElapsed;
+  if (u.startsWith("em")) { unit = "m"; elapsed = true; }
+  else if (u.startsWith("eh")) { unit = "h"; elapsed = true; }
+  else if (u.startsWith("ed")) { unit = "d"; elapsed = true; }
+  else if (u.startsWith("ew")) { unit = "w"; elapsed = true; }
+  else if (u.startsWith("emo")) { unit = "mo"; elapsed = true; }
+  else if (/^min|^m$/.test(u)) unit = "m";
+  else if (/^h|hod|hour/.test(u)) unit = "h";
   else if (/^w|t|tyd|týd|week/.test(u)) unit = "w";
   else if (/^mo|mes|měs|month/.test(u)) unit = "mo";
-  else if (/^ed|e/.test(u)) unit = "ed";
-  else unit = "d";
-  return { duration: num, unit };
+  else if (/^d|den|dn|day/.test(u)) unit = "d";
+  if (elapsed) unit = "e" + unit;
+  return { duration: num, unit, estimated };
+}
+
+/** MSPDI DurationFormat code (3..53) ↔ our unit string */
+const MSPDI_DURATION_FORMAT = {
+  3: "m",   4: "em",
+  5: "h",   6: "eh",
+  7: "d",   8: "ed",
+  9: "w",  10: "ew",
+  11: "mo", 12: "emo",
+  19: "%",  20: "e%", 21: null,
+  35: "m",  36: "em",   // estimated variants
+  37: "h",  38: "eh",
+  39: "d",  40: "ed",
+  41: "w",  42: "ew",
+  43: "mo", 44: "emo",
+  51: "%",  52: "e%", 53: null,
+};
+
+function mspdiDurationFormatToUnit(code, isEstimated) {
+  // Returns {unit, estimated}
+  if (code == null) return { unit: "d", estimated: false };
+  const c = parseInt(code, 10);
+  const unit = MSPDI_DURATION_FORMAT[c] || "d";
+  const estimated = (c >= 35 && c <= 53) || !!isEstimated;
+  return { unit, estimated };
+}
+
+function unitToMspdiDurationFormat(unit, estimated) {
+  const u = (unit || "d").toLowerCase();
+  const baseMap = { "m": 3, "em": 4, "h": 5, "eh": 6, "d": 7, "ed": 8, "w": 9, "ew": 10, "mo": 11, "emo": 12 };
+  let base = baseMap[u];
+  if (base == null) base = 7;
+  if (estimated) base += 32;
+  return base;
+}
+
+/** Convert duration+unit to ISO 8601 XSD duration string used by MSPDI (e.g. "PT8H0M0S"). */
+function durationToXsd(duration, unit) {
+  const minutes = durationToMinutes(duration, unit);
+  // MSP non-standard: negative durations have "-" inside, e.g. PT-2H0M0S
+  const neg = minutes < 0;
+  const m = Math.abs(minutes);
+  const hours = Math.floor(m / 60);
+  const mins = Math.round(m - hours * 60);
+  return "PT" + (neg ? "-" : "") + hours + "H" + mins + "M0S";
+}
+
+/** Parse XSD duration string (MSP non-standard) → minutes. */
+function xsdToMinutes(xsd) {
+  if (!xsd) return 0;
+  // Tolerate both standard "-PT2H" and MSP-style "PT-2H".
+  let s = String(xsd).trim();
+  let sign = 1;
+  if (s.startsWith("-PT")) { sign = -1; s = s.substring(1); }
+  if (!s.startsWith("PT") && !s.startsWith("P")) return 0;
+  s = s.replace(/^P/, "");
+  s = s.replace(/^T/, "");
+  let total = 0;
+  // Hours
+  let m = s.match(/(-?\d+(?:\.\d+)?)\s*H/);
+  if (m) { total += parseFloat(m[1]) * 60; s = s.replace(m[0], ""); }
+  // Minutes
+  m = s.match(/(-?\d+(?:\.\d+)?)\s*M/);
+  if (m) { total += parseFloat(m[1]); s = s.replace(m[0], ""); }
+  // Seconds
+  m = s.match(/(-?\d+(?:\.\d+)?)\s*S/);
+  if (m) { total += parseFloat(m[1]) / 60; }
+  return total * sign;
 }
 
 /* ===============================================================
@@ -1961,15 +2512,7 @@ function getTaskIndex(id) {
 
 /** Compute WBS codes based on order within parents. */
 function recomputeWBS() {
-  const counters = {};
-  counters["__root__"] = 0;
-  // Traverse tasks in order; maintain WBS numbering per parent.
   const wbsByTask = {};
-  const parentStack = {};
-
-  // iterate; for each task compute index within its siblings up to this point
-  // Simpler: compute by walking tree in display order.
-  // Use getDisplayOrder + indexing per parent.
   const seenCounts = {};
   for (const t of project.tasks) {
     const pKey = t.parentId || "__root__";
@@ -1978,6 +2521,8 @@ function recomputeWBS() {
     const code = seenCounts[pKey];
     wbsByTask[t.id] = parentWbs ? `${parentWbs}.${code}` : String(code);
     t.wbs = wbsByTask[t.id];
+    t.outlineNumber = wbsByTask[t.id];          // identical when no custom WBSMask
+    t.isSummary = isSummary(t);
   }
 }
 
@@ -2438,15 +2983,39 @@ function snapshot(label) {
       tasks: project.tasks,
       links: project.links,
       calendars: project.calendars,
+      resources: project.resources,
+      assignments: project.assignments,
       baselines: project.baselines,
       customFields: project.customFields,
+      outlineCodes: project.outlineCodes,
+      wbsMasks: project.wbsMasks,
       risks: project.risks,
-      startDate: project.startDate,
-      statusDate: project.statusDate,
       name: project.name,
+      title: project.title,
+      subject: project.subject,
+      category: project.category,
+      company: project.company,
+      manager: project.manager,
+      author: project.author,
+      keywords: project.keywords,
+      description: project.description,
+      startDate: project.startDate,
+      finishDate: project.finishDate,
+      statusDate: project.statusDate,
+      currentDate: project.currentDate,
       projectCalendarId: project.projectCalendarId,
+      scheduleFromStart: project.scheduleFromStart,
+      criticalSlackLimit: project.criticalSlackLimit,
+      minutesPerDay: project.minutesPerDay,
+      minutesPerWeek: project.minutesPerWeek,
+      daysPerMonth: project.daysPerMonth,
+      defaultStartTime: project.defaultStartTime,
+      defaultFinishTime: project.defaultFinishTime,
+      fyStartMonth: project.fyStartMonth,
+      weekStartDay: project.weekStartDay,
+      currencySymbol: project.currencySymbol,
+      currencyCode: project.currencyCode,
     });
-    // trim forward history
     history.stack = history.stack.slice(0, history.pointer + 1);
     history.stack.push({ snap, label, ts: Date.now() });
     if (history.stack.length > history.max) history.stack.shift();
@@ -2459,16 +3028,7 @@ function snapshot(label) {
 
 function applySnapshot(snap) {
   const data = JSON.parse(snap);
-  project.tasks = data.tasks;
-  project.links = data.links;
-  project.calendars = data.calendars;
-  project.baselines = data.baselines;
-  project.customFields = data.customFields;
-  project.risks = data.risks;
-  project.startDate = data.startDate;
-  project.statusDate = data.statusDate;
-  project.name = data.name;
-  project.projectCalendarId = data.projectCalendarId;
+  Object.assign(project, data);
 }
 
 function undo() {
@@ -2676,6 +3236,7 @@ function updateTask(id, patch, label) {
     const t = getTaskById(id);
     if (!t) return;
     Object.assign(t, patch);
+    t._dirty = true;       // mark for smart MSPDI roundtrip
   });
 }
 
@@ -2850,7 +3411,7 @@ function renderAll() {
   updateStatusBar();
   updateInspector();
   $("#projectNameDisplay").textContent = "— " + (project.name || T("untitled_project"));
-  document.title = "Projektor — " + (project.name || T("untitled_project"));
+  document.title = "Mroject " + APP_VERSION + " — " + (project.name || T("untitled_project"));
 }
 
 function updateStatusBar() {
@@ -2863,6 +3424,20 @@ function updateStatusBar() {
   const start = project.startDate;
   const end = project.currentEndDate || "—";
   $("#statusProjectDates").textContent = start + " → " + end;
+  // MSPDI source indicator
+  const ind = $("#statusMspdiSource");
+  if (ind) {
+    const fromMspdi = project._mspdiOpaque &&
+      (project._mspdiOpaque.taskPlaceholderForUid1 ||
+       (project._mspdiOpaque.rawAttributes && Object.keys(project._mspdiOpaque.rawAttributes).length > 0));
+    ind.hidden = !fromMspdi;
+    if (fromMspdi) {
+      ind.textContent = currentLang === "cs" ? "📎 Z MS Project" : "📎 From MS Project";
+      ind.title = currentLang === "cs"
+        ? "Projekt načten z MS Project XML (MSPDI). Zachovaná pole budou zapsána zpět při exportu."
+        : "Project loaded from MS Project XML (MSPDI). Preserved fields will be written back on export.";
+    }
+  }
   if (selection.size) {
     $("#statusSelection").textContent = (currentLang === "cs" ? "Vybráno: " : "Selected: ") + selection.size;
   } else {
@@ -4360,13 +4935,14 @@ function openTaskDialog(id) {
     editing ? (currentLang === "cs" ? "Úprava úkolu" : "Edit task") : (currentLang === "cs" ? "Nový úkol" : "New task"),
     (body) => {
       const tabs = el("div", { class:"dialog-tabs", role:"tablist" });
-      const tabKeys = ["general", "predecessors", "advanced", "custom", "notes"];
+      const tabKeys = ["general", "predecessors", "advanced", "custom", "notes", "msproject"];
       const tabLabels = {
         general: currentLang === "cs" ? "Obecné" : "General",
         predecessors: T("predecessors"),
         advanced: currentLang === "cs" ? "Pokročilé" : "Advanced",
         custom: currentLang === "cs" ? "Vlastní pole" : "Custom fields",
         notes: T("notes"),
+        msproject: "MS Project",
       };
       for (const k of tabKeys) {
         tabs.appendChild(el("button", {
@@ -4408,6 +4984,9 @@ function openTaskDialog(id) {
       genP.appendChild(el("div", { class:"form-row" },
         el("label", { for:"tskManual" }, T("manual")),
         el("div", null, el("input", { id:"tskManual", type:"checkbox", checked: draft.manual }))));
+      genP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskEstimated" }, currentLang==="cs"?"Odhad (?)":"Estimated (?)"),
+        el("div", null, el("input", { id:"tskEstimated", type:"checkbox", checked: draft.durationEstimated || draft.estimated || false }))));
       body.appendChild(genP);
 
       const predP = el("div", { class:"dialog-tab-panel", dataset:{ panel:"predecessors" }, hidden: true });
@@ -4528,6 +5107,87 @@ function openTaskDialog(id) {
         el("label", { for:"tskNotes" }, T("notes")),
         el("textarea", { id:"tskNotes", rows:"10", style:"min-height:200px;" }, draft.notes || "")));
       body.appendChild(notesP);
+
+      // MS Project tab — MSPDI-specific fields
+      const mspP = el("div", { class:"dialog-tab-panel", dataset:{ panel:"msproject" }, hidden:true });
+      mspP.appendChild(el("p", { class:"muted" },
+        currentLang==="cs"
+          ? "Tato pole jsou ukládána do MS Project XML (MSPDI)."
+          : "These fields are stored in MS Project XML (MSPDI)."));
+
+      // Hyperlink
+      mspP.appendChild(el("h3", null, "Hyperlink"));
+      const hl = draft.hyperlink || { name:"", address:"", subAddress:"" };
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskHlName" }, currentLang==="cs"?"Popis":"Display name"),
+        el("input", { id:"tskHlName", type:"text", value: hl.name || "" })));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskHlAddr" }, currentLang==="cs"?"Adresa (URL nebo cesta)":"Address (URL or path)"),
+        el("input", { id:"tskHlAddr", type:"text", value: hl.address || "" })));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskHlSub" }, currentLang==="cs"?"Podotazník (záložka)":"Sub-address (bookmark)"),
+        el("input", { id:"tskHlSub", type:"text", value: hl.subAddress || "" })));
+
+      // Manual scheduling text overrides
+      mspP.appendChild(el("h3", { style:"margin-top:16px;" },
+        currentLang==="cs"?"Ruční rozvrh (textový override)":"Manual scheduling (text override)"));
+      mspP.appendChild(el("p", { class:"muted" },
+        currentLang==="cs"
+          ? "Pro úkoly s ruční rozvrhem může MS Project uchovávat původní volný text uživatele (např. cca v dubnu). Tato pole jsou ukládána i pro round-trip."
+          : "For manually-scheduled tasks, MS Project preserves the user's free-form text. These fields are kept for round-trip."));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskStartText" }, currentLang==="cs"?"Začátek (text)":"Start (text)"),
+        el("input", { id:"tskStartText", type:"text", value: draft.startText || "" })));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskFinishText" }, currentLang==="cs"?"Konec (text)":"Finish (text)"),
+        el("input", { id:"tskFinishText", type:"text", value: draft.finishText || "" })));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskDurationText" }, currentLang==="cs"?"Trvání (text)":"Duration (text)"),
+        el("input", { id:"tskDurationText", type:"text", value: draft.durationText || "" })));
+
+      // Earned Value Method
+      mspP.appendChild(el("h3", { style:"margin-top:16px;" },
+        currentLang==="cs"?"Metrika dokončenosti":"Progress measurement"));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskEvMethod" }, "Earned Value Method"),
+        el("select", { id:"tskEvMethod" },
+          el("option", { value:"0", selected:(draft.earnedValueMethod||0)===0 },
+            currentLang==="cs"?"% dokončeno":"% Complete"),
+          el("option", { value:"1", selected:(draft.earnedValueMethod||0)===1 },
+            currentLang==="cs"?"Fyzické % dokončeno":"Physical % Complete")
+        )));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskPhysPct" }, currentLang==="cs"?"Fyzické % dokončeno":"Physical % Complete"),
+        el("input", { id:"tskPhysPct", type:"number", min:"0", max:"100", value: String(draft.physicalPercentComplete || 0) })));
+
+      // Rollup
+      mspP.appendChild(el("h3", { style:"margin-top:16px;" }, "Rollup"));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskRollup" }, currentLang==="cs"?"Rolovat na sumární úkol":"Rollup to summary"),
+        el("div", null, el("input", { id:"tskRollup", type:"checkbox", checked: draft.rollup || false }))));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskHideBar" }, currentLang==="cs"?"Skrýt pruh v Ganttu":"Hide bar in Gantt"),
+        el("div", null, el("input", { id:"tskHideBar", type:"checkbox", checked: draft.hideBar || false }))));
+      mspP.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"tskActive" }, currentLang==="cs"?"Aktivní":"Active"),
+        el("div", null, el("input", { id:"tskActive", type:"checkbox", checked: draft.isActive !== false }))));
+
+      // Preservation buffer info
+      if (draft._mspdiOpaque && draft._mspdiOpaque.fields && Object.keys(draft._mspdiOpaque.fields).length) {
+        mspP.appendChild(el("h3", { style:"margin-top:16px;" },
+          currentLang==="cs"?"Zachovaná pole z importu":"Preserved fields from import"));
+        mspP.appendChild(el("p", { class:"muted" },
+          currentLang==="cs"
+            ? "Tato pole byla při importu zachována ve formě, jak je zapsal MS Project. Budou zapsána zpět při exportu."
+            : "These fields were preserved as-is from the MS Project import. They will be written back on export."));
+        const buf = el("ul", { style:"font-family:var(--mono); font-size:0.82rem; max-height:120px; overflow:auto; background:var(--paper-3); padding:6px 20px; border-radius:var(--radius);" });
+        for (const k of Object.keys(draft._mspdiOpaque.fields)) {
+          buf.appendChild(el("li", null, k));
+        }
+        mspP.appendChild(buf);
+      }
+
+      body.appendChild(mspP);
     },
     (footer) => {
       footer.appendChild(el("button", { class:"btn", type:"button", onClick: () => dlg.close() }, T("cancel")));
@@ -4550,12 +5210,35 @@ function saveTaskDialog(editing, draft) {
     deadline: $("#tskDeadline").value || null,
     isMilestone: $("#tskMilestone").checked,
     manual: $("#tskManual").checked,
+    durationEstimated: $("#tskEstimated") ? $("#tskEstimated").checked : false,
+    estimated: $("#tskEstimated") ? $("#tskEstimated").checked : false,
     constraint: $("#tskConstraint").value,
     constraintDate: $("#tskConstraintDate").value || null,
     priority: parseInt($("#tskPriority").value, 10) || 500,
     calendarId: $("#tskCalendar").value || null,
     notes: $("#tskNotes").value,
   };
+
+  // MS Project fields
+  if ($("#tskHlAddr") || $("#tskHlName") || $("#tskHlSub")) {
+    const addr = $("#tskHlAddr").value.trim();
+    const name = $("#tskHlName").value.trim();
+    const sub = $("#tskHlSub").value.trim();
+    if (addr || name || sub) {
+      patch.hyperlink = { name, address: addr, subAddress: sub };
+    } else {
+      patch.hyperlink = null;
+    }
+  }
+  if ($("#tskStartText")) patch.startText = $("#tskStartText").value;
+  if ($("#tskFinishText")) patch.finishText = $("#tskFinishText").value;
+  if ($("#tskDurationText")) patch.durationText = $("#tskDurationText").value;
+  if ($("#tskEvMethod")) patch.earnedValueMethod = parseInt($("#tskEvMethod").value, 10) || 0;
+  if ($("#tskPhysPct")) patch.physicalPercentComplete = clamp(parseInt($("#tskPhysPct").value, 10) || 0, 0, 100);
+  if ($("#tskRollup")) patch.rollup = $("#tskRollup").checked;
+  if ($("#tskHideBar")) patch.hideBar = $("#tskHideBar").checked;
+  if ($("#tskActive")) patch.isActive = $("#tskActive").checked;
+
   const o = $("#tskOpt").value, lk = $("#tskLikely").value, ps = $("#tskPess").value;
   patch.optDuration = o === "" ? null : parseFloat(o);
   patch.likelyDuration = lk === "" ? null : parseFloat(lk);
@@ -4600,78 +5283,245 @@ function openCalendarsDialog() {
     currentLang === "cs" ? "Kalendáře" : "Calendars",
     (body) => {
       const list = el("div", { id:"calList" });
-      const dayNamesCs = ["Ne","Po","Út","St","Čt","Pá","So"];
-      const dayNamesEn = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const dayNames = currentLang === "cs"
+        ? ["Neděle","Pondělí","Úterý","Středa","Čtvrtek","Pátek","Sobota"]
+        : ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      // MSPDI DayType: 1=Sun, 2=Mon, ..., 7=Sat
 
       function refreshList() {
         list.innerHTML = "";
         for (const cal of project.calendars) {
-          const names = currentLang === "cs" ? dayNamesCs : dayNamesEn;
-          const card = el("details", { class:"collapsible", open: cal.id === project.projectCalendarId });
-          card.appendChild(el("summary", null,
-            cal.name + " ",
+          const card = el("section", { style:"border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:12px;" });
+          card.appendChild(el("h3", null,
+            cal.name,
+            " ",
             cal.id === project.projectCalendarId
               ? el("span", { class:"chip info" }, currentLang === "cs" ? "Výchozí" : "Default")
               : null
           ));
-          const inner = el("div");
 
-          inner.appendChild(el("div", { class:"form-row" },
+          // Name
+          card.appendChild(el("div", { class:"form-row" },
             el("label", null, T("name")),
             el("input", { type:"text", value: cal.name,
-              onChange:(ev) => { cal.name = ev.target.value; }})));
+              onChange: (ev) => action("Calendar name", () => { cal.name = ev.target.value; }) })));
 
-          const wdPick = el("div");
-          for (let i = 0; i < 7; i++) {
-            const id = "wd_" + cal.id + "_" + i;
-            wdPick.appendChild(el("label", { style:"margin-right:10px; display:inline-block;", for: id },
-              el("input", { id, type:"checkbox", checked: cal.workdays.includes(i),
-                onChange: (ev) => {
-                  if (ev.target.checked) { if (!cal.workdays.includes(i)) cal.workdays.push(i); }
-                  else cal.workdays = cal.workdays.filter(x => x !== i);
-                }}),
-              " " + names[i]
-            ));
+          // Base calendar (dropdown)
+          card.appendChild(el("div", { class:"form-row" },
+            el("label", null, currentLang==="cs"?"Základní kalendář":"Base calendar"),
+            el("select", { onChange: (ev) => action("Base calendar", () => {
+                cal.baseCalendarId = ev.target.value || null;
+              })},
+              el("option", { value:"", selected: !cal.baseCalendarId },
+                currentLang==="cs"?"(žádný — toto je základní kalendář)":"(none — this is a base calendar)"),
+              ...project.calendars.filter(c => c.id !== cal.id).map(c =>
+                el("option", { value: c.id, selected: cal.baseCalendarId === c.id }, c.name))
+            )));
+
+          // WeekDays — per day: working flag + working times
+          card.appendChild(el("h4", { style:"margin-top:14px;" },
+            currentLang==="cs"?"Týdenní rozvrh":"Weekly schedule"));
+          const wkTable = el("table", { class:"data-table", style:"margin-bottom:8px;" });
+          wkTable.appendChild(el("thead", null, el("tr", null,
+            el("th", null, currentLang==="cs"?"Den":"Day"),
+            el("th", null, currentLang==="cs"?"Pracovní?":"Working?"),
+            el("th", null, currentLang==="cs"?"Pracovní časy":"Working times"),
+            el("th", null, "")
+          )));
+          const wkBody = el("tbody");
+          for (let dt = 2; dt <= 7; dt++) {
+            // Display Mon..Sat..Sun: 2,3,4,5,6,7,1
+            wkBody.appendChild(weekDayRow(cal, dt, dayNames[dt - 1]));
           }
-          inner.appendChild(el("div", { class:"form-row" },
-            el("label", null, currentLang==="cs"?"Pracovní dny":"Workdays"), wdPick));
+          wkBody.appendChild(weekDayRow(cal, 1, dayNames[0]));
+          wkTable.appendChild(wkBody);
+          card.appendChild(wkTable);
 
-          inner.appendChild(el("div", { class:"form-row" },
-            el("label", null, currentLang==="cs"?"Hodin/den":"Hours/day"),
-            el("input", { type:"number", min:"1", max:"24", value: String(cal.workHoursPerDay),
-              onChange: (ev) => { cal.workHoursPerDay = parseInt(ev.target.value, 10) || 8; } })));
+          // Exceptions
+          card.appendChild(el("h4", { style:"margin-top:14px;" },
+            currentLang==="cs"?"Výjimky (svátky)":"Exceptions (holidays)"));
+          const exTable = el("table", { class:"data-table" });
+          exTable.appendChild(el("thead", null, el("tr", null,
+            el("th", null, currentLang==="cs"?"Název":"Name"),
+            el("th", null, currentLang==="cs"?"Od":"From"),
+            el("th", null, currentLang==="cs"?"Do":"To"),
+            el("th", null, currentLang==="cs"?"Typ":"Type"),
+            el("th", null, currentLang==="cs"?"Pracovní?":"Working?"),
+            el("th", null, "")
+          )));
+          const exBody = el("tbody");
+          for (const ex of (cal.exceptions || [])) {
+            exBody.appendChild(exceptionRow(cal, ex, () => refreshList()));
+          }
+          exTable.appendChild(exBody);
+          card.appendChild(exTable);
 
-          inner.appendChild(el("div", { class:"form-row full" },
-            el("label", null, currentLang==="cs"?"Svátky (YYYY-MM-DD, po řádcích)":"Holidays (YYYY-MM-DD, per line)"),
-            el("textarea", { rows:"5", value: (cal.holidays || []).join("\n"),
-              onChange: (ev) => {
-                cal.holidays = ev.target.value.split(/\n+/).map(s => s.trim()).filter(Boolean);
-              }})));
+          // Buttons under exceptions
+          const exBtns = el("div", { style:"display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;" });
+          exBtns.appendChild(el("button", { class:"btn", type:"button", onClick: () => {
+            action("Add exception", () => {
+              if (!cal.exceptions) cal.exceptions = [];
+              cal.exceptions.push({
+                name: currentLang==="cs"?"Nová výjimka":"New exception",
+                fromDate: formatDate(new Date()),
+                toDate: formatDate(new Date()),
+                dayWorking: false, workingTimes: [], type: 0,
+              });
+            });
+            refreshList();
+          }}, currentLang==="cs"?"+ Přidat výjimku":"+ Add exception"));
+          exBtns.appendChild(el("button", { class:"btn", type:"button", onClick: () => {
+            action("Add CZ holidays 2026", () => {
+              if (!cal.exceptions) cal.exceptions = [];
+              const existing = new Set(cal.exceptions.map(e => e.fromDate));
+              for (const h of CZECH_HOLIDAYS_2026) {
+                if (existing.has(h)) continue;
+                cal.exceptions.push({
+                  name: "Státní svátek",
+                  fromDate: h, toDate: h,
+                  dayWorking: false, workingTimes: [], type: 0,
+                });
+              }
+            });
+            refreshList();
+          }}, currentLang==="cs"?"+ Státní svátky ČR 2026":"+ CZ holidays 2026"));
+          card.appendChild(exBtns);
 
-          const btnRow = el("div", { style:"display:flex; gap:8px; flex-wrap:wrap;" });
+          // Calendar actions
+          const btnRow = el("div", { style:"display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;" });
           if (cal.id !== project.projectCalendarId) {
             btnRow.appendChild(el("button", { class:"btn", type:"button", onClick: () => {
-              project.projectCalendarId = cal.id; refreshList();
+              action("Set default calendar", () => { project.projectCalendarId = cal.id; });
+              refreshList();
             }}, currentLang==="cs"?"Nastavit jako výchozí":"Set as default"));
           }
-          btnRow.appendChild(el("button", { class:"btn", type:"button", onClick: () => {
-            const set = new Set(cal.holidays || []);
-            for (const h of CZECH_HOLIDAYS_2026) set.add(h);
-            cal.holidays = Array.from(set).sort();
-            refreshList();
-          }}, currentLang==="cs"?"+ Svátky ČR 2026":"+ CZ holidays 2026"));
           if (project.calendars.length > 1 && cal.id !== project.projectCalendarId) {
             btnRow.appendChild(el("button", { class:"btn danger", type:"button", onClick: () => {
-              project.calendars = project.calendars.filter(c => c.id !== cal.id);
+              if (!confirm(currentLang==="cs"?"Smazat kalendář?":"Delete calendar?")) return;
+              action("Delete calendar", () => {
+                project.calendars = project.calendars.filter(c => c.id !== cal.id);
+              });
               refreshList();
             }}, T("delete")));
           }
-          inner.appendChild(btnRow);
+          card.appendChild(btnRow);
 
-          card.appendChild(inner);
           list.appendChild(card);
         }
       }
+
+      function weekDayRow(cal, dayType, dayLabel) {
+        let wd = cal.weekDays.find(w => w.dayType === dayType);
+        if (!wd) {
+          // Create missing entry
+          wd = { dayType, dayWorking: dayType >= 2 && dayType <= 6,
+            workingTimes: dayType >= 2 && dayType <= 6
+              ? [{from:"08:00",to:"12:00"},{from:"13:00",to:"17:00"}] : [] };
+          cal.weekDays.push(wd);
+          cal.weekDays.sort((a,b) => a.dayType - b.dayType);
+        }
+        const tr = el("tr");
+        tr.appendChild(el("td", null, dayLabel));
+        tr.appendChild(el("td", null, el("input", { type:"checkbox", checked: wd.dayWorking,
+          "aria-label": (currentLang==="cs"?"Pracovní den ":"Working day ") + dayLabel,
+          onChange: (ev) => action("Day working", () => {
+            wd.dayWorking = ev.target.checked;
+            if (wd.dayWorking && !wd.workingTimes.length) {
+              wd.workingTimes = [{from:"08:00",to:"12:00"},{from:"13:00",to:"17:00"}];
+            } else if (!wd.dayWorking) {
+              wd.workingTimes = [];
+            }
+            refreshList();
+          })})));
+        // Working times editor
+        const wtCell = el("td");
+        if (wd.dayWorking) {
+          for (let i = 0; i < wd.workingTimes.length; i++) {
+            const wt = wd.workingTimes[i];
+            const wtDiv = el("div", { style:"display:flex; gap:4px; align-items:center; margin-bottom:2px;" });
+            wtDiv.appendChild(el("input", { type:"time", value: wt.from, style:"width:90px;",
+              "aria-label": (currentLang==="cs"?"Od":"From"),
+              onChange: (ev) => action("WT from", () => { wt.from = ev.target.value; }) }));
+            wtDiv.appendChild(el("span", null, "—"));
+            wtDiv.appendChild(el("input", { type:"time", value: wt.to, style:"width:90px;",
+              "aria-label": (currentLang==="cs"?"Do":"To"),
+              onChange: (ev) => action("WT to", () => { wt.to = ev.target.value; }) }));
+            if (wd.workingTimes.length > 1) {
+              wtDiv.appendChild(el("button", { class:"btn", type:"button", style:"padding:2px 6px;",
+                "aria-label": (currentLang==="cs"?"Smazat časový rozsah":"Remove range"),
+                onClick: () => action("Remove WT", () => {
+                  wd.workingTimes.splice(i, 1);
+                  refreshList();
+                })}, "×"));
+            }
+            wtCell.appendChild(wtDiv);
+          }
+          wtCell.appendChild(el("button", { class:"btn", type:"button", style:"padding:2px 6px; font-size:0.78rem;",
+            onClick: () => action("Add WT", () => {
+              wd.workingTimes.push({from:"08:00", to:"17:00"});
+              refreshList();
+            })}, currentLang==="cs"?"+ rozsah":"+ range"));
+        } else {
+          wtCell.appendChild(el("span", { class:"muted" }, currentLang==="cs"?"(volno)":"(off)"));
+        }
+        tr.appendChild(wtCell);
+        tr.appendChild(el("td", null,
+          // Sum working minutes per day
+          (() => {
+            const total = (wd.workingTimes || []).reduce((s, w) =>
+              s + (parseTimeMin(w.to) - parseTimeMin(w.from)), 0);
+            return el("span", { class:"muted", style:"font-size:0.82rem;" },
+              total > 0 ? (Math.round(total / 60 * 10) / 10) + " h" : "");
+          })()));
+        return tr;
+      }
+
+      function exceptionRow(cal, ex, onChange) {
+        const tr = el("tr");
+        const exTypes = [
+          [0, currentLang==="cs"?"Jednorázová (rozsah dat)":"One-time (date range)"],
+          [1, currentLang==="cs"?"Denní (každých N dní)":"Daily (every N days)"],
+          [6, currentLang==="cs"?"Týdenní":"Weekly"],
+          [4, currentLang==="cs"?"Měsíční podle data":"Monthly by day"],
+          [5, currentLang==="cs"?"Měsíční podle pozice":"Monthly by position"],
+          [2, currentLang==="cs"?"Roční podle data":"Yearly by day"],
+          [3, currentLang==="cs"?"Roční podle pozice":"Yearly by position"],
+        ];
+        tr.appendChild(el("td", null, el("input", { type:"text", value: ex.name || "",
+          "aria-label": (currentLang==="cs"?"Název výjimky":"Exception name"),
+          onChange: (e) => action("Exception name", () => { ex.name = e.target.value; }) })));
+        tr.appendChild(el("td", null, el("input", { type:"date", value: ex.fromDate || "",
+          "aria-label": (currentLang==="cs"?"Datum od":"From date"),
+          onChange: (e) => action("Exception from", () => { ex.fromDate = e.target.value; }) })));
+        tr.appendChild(el("td", null, el("input", { type:"date", value: ex.toDate || ex.fromDate || "",
+          "aria-label": (currentLang==="cs"?"Datum do":"To date"),
+          onChange: (e) => action("Exception to", () => { ex.toDate = e.target.value; }) })));
+        tr.appendChild(el("td", null, el("select", {
+          "aria-label": (currentLang==="cs"?"Typ výjimky":"Exception type"),
+          onChange: (e) => action("Exception type", () => {
+            ex.type = parseInt(e.target.value, 10) || 0;
+          })},
+          ...exTypes.map(([v, lbl]) => el("option", { value: v, selected: (ex.type || 0) === v }, lbl))
+        )));
+        tr.appendChild(el("td", null, el("input", { type:"checkbox", checked: !!ex.dayWorking,
+          "aria-label": (currentLang==="cs"?"Pracovní výjimka":"Working exception"),
+          onChange: (e) => action("Exception working", () => {
+            ex.dayWorking = e.target.checked;
+            if (ex.dayWorking && !ex.workingTimes.length) {
+              ex.workingTimes = [{from:"08:00",to:"17:00"}];
+            }
+          }) })));
+        tr.appendChild(el("td", null, el("button", { class:"btn danger", type:"button",
+          "aria-label": (currentLang==="cs"?"Smazat výjimku":"Delete exception"),
+          onClick: () => {
+            action("Delete exception", () => {
+              cal.exceptions = cal.exceptions.filter(x => x !== ex);
+            });
+            onChange();
+          }}, "🗑")));
+        return tr;
+      }
+
       refreshList();
       body.appendChild(list);
 
@@ -4680,9 +5530,11 @@ function openCalendarsDialog() {
           const name = await promptDialog(
             currentLang==="cs"?"Nový kalendář":"New calendar", T("name"), "");
           if (!name) return;
-          project.calendars.push({
-            id: "cal_"+uid(), name,
-            workdays: [1,2,3,4,5], workHoursPerDay: 8, holidays: []
+          action("Add calendar", () => {
+            project.calendars.push(newCalendar({
+              id: "cal_" + uid(), name,
+              uid: Math.max(...project.calendars.map(c => c.uid || 0), 0) + 1,
+            }));
           });
           refreshList();
         }}, currentLang==="cs"?"+ Nový kalendář":"+ New calendar")));
@@ -4690,9 +5542,8 @@ function openCalendarsDialog() {
     (footer) => {
       footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => {
         dlg.close();
-        action(currentLang==="cs"?"Upravit kalendáře":"Edit calendars", () => {});
         toast(currentLang==="cs"?"Kalendáře uloženy":"Calendars saved", "ok");
-      }}, T("ok")));
+      }}, T("close")));
     });
   openDialog(dlg);
 }
@@ -4789,10 +5640,15 @@ function saveBaseline(index) {
   action(currentLang==="cs"?"Uložit baseline":"Save baseline", () => {
     const tasks = {};
     for (const t of project.tasks) {
-      tasks[t.id] = {
+      const data = {
         start: t.start, finish: t.finish,
-        duration: t.duration, durationUnit: t.durationUnit
+        duration: t.duration, durationUnit: t.durationUnit,
+        work: t.work || 0, cost: t.cost || 0,
       };
+      tasks[t.id] = data;
+      // Also store on task itself, MSPDI-compatible format
+      if (!t.baselines) t.baselines = {};
+      t.baselines[index] = data;
     }
     const existing = project.baselines.findIndex(b => b.index === index);
     const b = {
@@ -5063,49 +5919,208 @@ function openProjectOptsDialog() {
   const dlg = buildDialog("dlgProjectOpts", "dlgProjectOptsTitle",
     currentLang==="cs"?"Nastavení projektu":"Project settings",
     (body) => {
-      body.appendChild(el("div", { class:"form-row" },
+      // Tabs
+      const tabsBar = el("div", { class:"tabs", role:"tablist", style:"display:flex; gap:4px; border-bottom:2px solid var(--line); margin-bottom:12px;" });
+      const tabPanels = el("div", null);
+
+      const tabIds = ["general","metadata","scheduling","currency"];
+      const tabLabels = {
+        general: currentLang==="cs"?"Obecné":"General",
+        metadata: currentLang==="cs"?"Metadata":"Metadata",
+        scheduling: currentLang==="cs"?"Plánování":"Scheduling",
+        currency: currentLang==="cs"?"Měna":"Currency",
+      };
+      const panels = {};
+      let activeTab = "general";
+
+      function showTab(id) {
+        activeTab = id;
+        for (const t of tabIds) {
+          const btn = $("#projTab_" + t);
+          if (btn) {
+            btn.setAttribute("aria-selected", t === id ? "true" : "false");
+            btn.style.fontWeight = t === id ? "700" : "400";
+            btn.style.borderBottom = t === id ? "3px solid var(--primary)" : "3px solid transparent";
+          }
+          if (panels[t]) panels[t].style.display = t === id ? "block" : "none";
+        }
+      }
+
+      for (const t of tabIds) {
+        tabsBar.appendChild(el("button", { type:"button", id:"projTab_"+t, role:"tab",
+          class:"btn", style:"border-radius:0; background:transparent; border-bottom:3px solid transparent;",
+          onClick: () => showTab(t) }, tabLabels[t]));
+      }
+      body.appendChild(tabsBar);
+      body.appendChild(tabPanels);
+
+      // GENERAL panel
+      const pGen = el("div");
+      pGen.appendChild(el("div", { class:"form-row" },
         el("label", { for:"projName" }, T("name")),
         el("input", { id:"projName", type:"text", value: project.name })));
-      body.appendChild(el("div", { class:"form-row full" },
+      pGen.appendChild(el("div", { class:"form-row full" },
         el("label", { for:"projDesc" }, currentLang==="cs"?"Popis":"Description"),
         el("textarea", { id:"projDesc", rows:"3" }, project.description || "")));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"projStart" }, currentLang==="cs"?"Začátek":"Start"),
-        el("input", { id:"projStart", type:"date", value: project.startDate })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"projStatus" }, currentLang==="cs"?"Datum stavu":"Status date"),
-        el("input", { id:"projStatus", type:"date", value: project.statusDate || "" })));
-      body.appendChild(el("div", { class:"form-row" },
+      pGen.appendChild(el("div", { class:"form-row" },
         el("label", { for:"projCal" }, currentLang==="cs"?"Výchozí kalendář":"Default calendar"),
         el("select", { id:"projCal" },
           ...project.calendars.map(c => el("option", { value: c.id,
             selected: project.projectCalendarId === c.id }, c.name))
         )));
-      body.appendChild(el("div", { class:"form-row" },
+      pGen.appendChild(el("div", { class:"form-row" },
         el("label", { for:"projShowProgress" }, currentLang==="cs"?"Linky postupu":"Progress lines"),
         el("div", null, el("input", { id:"projShowProgress", type:"checkbox",
           checked: !!project.settings.showProgressLines }))));
-      body.appendChild(el("div", { class:"form-row" },
+      pGen.appendChild(el("div", { class:"form-row" },
         el("label", { for:"projAutosave" }, currentLang==="cs"?"Autouložení":"Autosave"),
         el("div", null, el("input", { id:"projAutosave", type:"checkbox",
           checked: project.settings.autosave !== false }))));
-      body.appendChild(el("div", { class:"form-row" },
+      pGen.appendChild(el("div", { class:"form-row" },
         el("label", { for:"projSound" }, currentLang==="cs"?"Zvuky":"Sound"),
         el("div", null, el("input", { id:"projSound", type:"checkbox",
           checked: project.soundEnabled !== false }))));
+      panels.general = pGen; tabPanels.appendChild(pGen);
+
+      // METADATA panel
+      const pMeta = el("div");
+      pMeta.appendChild(el("p", { class:"muted" },
+        currentLang==="cs"?"Tato pole se ukládají do MS Project XML (MSPDI).":"These fields are stored in MS Project XML (MSPDI)."));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projTitle" }, currentLang==="cs"?"Název dokumentu":"Title"),
+        el("input", { id:"projTitle", type:"text", value: project.title || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projSubject" }, currentLang==="cs"?"Předmět":"Subject"),
+        el("input", { id:"projSubject", type:"text", value: project.subject || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCategory" }, currentLang==="cs"?"Kategorie":"Category"),
+        el("input", { id:"projCategory", type:"text", value: project.category || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCompany" }, currentLang==="cs"?"Společnost":"Company"),
+        el("input", { id:"projCompany", type:"text", value: project.company || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projManager" }, currentLang==="cs"?"Manažer":"Manager"),
+        el("input", { id:"projManager", type:"text", value: project.manager || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projAuthor" }, currentLang==="cs"?"Autor":"Author"),
+        el("input", { id:"projAuthor", type:"text", value: project.author || "" })));
+      pMeta.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projKeywords" }, currentLang==="cs"?"Klíčová slova":"Keywords"),
+        el("input", { id:"projKeywords", type:"text", value: project.keywords || "" })));
+      pMeta.style.display = "none";
+      panels.metadata = pMeta; tabPanels.appendChild(pMeta);
+
+      // SCHEDULING panel
+      const pSched = el("div");
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projStart" }, currentLang==="cs"?"Začátek projektu":"Project start"),
+        el("input", { id:"projStart", type:"date", value: project.startDate })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projFinish" }, currentLang==="cs"?"Cílový konec":"Finish date"),
+        el("input", { id:"projFinish", type:"date", value: project.finishDate || "" })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projStatus" }, currentLang==="cs"?"Datum stavu":"Status date"),
+        el("input", { id:"projStatus", type:"date", value: project.statusDate || "" })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projScheduleFrom" }, currentLang==="cs"?"Plánovat od":"Schedule from"),
+        el("select", { id:"projScheduleFrom" },
+          el("option", { value:"start", selected: project.scheduleFromStart !== false }, currentLang==="cs"?"Začátku (dopředu)":"Start (forward)"),
+          el("option", { value:"finish", selected: project.scheduleFromStart === false }, currentLang==="cs"?"Konce (dozadu)":"Finish (backward)")
+        )));
+      pSched.appendChild(el("h3", { style:"margin-top:16px;" },
+        currentLang==="cs"?"Pracovní doba":"Working time"));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projMinPerDay" }, currentLang==="cs"?"Minut/den":"Minutes/day"),
+        el("input", { id:"projMinPerDay", type:"number", min:"60", max:"1440",
+          value: project.minutesPerDay || 480 })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projMinPerWeek" }, currentLang==="cs"?"Minut/týden":"Minutes/week"),
+        el("input", { id:"projMinPerWeek", type:"number", min:"60", max:"10080",
+          value: project.minutesPerWeek || 2400 })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projDaysPerMonth" }, currentLang==="cs"?"Dní/měsíc":"Days/month"),
+        el("input", { id:"projDaysPerMonth", type:"number", min:"1", max:"31",
+          value: project.daysPerMonth || 20 })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projDefStart" }, currentLang==="cs"?"Výchozí začátek dne":"Default start time"),
+        el("input", { id:"projDefStart", type:"time", value: project.defaultStartTime || "08:00" })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projDefFinish" }, currentLang==="cs"?"Výchozí konec dne":"Default finish time"),
+        el("input", { id:"projDefFinish", type:"time", value: project.defaultFinishTime || "17:00" })));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projFYStart" }, currentLang==="cs"?"Začátek fiskálního roku":"Fiscal year start"),
+        el("select", { id:"projFYStart" },
+          ...[1,2,3,4,5,6,7,8,9,10,11,12].map(m => el("option", { value: m,
+            selected: (project.fyStartMonth||1) === m },
+            ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"][m-1]))
+        )));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projWeekStart" }, currentLang==="cs"?"První den týdne":"Week start day"),
+        el("select", { id:"projWeekStart" },
+          ...[0,1,2,3,4,5,6].map(d => el("option", { value: d,
+            selected: (project.weekStartDay||1) === d },
+            ["Neděle","Pondělí","Úterý","Středa","Čtvrtek","Pátek","Sobota"][d]))
+        )));
+      pSched.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCriticalSlack" }, currentLang==="cs"?"Limit kritické rezervy (dny)":"Critical slack limit (days)"),
+        el("input", { id:"projCriticalSlack", type:"number", min:"0", max:"30",
+          value: project.criticalSlackLimit || 0 })));
+      pSched.style.display = "none";
+      panels.scheduling = pSched; tabPanels.appendChild(pSched);
+
+      // CURRENCY panel
+      const pCur = el("div");
+      pCur.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCurSym" }, currentLang==="cs"?"Symbol":"Symbol"),
+        el("input", { id:"projCurSym", type:"text", value: project.currencySymbol || "Kč" })));
+      pCur.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCurCode" }, currentLang==="cs"?"ISO kód":"ISO code"),
+        el("input", { id:"projCurCode", type:"text", maxLength:"3", value: project.currencyCode || "CZK" })));
+      pCur.appendChild(el("div", { class:"form-row" },
+        el("label", { for:"projCurDigits" }, currentLang==="cs"?"Desetinná místa":"Decimal digits"),
+        el("input", { id:"projCurDigits", type:"number", min:"0", max:"4",
+          value: project.currencyDigits != null ? project.currencyDigits : 2 })));
+      pCur.style.display = "none";
+      panels.currency = pCur; tabPanels.appendChild(pCur);
+
+      showTab("general");
     },
     (footer) => {
       footer.appendChild(el("button", { class:"btn", type:"button", onClick: () => dlg.close() }, T("cancel")));
       footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => {
         action(currentLang==="cs"?"Nastavení projektu":"Project settings", () => {
+          // General
           project.name = $("#projName").value || T("untitled_project");
           project.description = $("#projDesc").value;
-          project.startDate = $("#projStart").value || project.startDate;
-          project.statusDate = $("#projStatus").value || null;
           project.projectCalendarId = $("#projCal").value;
           project.settings.showProgressLines = $("#projShowProgress").checked;
           project.settings.autosave = $("#projAutosave").checked;
           project.soundEnabled = $("#projSound").checked;
+          // Metadata
+          if ($("#projTitle")) project.title = $("#projTitle").value;
+          if ($("#projSubject")) project.subject = $("#projSubject").value;
+          if ($("#projCategory")) project.category = $("#projCategory").value;
+          if ($("#projCompany")) project.company = $("#projCompany").value;
+          if ($("#projManager")) project.manager = $("#projManager").value;
+          if ($("#projAuthor")) project.author = $("#projAuthor").value;
+          if ($("#projKeywords")) project.keywords = $("#projKeywords").value;
+          // Scheduling
+          if ($("#projStart")) project.startDate = $("#projStart").value || project.startDate;
+          if ($("#projFinish")) project.finishDate = $("#projFinish").value || null;
+          if ($("#projStatus")) project.statusDate = $("#projStatus").value || null;
+          if ($("#projScheduleFrom")) project.scheduleFromStart = $("#projScheduleFrom").value === "start";
+          if ($("#projMinPerDay")) project.minutesPerDay = parseInt($("#projMinPerDay").value, 10) || 480;
+          if ($("#projMinPerWeek")) project.minutesPerWeek = parseInt($("#projMinPerWeek").value, 10) || 2400;
+          if ($("#projDaysPerMonth")) project.daysPerMonth = parseInt($("#projDaysPerMonth").value, 10) || 20;
+          if ($("#projDefStart")) project.defaultStartTime = $("#projDefStart").value || "08:00";
+          if ($("#projDefFinish")) project.defaultFinishTime = $("#projDefFinish").value || "17:00";
+          if ($("#projFYStart")) project.fyStartMonth = parseInt($("#projFYStart").value, 10) || 1;
+          if ($("#projWeekStart")) project.weekStartDay = parseInt($("#projWeekStart").value, 10) || 1;
+          if ($("#projCriticalSlack")) project.criticalSlackLimit = parseInt($("#projCriticalSlack").value, 10) || 0;
+          // Currency
+          if ($("#projCurSym")) project.currencySymbol = $("#projCurSym").value || "Kč";
+          if ($("#projCurCode")) project.currencyCode = $("#projCurCode").value || "CZK";
+          if ($("#projCurDigits")) project.currencyDigits = parseInt($("#projCurDigits").value, 10);
         });
         dlg.close();
       }}, T("ok")));
@@ -5460,6 +6475,70 @@ function runValidation() {
       issues.push({ severity:"warn", text: currentLang==="cs"?"Vazba na neexistující úkol":"Link to missing task" });
     }
   }
+
+  // === MSPDI-specific checks ===
+  // Orphan calendar references
+  const calIds = new Set(project.calendars.map(c => c.id));
+  for (const t of project.tasks) {
+    if (t.calendarId && !calIds.has(t.calendarId)) {
+      issues.push({ severity:"err",
+        text: (currentLang==="cs"?"Úkol odkazuje na neexistující kalendář: ":"Task references missing calendar: ") + t.name,
+        taskId: t.id });
+    }
+  }
+  if (project.projectCalendarId && !calIds.has(project.projectCalendarId)) {
+    issues.push({ severity:"err",
+      text: currentLang==="cs"?"Projekt odkazuje na neexistující výchozí kalendář":"Project references missing default calendar" });
+  }
+  // Base calendar cycles
+  for (const c of project.calendars) {
+    const seen = new Set();
+    let cur = c;
+    let safety = 20;
+    while (cur && cur.baseCalendarId && safety-- > 0) {
+      if (seen.has(cur.id)) {
+        issues.push({ severity:"err",
+          text: (currentLang==="cs"?"Cyklus mezi základními kalendáři: ":"Base calendar cycle: ") + c.name });
+        break;
+      }
+      seen.add(cur.id);
+      cur = project.calendars.find(x => x.id === cur.baseCalendarId);
+    }
+  }
+  // Orphan assignment references
+  const taskIds = new Set(project.tasks.map(t => t.id));
+  const resIds = new Set(project.resources.map(r => r.id));
+  for (const a of project.assignments) {
+    if (!taskIds.has(a.taskId)) {
+      issues.push({ severity:"warn",
+        text: currentLang==="cs"?"Přiřazení odkazuje na neexistující úkol":"Assignment references missing task" });
+    }
+    if (a.resourceId && !resIds.has(a.resourceId)) {
+      issues.push({ severity:"warn",
+        text: currentLang==="cs"?"Přiřazení odkazuje na neexistující zdroj":"Assignment references missing resource" });
+    }
+  }
+  // Manual scheduling consistency
+  for (const t of project.tasks) {
+    if (t.manual && t.manualStart && t.start && t.manualStart !== t.start) {
+      // OK — manual override is intentional
+    }
+    if (t.startText && !t.manual) {
+      issues.push({ severity:"warn",
+        text: (currentLang==="cs"?"Textový start bez ručního plánu: ":"Start text without manual scheduling: ") + t.name,
+        taskId: t.id });
+    }
+  }
+  // Constraint type validity
+  const validConstraints = new Set(["asap","alap","sneт","snlt","fnet","fnlt","mso","mfo"]);
+  for (const t of project.tasks) {
+    if (t.constraint && !validConstraints.has(t.constraint)) {
+      issues.push({ severity:"err",
+        text: (currentLang==="cs"?"Neplatný typ omezení: ":"Invalid constraint type: ") + t.constraint + " (" + t.name + ")",
+        taskId: t.id });
+    }
+  }
+
   return issues;
 }
 
@@ -5609,7 +6688,7 @@ function openReportsDialog() {
 /* ===============================================================
    STORAGE (localStorage)
    =============================================================== */
-const STORAGE_KEY = "projektor_project";
+const STORAGE_KEY = "mroject_project";
 
 function saveState() {
   if (!project || project.settings.autosave === false) return;
@@ -5630,7 +6709,42 @@ function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    // Migrate from older versions: merge with current model defaults
+    if (!data || typeof data !== "object") return null;
+    const base = newProject();
+    // Merge top-level keys, preferring saved value when set
+    const merged = Object.assign({}, base, data);
+    // Settings & nested objects need merge too
+    merged.settings = Object.assign({}, base.settings, data.settings || {});
+    if (!merged.calendars || !merged.calendars.length) merged.calendars = base.calendars;
+    if (!Array.isArray(merged.tasks)) merged.tasks = [];
+    if (!Array.isArray(merged.links)) merged.links = [];
+    if (!Array.isArray(merged.resources)) merged.resources = [];
+    if (!Array.isArray(merged.assignments)) merged.assignments = [];
+    if (!Array.isArray(merged.baselines)) merged.baselines = [];
+    if (!Array.isArray(merged.customFields)) merged.customFields = [];
+    if (!Array.isArray(merged.outlineCodes)) merged.outlineCodes = [];
+    if (!Array.isArray(merged.wbsMasks)) merged.wbsMasks = [];
+    if (!Array.isArray(merged.risks)) merged.risks = [];
+    // Calendars: ensure each has weekDays array (migrate legacy {workdays,workHoursPerDay,holidays} → MSPDI form)
+    for (let i = 0; i < merged.calendars.length; i++) {
+      const c = merged.calendars[i];
+      if (!c.weekDays || !c.weekDays.length) {
+        merged.calendars[i] = newCalendar({
+          id: c.id, uid: c.uid || (i+1), name: c.name,
+        });
+        // Preserve old holidays as exceptions
+        if (Array.isArray(c.holidays)) {
+          for (const h of c.holidays) {
+            merged.calendars[i].exceptions.push({
+              name: "", fromDate: h, toDate: h, dayWorking: false, workingTimes: [], type: 0,
+            });
+          }
+        }
+      }
+    }
+    return merged;
   } catch(e) {
     console.error("loadState failed", e);
     return null;
@@ -5638,7 +6752,7 @@ function loadState() {
 }
 
 /* ===============================================================
-   FILE SAVE / LOAD
+   FILE I/O HELPERS
    =============================================================== */
 function downloadFile(content, filename, mime) {
   const blob = new Blob([content], { type: mime || "application/octet-stream" });
@@ -5650,30 +6764,1433 @@ function downloadFile(content, filename, mime) {
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
 
-function saveProjectToFile() {
-  const clone = JSON.parse(JSON.stringify(project, (k, v) => k.startsWith("_") ? undefined : v));
-  const json = JSON.stringify(clone, null, 2);
-  const fname = (project.name || "projekt").replace(/[^a-z0-9]/gi, "_") + ".projektor.json";
-  downloadFile(json, fname, "application/json");
-  toast(T("toast_saved"), "ok");
-  sfx("save");
+/* ===============================================================
+   MSPDI XML — PRIMARY FORMAT
+   Microsoft Project Data Interchange XML (mspdi_pj12.xsd)
+   Supports Project 2002, 2003, 2007, 2010, 2013, 2016, 2019, 2021.
+   =============================================================== */
+
+// ----- MSPDI enum mappings -----
+const MSPDI_CONSTRAINT_TYPE = {
+  0: "asap",  1: "alap",
+  2: "mso",   3: "mfo",
+  4: "sneт",  5: "snlt",
+  6: "fnet",  7: "fnlt",
+};
+const CONSTRAINT_TYPE_TO_MSPDI = {
+  "asap": 0, "alap": 1,
+  "mso": 2, "mfo": 3,
+  "sneт": 4, "snlt": 5,
+  "fnet": 6, "fnlt": 7,
+};
+const MSPDI_LINK_TYPE = { 0: "FF", 1: "FS", 2: "SF", 3: "SS" };
+const LINK_TYPE_TO_MSPDI = { "FF": 0, "FS": 1, "SF": 2, "SS": 3 };
+
+// MSPDI ExtendedAttribute FieldID constants (Task/Resource custom fields).
+// We map our 'choice' to Text, 'flag' to Flag, etc. Each slot used once per project.
+const EA_TASK_TEXT_BASE = 188743731;     // Text1..Text30: base + 0..29
+const EA_TASK_NUMBER_BASE = 188743761;   // Number1..Number20
+const EA_TASK_DATE_BASE = 188743761 + 20; // approx; we'll use canonical IDs
+// Canonical field-ID lookup (subset; see Project Field Reference)
+const MSPDI_FIELD_IDS = {
+  taskText: [188743731,188743734,188743737,188743740,188743743,188743746,188743749,188743752,188743755,188743758,
+             188743761,188743764,188743767,188743770,188743773,188743776,188743779,188743782,188743785,188743788,
+             188743791,188743794,188743797,188743800,188743803,188743806,188743809,188743812,188743815,188743818],
+  taskNumber: [188743767,188743768,188743769,188743770,188743771,188743772,188743773,188743774,188743775,188743776,
+               188743777,188743778,188743779,188743780,188743781,188743782,188743783,188743784,188743785,188743786],
+  taskDate: [188743807,188743808,188743809,188743810,188743811,188743812,188743813,188743814,188743815,188743816],
+  taskFlag: [188743727,188743728,188743729,188743730,188743731,188743732,188743733,188743734,188743735,188743736,
+             188743737,188743738,188743739,188743740,188743741,188743742,188743743,188743744,188743745,188743746],
+  taskStart: [188743817,188743818,188743819,188743820,188743821,188743822,188743823,188743824,188743825,188743826],
+  taskFinish: [188743827,188743828,188743829,188743830,188743831,188743832,188743833,188743834,188743835,188743836],
+  taskDuration: [188743847,188743848,188743849,188743850,188743851,188743852,188743853,188743854,188743855,188743856],
+  taskCost: [188743837,188743838,188743839,188743840,188743841,188743842,188743843,188743844,188743845,188743846],
+  taskOutlineCode: [188743859,188743860,188743861,188743862,188743863,188743864,188743865,188743866,188743867,188743868],
+};
+
+const EA_DATA_TYPE = {
+  text: 21,        // STRING
+  number: 9,       // NUMBER
+  date: 4,         // DATE
+  flag: 17,        // YESNO
+  duration: 6,     // DURATION
+  cost: 5,         // CURRENCY
+  // 'choice' = text with restrict
+  // 'formula' = text with formula
+};
+const EA_DATA_TYPE_REVERSE = {};
+for (const [k, v] of Object.entries(EA_DATA_TYPE)) EA_DATA_TYPE_REVERSE[v] = k;
+
+// ----- XML helpers -----
+function xmlEscape(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
-function loadProjectFromFile() {
+function xmlTag(name, value, opts) {
+  // opts.omitIfEmpty (default true) — skip writing if value is null/undefined/empty
+  if (value == null || value === "") {
+    if (!opts || opts.omitIfEmpty !== false) return "";
+  }
+  return "<" + name + ">" + xmlEscape(value) + "</" + name + ">";
+}
+
+function xmlTagInt(name, value) {
+  if (value == null || value === "" || (typeof value === "number" && isNaN(value))) return "";
+  return "<" + name + ">" + Math.round(Number(value)) + "</" + name + ">";
+}
+
+function xmlTagBool(name, value) {
+  if (value === undefined || value === null) return "";
+  return "<" + name + ">" + (value ? "1" : "0") + "</" + name + ">";
+}
+
+function xmlTagDateTime(name, dateStr, defaultTime) {
+  if (!dateStr) return "";
+  let s = String(dateStr);
+  // If already has T, use as-is; otherwise append default time
+  if (!s.includes("T")) {
+    s += "T" + (defaultTime || "08:00:00");
+  }
+  return "<" + name + ">" + xmlEscape(s) + "</" + name + ">";
+}
+
+function xmlText(node) {
+  if (!node) return "";
+  return (node.textContent || "").trim();
+}
+
+function xmlChildText(parent, tagName) {
+  if (!parent) return "";
+  for (const c of parent.children) {
+    if (c.localName === tagName || c.tagName === tagName) return (c.textContent || "").trim();
+  }
+  return "";
+}
+
+function xmlChildren(parent, tagName) {
+  const out = [];
+  if (!parent) return out;
+  for (const c of parent.children) {
+    if (c.localName === tagName || c.tagName === tagName) out.push(c);
+  }
+  return out;
+}
+
+function xmlChild(parent, tagName) {
+  if (!parent) return null;
+  for (const c of parent.children) {
+    if (c.localName === tagName || c.tagName === tagName) return c;
+  }
+  return null;
+}
+
+function parseMspdiDateTime(s) {
+  // MSPDI uses ISO 8601 dateTime, no timezone. We keep only YYYY-MM-DD for our internal model.
+  if (!s) return null;
+  const m = String(s).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+function parseMspdiBool(s) {
+  if (s == null || s === "") return null;
+  return s === "1" || s === "true" || s === "True";
+}
+
+function parseMspdiInt(s) {
+  if (s == null || s === "") return null;
+  const n = parseInt(s, 10);
+  return isNaN(n) ? null : n;
+}
+
+function parseMspdiFloat(s) {
+  if (s == null || s === "") return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+/* ----- RTF helpers (notes) ----- */
+function stripRTF(rtf) {
+  if (!rtf) return "";
+  // Strip RTF control words, group braces, and hex chars
+  let s = String(rtf);
+  // Remove RTF header / font/color tables
+  s = s.replace(/\{\\fonttbl[^}]*\}/g, "");
+  s = s.replace(/\{\\colortbl[^}]*\}/g, "");
+  s = s.replace(/\{\\\*\\[^}]*\}/g, "");
+  // Replace \par and \line with newlines
+  s = s.replace(/\\par\b\s*/g, "\n");
+  s = s.replace(/\\line\b\s*/g, "\n");
+  s = s.replace(/\\tab\b/g, "\t");
+  // Unicode escapes \u8364?
+  s = s.replace(/\\u(-?\d+)\??/g, (_, code) => {
+    let n = parseInt(code, 10);
+    if (n < 0) n += 65536;
+    return String.fromCharCode(n);
+  });
+  // Hex escapes \'xx
+  s = s.replace(/\\'([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  // Remove remaining control words
+  s = s.replace(/\\[a-zA-Z]+-?\d*\s?/g, "");
+  // Remove braces
+  s = s.replace(/[{}]/g, "");
+  return s.trim();
+}
+
+function wrapAsRTF(plainText) {
+  if (!plainText) return "";
+  // Minimal RTF wrapper
+  const escaped = String(plainText)
+    .replace(/\\/g, "\\\\")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/\r?\n/g, "\\par ")
+    .replace(/[\u0080-\uFFFF]/g, (ch) => "\\u" + ch.charCodeAt(0) + "?");
+  return "{\\rtf1\\ansi\\ansicpg1250\\deff0\\nouicompat\\deflang1029{\\fonttbl{\\f0\\fnil\\fcharset238 Calibri;}}" +
+         "{\\*\\generator Mroject " + APP_VERSION + "}\\pard\\sa200\\f0\\fs22\\lang5 " + escaped + "\\par}";
+}
+
+/* ===============================================================
+   MSPDI READER
+   =============================================================== */
+function importMSPDI(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, "application/xml");
+  const errs = doc.getElementsByTagName("parsererror");
+  if (errs.length) throw new Error((errs[0].textContent || "Invalid XML").substring(0, 200));
+
+  const root = doc.documentElement;
+  if (!root || (root.localName !== "Project" && root.tagName !== "Project")) {
+    throw new Error("Not an MSPDI file (root element is not <Project>)");
+  }
+
+  // Build fresh project
+  const p = newProject();
+  p.tasks = [];
+  p.links = [];
+  p.calendars = [];
+  p.resources = [];
+  p.assignments = [];
+  p.baselines = [];
+  p.customFields = [];
+  p.outlineCodes = [];
+  p.wbsMasks = [];
+  p._mspdiOpaque = { rawAttributes: {} };
+
+  // === Project root attributes ===
+  const projectFields = [
+    "Name","Title","Subject","Category","Company","Manager","Author","Keywords",
+    "Revision","CreationDate","LastSaved","StartDate","FinishDate","StatusDate","CurrentDate",
+    "ScheduleFromStart","FYStartDate","WeekStartDay","DefaultStartTime","DefaultFinishTime",
+    "MinutesPerDay","MinutesPerWeek","DaysPerMonth","DefaultTaskType","DefaultFixedCostAccrual",
+    "DefaultStandardRate","DefaultOvertimeRate","DefaultTaskEVMethod","DurationFormat","WorkFormat",
+    "NewTasksEstimated","SplitsInProgressTasks","TaskUpdatesResource","FiscalYearStart",
+    "HonorConstraints","Autolink","InsertedProjectsLikeSummary","MultipleCriticalPaths",
+    "NewTasksEffortDriven","ActualsInSync","RemoveFileProperties","AdminProject",
+    "ExtendedCreationDate","CalendarUID","CurrencyDigits","CurrencySymbol","CurrencySymbolPosition",
+    "CurrencyCode","CriticalSlackLimit","SaveVersion","NewTaskStartDate",
+  ];
+  for (const f of projectFields) {
+    const txt = xmlChildText(root, f);
+    if (txt === "") continue;
+    switch (f) {
+      case "Name": p.name = txt; break;
+      case "Title": p.title = txt; break;
+      case "Subject": p.subject = txt; break;
+      case "Category": p.category = txt; break;
+      case "Company": p.company = txt; break;
+      case "Manager": p.manager = txt; break;
+      case "Author": p.author = txt; break;
+      case "Keywords": p.keywords = txt; break;
+      case "Revision": p.revision = parseMspdiInt(txt) || 1; break;
+      case "CreationDate": p.creationDate = parseMspdiDateTime(txt) || p.creationDate; break;
+      case "LastSaved": p.lastSaved = parseMspdiDateTime(txt) || p.lastSaved; break;
+      case "StartDate": p.startDate = parseMspdiDateTime(txt) || p.startDate; break;
+      case "FinishDate": p.finishDate = parseMspdiDateTime(txt); break;
+      case "StatusDate": p.statusDate = parseMspdiDateTime(txt); break;
+      case "CurrentDate": p.currentDate = parseMspdiDateTime(txt); break;
+      case "ScheduleFromStart": p.scheduleFromStart = parseMspdiBool(txt); break;
+      case "WeekStartDay": p.weekStartDay = parseMspdiInt(txt) || 0; break;
+      case "DefaultStartTime": p.defaultStartTime = txt; break;
+      case "DefaultFinishTime": p.defaultFinishTime = txt; break;
+      case "MinutesPerDay": p.minutesPerDay = parseMspdiInt(txt) || 480; break;
+      case "MinutesPerWeek": p.minutesPerWeek = parseMspdiInt(txt) || 2400; break;
+      case "DaysPerMonth": p.daysPerMonth = parseMspdiInt(txt) || 20; break;
+      case "DefaultTaskType": p.defaultTaskType = parseMspdiInt(txt) || 1; break;
+      case "DefaultFixedCostAccrual": p.defaultFixedCostAccrual = parseMspdiInt(txt) || 3; break;
+      case "DefaultStandardRate": p.defaultStandardRate = parseMspdiFloat(txt) || 0; break;
+      case "DefaultOvertimeRate": p.defaultOvertimeRate = parseMspdiFloat(txt) || 0; break;
+      case "DefaultTaskEVMethod": p.defaultTaskEVMethod = parseMspdiInt(txt) || 0; break;
+      case "DurationFormat": p.durationFormat = parseMspdiInt(txt) || 7; break;
+      case "WorkFormat": p.workFormat = parseMspdiInt(txt) || 2; break;
+      case "NewTasksEstimated": p.newTasksEstimated = parseMspdiBool(txt) || false; break;
+      case "SplitsInProgressTasks": p.splitsInProgressTasks = parseMspdiBool(txt); break;
+      case "TaskUpdatesResource": p.taskUpdatesResource = parseMspdiBool(txt); break;
+      case "FiscalYearStart": p.fiscalYearStart = parseMspdiBool(txt); break;
+      case "HonorConstraints": p.honorConstraints = parseMspdiBool(txt); break;
+      case "Autolink": p.autolink = parseMspdiBool(txt); break;
+      case "InsertedProjectsLikeSummary": p.inserteddProjectsLikeSummary = parseMspdiBool(txt); break;
+      case "MultipleCriticalPaths": p.multipleCriticalPaths = parseMspdiBool(txt); break;
+      case "NewTasksEffortDriven": p.newTasksEffortDriven = parseMspdiBool(txt); break;
+      case "ActualsInSync": p.actualsInSync = parseMspdiBool(txt); break;
+      case "RemoveFileProperties": p.removeFileProperties = parseMspdiBool(txt); break;
+      case "AdminProject": p.adminProject = parseMspdiBool(txt); break;
+      case "ExtendedCreationDate": p.extendedCreationDate = parseMspdiDateTime(txt); break;
+      case "FYStartDate": p.fyStartMonth = parseMspdiInt(txt) || 1; break;
+      case "CalendarUID": p._mspdiOpaque.rawAttributes.CalendarUID = txt; break;
+      case "CurrencyDigits": p.currencyDigits = parseMspdiInt(txt); break;
+      case "CurrencySymbol": p.currencySymbol = txt; break;
+      case "CurrencySymbolPosition": p.currencySymbolPosition = parseMspdiInt(txt); break;
+      case "CurrencyCode": p.currencyCode = txt; break;
+      case "CriticalSlackLimit": p.criticalSlackLimit = parseMspdiInt(txt) || 0; break;
+      case "SaveVersion": p.saveVersion = parseMspdiInt(txt) || 14; break;
+      default: p._mspdiOpaque.rawAttributes[f] = txt;
+    }
+  }
+
+  // === Extended Attributes (custom fields definitions) ===
+  const eaContainer = xmlChild(root, "ExtendedAttributes");
+  if (eaContainer) {
+    for (const ea of xmlChildren(eaContainer, "ExtendedAttribute")) {
+      const fieldID = xmlChildText(ea, "FieldID");
+      const fieldName = xmlChildText(ea, "FieldName") || xmlChildText(ea, "Alias");
+      const alias = xmlChildText(ea, "Alias") || fieldName;
+      const dataType = parseMspdiInt(xmlChildText(ea, "FieldType")) || EA_DATA_TYPE.text;
+      const ltContainer = xmlChild(ea, "ValueList");
+      const lookup = [];
+      if (ltContainer) {
+        for (const val of xmlChildren(ltContainer, "Value")) {
+          lookup.push(xmlChildText(val, "Value"));
+        }
+      }
+      // Determine kind from FieldID
+      const fid = parseInt(fieldID, 10);
+      let kind = EA_DATA_TYPE_REVERSE[dataType] || "text";
+      const formula = xmlChildText(ea, "Formula") || null;
+      if (formula) kind = "formula";
+      if (lookup.length && kind === "text") kind = "choice";
+      p.customFields.push({
+        id: "cf_" + uid(),
+        key: alias || ("field" + p.customFields.length),
+        label: alias || fieldName || ("Field " + p.customFields.length),
+        kind,
+        formula,
+        lookup: lookup.length ? lookup : null,
+        _mspdiFieldID: fid,
+        _mspdiSlot: fieldID,
+      });
+    }
+  }
+
+  // === OutlineCodes ===
+  const ocContainer = xmlChild(root, "OutlineCodes");
+  if (ocContainer) {
+    p._mspdiOpaque.outlineCodes = ocContainer.outerHTML; // preserve raw
+    for (const oc of xmlChildren(ocContainer, "OutlineCode")) {
+      p.outlineCodes.push({
+        fieldID: xmlChildText(oc, "FieldID"),
+        fieldName: xmlChildText(oc, "FieldName"),
+        alias: xmlChildText(oc, "Alias"),
+        _rawXml: oc.outerHTML,
+      });
+    }
+  }
+
+  // === WBSMasks ===
+  const wbsContainer = xmlChild(root, "WBSMasks");
+  if (wbsContainer) {
+    p._mspdiOpaque.wbsMasks = wbsContainer.outerHTML;
+    for (const wm of xmlChildren(wbsContainer, "WBSMask")) {
+      p.wbsMasks.push({
+        level: parseMspdiInt(xmlChildText(wm, "Level")),
+        length: parseMspdiInt(xmlChildText(wm, "Length")),
+        type: parseMspdiInt(xmlChildText(wm, "Type")),
+        separator: xmlChildText(wm, "Separator"),
+      });
+    }
+  }
+
+  // === Calendars ===
+  const calsContainer = xmlChild(root, "Calendars");
+  const calByUid = {};
+  if (calsContainer) {
+    for (const c of xmlChildren(calsContainer, "Calendar")) {
+      const cal = newCalendar();
+      cal.uid = parseMspdiInt(xmlChildText(c, "UID"));
+      cal.id = "cal_uid_" + cal.uid;
+      cal.name = xmlChildText(c, "Name") || ("Calendar " + cal.uid);
+      cal.isBaseCalendar = parseMspdiBool(xmlChildText(c, "IsBaseCalendar")) !== false;
+      const baseUid = parseMspdiInt(xmlChildText(c, "BaseCalendarUID"));
+      if (baseUid != null && baseUid !== -1) cal._baseCalendarUid = baseUid;
+      // WeekDays
+      cal.weekDays = [];
+      cal.exceptions = [];
+      // First check if newer-style Exceptions section is present
+      const exContainer = xmlChild(c, "Exceptions");
+      const hasNewStyleExceptions = exContainer && xmlChildren(exContainer, "Exception").length > 0;
+
+      const wdContainer = xmlChild(c, "WeekDays");
+      if (wdContainer) {
+        for (const wd of xmlChildren(wdContainer, "WeekDay")) {
+          const dayType = parseMspdiInt(xmlChildText(wd, "DayType"));
+          const dayWorking = parseMspdiBool(xmlChildText(wd, "DayWorking"));
+          const workingTimes = [];
+          const wtContainer = xmlChild(wd, "WorkingTimes");
+          if (wtContainer) {
+            for (const wt of xmlChildren(wtContainer, "WorkingTime")) {
+              const from = xmlChildText(wt, "FromTime");
+              const to = xmlChildText(wt, "ToTime");
+              if (from && to) {
+                const f = from.length >= 5 ? from.substring(0, 5) : from;
+                const t = to.length >= 5 ? to.substring(0, 5) : to;
+                workingTimes.push({ from: f, to: t });
+              }
+            }
+          }
+          if (dayType === 0) {
+            // Exception (old Project 2002 format embedded in WeekDay)
+            // Skip if new-style Exceptions section is present (avoid duplicates)
+            if (hasNewStyleExceptions) continue;
+            const tp = xmlChild(wd, "TimePeriod");
+            const fromDate = tp ? parseMspdiDateTime(xmlChildText(tp, "FromDate")) : null;
+            const toDate = tp ? parseMspdiDateTime(xmlChildText(tp, "ToDate")) : null;
+            if (fromDate) {
+              cal.exceptions.push({
+                name: "", fromDate, toDate: toDate || fromDate,
+                dayWorking: dayWorking || false,
+                workingTimes, type: 0,
+              });
+            }
+          } else if (dayType >= 1 && dayType <= 7) {
+            cal.weekDays.push({ dayType, dayWorking, workingTimes });
+          }
+        }
+      }
+      // Newer-style Exceptions
+      if (exContainer) {
+        for (const ex of xmlChildren(exContainer, "Exception")) {
+          const tp = xmlChild(ex, "TimePeriod");
+          const fromDate = tp ? parseMspdiDateTime(xmlChildText(tp, "FromDate")) : null;
+          const toDate = tp ? parseMspdiDateTime(xmlChildText(tp, "ToDate")) : null;
+          if (!fromDate) continue;
+          const exObj = {
+            name: xmlChildText(ex, "Name"),
+            fromDate,
+            toDate: toDate || fromDate,
+            dayWorking: parseMspdiBool(xmlChildText(ex, "DayWorking")) || false,
+            workingTimes: [],
+            type: parseMspdiInt(xmlChildText(ex, "Type")) || 0,
+            enteredByOccurrences: parseMspdiBool(xmlChildText(ex, "EnteredByOccurrences")),
+            occurrences: parseMspdiInt(xmlChildText(ex, "Occurrences")),
+            period: parseMspdiInt(xmlChildText(ex, "Period")) || 1,
+            daysOfWeek: [],
+            monthDay: parseMspdiInt(xmlChildText(ex, "MonthDay")),
+            monthItem: parseMspdiInt(xmlChildText(ex, "MonthItem")),
+            monthPosition: parseMspdiInt(xmlChildText(ex, "MonthPosition")),
+            month: parseMspdiInt(xmlChildText(ex, "Month")),
+            dayBits: xmlChildText(ex, "DaysOfWeek"),
+          };
+          // DaysOfWeek bits: bit 0=Sun, 1=Mon ... 6=Sat
+          if (exObj.dayBits) {
+            const bits = parseInt(exObj.dayBits, 10);
+            for (let i = 0; i < 7; i++) if (bits & (1 << i)) exObj.daysOfWeek.push(i);
+          }
+          const wtContainer = xmlChild(ex, "WorkingTimes");
+          if (wtContainer) {
+            for (const wt of xmlChildren(wtContainer, "WorkingTime")) {
+              const from = xmlChildText(wt, "FromTime");
+              const to = xmlChildText(wt, "ToTime");
+              if (from && to) {
+                exObj.workingTimes.push({ from: from.substring(0,5), to: to.substring(0,5) });
+              }
+            }
+          }
+          cal.exceptions.push(exObj);
+        }
+      }
+      // WorkWeeks (preservation only)
+      const wwContainer = xmlChild(c, "WorkWeeks");
+      if (wwContainer) cal._mspdiOpaque = { workWeeks: wwContainer.outerHTML };
+      // Ensure 7 weekDays present (Mon..Sat..Sun); fill missing with defaults from old days
+      const seen = new Set(cal.weekDays.map(w => w.dayType));
+      for (let dt = 1; dt <= 7; dt++) {
+        if (!seen.has(dt)) {
+          const isWeekend = dt === 1 || dt === 7;
+          cal.weekDays.push({ dayType: dt, dayWorking: !isWeekend,
+            workingTimes: isWeekend ? [] : [{from:"08:00",to:"12:00"},{from:"13:00",to:"17:00"}] });
+        }
+      }
+      cal.weekDays.sort((a,b) => a.dayType - b.dayType);
+      p.calendars.push(cal);
+      calByUid[cal.uid] = cal;
+    }
+  }
+  // Resolve baseCalendarId references
+  for (const cal of p.calendars) {
+    if (cal._baseCalendarUid != null) {
+      const base = calByUid[cal._baseCalendarUid];
+      if (base) cal.baseCalendarId = base.id;
+      delete cal._baseCalendarUid;
+    }
+  }
+  // Ensure at least one calendar exists
+  if (!p.calendars.length) p.calendars.push(newCalendar({id:"cal_default", uid:1}));
+  // Set project default calendar UID
+  const projCalUid = parseMspdiInt(xmlChildText(root, "CalendarUID"));
+  if (projCalUid != null && calByUid[projCalUid]) p.projectCalendarId = calByUid[projCalUid].id;
+  else p.projectCalendarId = p.calendars[0].id;
+
+  // === Tasks ===
+  const tasksContainer = xmlChild(root, "Tasks");
+  const taskByUid = {};
+  const taskUidByMspdi = {};        // mspdi-uid → task
+  if (tasksContainer) {
+    let firstTaskSeen = false;
+    for (const tEl of xmlChildren(tasksContainer, "Task")) {
+      const t = newTask();
+      t.uid = parseMspdiInt(xmlChildText(tEl, "UID"));
+      // MSPDI conventionally has a "task 0" representing the project summary; skip it
+      if (t.uid === 0) {
+        if (!firstTaskSeen) {
+          p._mspdiOpaque.taskPlaceholderForUid1 = true;
+          // capture project-level fields embedded here
+          const summaryNotes = xmlChildText(tEl, "Notes");
+          if (summaryNotes && !p.description) p.description = stripRTF(summaryNotes);
+          firstTaskSeen = true;
+          continue;
+        }
+      }
+      firstTaskSeen = true;
+      t.id = "t_uid_" + t.uid + "_" + uid();
+      // Identity & structure
+      t.name = xmlChildText(tEl, "Name");
+      t.wbs = xmlChildText(tEl, "WBS");
+      t.outlineNumber = xmlChildText(tEl, "OutlineNumber");
+      const ol = parseMspdiInt(xmlChildText(tEl, "OutlineLevel"));
+      t.outlineLevel = ol != null ? Math.max(0, ol - 1) : 0;
+      t.createDate = parseMspdiDateTime(xmlChildText(tEl, "CreateDate")) || t.createDate;
+      // Duration
+      const dur = xsdToMinutes(xmlChildText(tEl, "Duration"));
+      const dfFmt = parseMspdiInt(xmlChildText(tEl, "DurationFormat"));
+      const estimated = parseMspdiBool(xmlChildText(tEl, "Estimated"));
+      const dfInfo = mspdiDurationFormatToUnit(dfFmt, estimated);
+      t.durationUnit = dfInfo.unit;
+      t.durationEstimated = dfInfo.estimated;
+      t.duration = minutesToDuration(dur, dfInfo.unit);
+      // Schedule
+      t.start = parseMspdiDateTime(xmlChildText(tEl, "Start"));
+      t.finish = parseMspdiDateTime(xmlChildText(tEl, "Finish"));
+      t.earlyStart = parseMspdiDateTime(xmlChildText(tEl, "EarlyStart"));
+      t.earlyFinish = parseMspdiDateTime(xmlChildText(tEl, "EarlyFinish"));
+      t.lateStart = parseMspdiDateTime(xmlChildText(tEl, "LateStart"));
+      t.lateFinish = parseMspdiDateTime(xmlChildText(tEl, "LateFinish"));
+      t.preLeveledStart = parseMspdiDateTime(xmlChildText(tEl, "PreLeveledStart"));
+      t.preLeveledFinish = parseMspdiDateTime(xmlChildText(tEl, "PreLeveledFinish"));
+      t.actualStart = parseMspdiDateTime(xmlChildText(tEl, "ActualStart"));
+      t.actualFinish = parseMspdiDateTime(xmlChildText(tEl, "ActualFinish"));
+      const ad = xsdToMinutes(xmlChildText(tEl, "ActualDuration"));
+      t.actualDuration = minutesToDuration(ad, t.durationUnit);
+      t.actualDurationUnit = t.durationUnit;
+      const rd = xsdToMinutes(xmlChildText(tEl, "RemainingDuration"));
+      if (rd) t.remainingDuration = minutesToDuration(rd, t.durationUnit);
+      t.stop = parseMspdiDateTime(xmlChildText(tEl, "Stop"));
+      t.resume = parseMspdiDateTime(xmlChildText(tEl, "Resume"));
+      t.resumeValid = parseMspdiBool(xmlChildText(tEl, "ResumeValid"));
+      // Progress
+      t.percentComplete = parseMspdiInt(xmlChildText(tEl, "PercentComplete")) || 0;
+      t.physicalPercentComplete = parseMspdiInt(xmlChildText(tEl, "PhysicalPercentComplete")) || 0;
+      t.percentWorkComplete = parseMspdiInt(xmlChildText(tEl, "PercentWorkComplete")) || 0;
+      t.earnedValueMethod = parseMspdiInt(xmlChildText(tEl, "EarnedValueMethod")) || 0;
+      // Constraint
+      const cType = parseMspdiInt(xmlChildText(tEl, "ConstraintType"));
+      if (cType != null && MSPDI_CONSTRAINT_TYPE[cType]) t.constraint = MSPDI_CONSTRAINT_TYPE[cType];
+      t.constraintDate = parseMspdiDateTime(xmlChildText(tEl, "ConstraintDate"));
+      t.deadline = parseMspdiDateTime(xmlChildText(tEl, "Deadline"));
+      t.priority = parseMspdiInt(xmlChildText(tEl, "Priority")) || 500;
+      // Flags
+      t.manual = parseMspdiBool(xmlChildText(tEl, "Manual")) || false;
+      t.isMilestone = parseMspdiBool(xmlChildText(tEl, "Milestone")) || false;
+      t.isRecurring = parseMspdiBool(xmlChildText(tEl, "Recurring")) || false;
+      t.isSummary = parseMspdiBool(xmlChildText(tEl, "Summary")) || false;
+      t.isActive = parseMspdiBool(xmlChildText(tEl, "Active")) !== false;
+      t.isNull = parseMspdiBool(xmlChildText(tEl, "IsNull")) || false;
+      t.isPublished = parseMspdiBool(xmlChildText(tEl, "IsPublished")) !== false;
+      t.isSubproject = parseMspdiBool(xmlChildText(tEl, "IsSubproject")) || false;
+      t.isSubprojectReadOnly = parseMspdiBool(xmlChildText(tEl, "IsSubprojectReadOnly")) || false;
+      t.estimated = parseMspdiBool(xmlChildText(tEl, "Estimated")) || false;
+      t.isCritical = parseMspdiBool(xmlChildText(tEl, "Critical")) || false;
+      t.rollup = parseMspdiBool(xmlChildText(tEl, "Rollup")) || false;
+      t.hideBar = parseMspdiBool(xmlChildText(tEl, "HideBar")) || false;
+      t.effortDriven = parseMspdiBool(xmlChildText(tEl, "EffortDriven")) || false;
+      t.ignoreResourceCalendar = parseMspdiBool(xmlChildText(tEl, "IgnoreResourceCalendar")) || false;
+      t.levelAssignments = parseMspdiBool(xmlChildText(tEl, "LevelAssignments")) !== false;
+      t.levelingCanSplit = parseMspdiBool(xmlChildText(tEl, "LevelingCanSplit")) !== false;
+      t.levelingDelay = parseMspdiInt(xmlChildText(tEl, "LevelingDelay")) || 0;
+      t.levelingDelayFormat = parseMspdiInt(xmlChildText(tEl, "LevelingDelayFormat")) || 8;
+      t.externalTask = parseMspdiBool(xmlChildText(tEl, "ExternalTask")) || false;
+      t.externalTaskProject = xmlChildText(tEl, "ExternalTaskProject");
+      // Manual scheduling
+      t.manualStart = parseMspdiDateTime(xmlChildText(tEl, "ManualStart"));
+      t.manualFinish = parseMspdiDateTime(xmlChildText(tEl, "ManualFinish"));
+      const md = xsdToMinutes(xmlChildText(tEl, "ManualDuration"));
+      if (md) t.manualDuration = minutesToDuration(md, t.durationUnit);
+      t.startText = xmlChildText(tEl, "StartText");
+      t.finishText = xmlChildText(tEl, "FinishText");
+      t.durationText = xmlChildText(tEl, "DurationText");
+      // Type & Calendar
+      t.type = parseMspdiInt(xmlChildText(tEl, "Type")) || 1;
+      const calUidTask = parseMspdiInt(xmlChildText(tEl, "CalendarUID"));
+      if (calUidTask != null && calByUid[calUidTask]) t.calendarId = calByUid[calUidTask].id;
+      t.fixedCostAccrual = parseMspdiInt(xmlChildText(tEl, "FixedCostAccrual")) || 3;
+      t.fixedCost = parseMspdiFloat(xmlChildText(tEl, "FixedCost")) || 0;
+      // Work / Cost
+      const work = xsdToMinutes(xmlChildText(tEl, "Work"));
+      t.work = minutesToDuration(work, "h");
+      t.workUnit = "h";
+      t.actualWork = minutesToDuration(xsdToMinutes(xmlChildText(tEl, "ActualWork")), "h");
+      t.actualOvertimeWork = minutesToDuration(xsdToMinutes(xmlChildText(tEl, "ActualOvertimeWork")), "h");
+      t.remainingWork = minutesToDuration(xsdToMinutes(xmlChildText(tEl, "RemainingWork")), "h");
+      t.overtimeWork = minutesToDuration(xsdToMinutes(xmlChildText(tEl, "OvertimeWork")), "h");
+      t.regularWork = minutesToDuration(xsdToMinutes(xmlChildText(tEl, "RegularWork")), "h");
+      t.cost = parseMspdiFloat(xmlChildText(tEl, "Cost")) || 0;
+      t.overtimeCost = parseMspdiFloat(xmlChildText(tEl, "OvertimeCost")) || 0;
+      t.actualCost = parseMspdiFloat(xmlChildText(tEl, "ActualCost")) || 0;
+      t.remainingCost = parseMspdiFloat(xmlChildText(tEl, "RemainingCost")) || 0;
+      // Recurring info
+      const ri = xmlChild(tEl, "RecurringInfo");
+      if (ri) {
+        t.recurringInfo = {
+          type: parseMspdiInt(xmlChildText(ri, "Type")),
+          frequency: parseMspdiInt(xmlChildText(ri, "Frequency")),
+          startDate: parseMspdiDateTime(xmlChildText(ri, "StartDate")),
+          endDate: parseMspdiDateTime(xmlChildText(ri, "EndDate")),
+          endOccurrences: parseMspdiInt(xmlChildText(ri, "EndOccurrences")),
+          dailyWorkdays: xmlChildText(ri, "DailyWorkdays"),
+          weeklyDays: xmlChildText(ri, "WeeklyDays"),
+          monthlyOnDay: parseMspdiInt(xmlChildText(ri, "MonthlyOnDay")),
+          monthlyOnRelativeDay: xmlChildText(ri, "MonthlyOnRelativeDay"),
+          yearlyMonth: parseMspdiInt(xmlChildText(ri, "YearlyMonth")),
+          yearlyDay: parseMspdiInt(xmlChildText(ri, "YearlyDay")),
+          _rawXml: ri.outerHTML,
+        };
+      }
+      // Notes
+      const notes = xmlChildText(tEl, "Notes");
+      if (notes) {
+        t.notesRTF = notes;
+        t.notes = stripRTF(notes);
+      }
+      // Hyperlink
+      const hlAddr = xmlChildText(tEl, "HyperlinkAddress");
+      if (hlAddr || xmlChildText(tEl, "Hyperlink")) {
+        t.hyperlink = {
+          name: xmlChildText(tEl, "Hyperlink"),
+          address: hlAddr,
+          subAddress: xmlChildText(tEl, "HyperlinkSubAddress"),
+        };
+      }
+      // Splits
+      const splitsEl = xmlChild(tEl, "TimephasedData");  // very rare for splits per se
+      // Splits via SplitParts
+      const splits = [];
+      for (const sp of xmlChildren(tEl, "Split")) {
+        splits.push({
+          start: parseMspdiDateTime(xmlChildText(sp, "Start")),
+          finish: parseMspdiDateTime(xmlChildText(sp, "Finish")),
+        });
+      }
+      if (splits.length) t.splits = splits;
+      // Baselines (per-task <Baseline><Number>...)
+      for (const b of xmlChildren(tEl, "Baseline")) {
+        const num = parseMspdiInt(xmlChildText(b, "Number")) || 0;
+        const baseDur = xsdToMinutes(xmlChildText(b, "Duration"));
+        t.baselines[num] = {
+          start: parseMspdiDateTime(xmlChildText(b, "Start")),
+          finish: parseMspdiDateTime(xmlChildText(b, "Finish")),
+          duration: minutesToDuration(baseDur, t.durationUnit),
+          durationUnit: t.durationUnit,
+          work: minutesToDuration(xsdToMinutes(xmlChildText(b, "Work")), "h"),
+          cost: parseMspdiFloat(xmlChildText(b, "Cost")) || 0,
+        };
+      }
+      // Extended Attribute Values (custom field values)
+      for (const eav of xmlChildren(tEl, "ExtendedAttribute")) {
+        const fid = parseMspdiInt(xmlChildText(eav, "FieldID"));
+        const val = xmlChildText(eav, "Value");
+        // find matching custom field
+        const cf = p.customFields.find(c => c._mspdiFieldID === fid || parseInt(c._mspdiSlot, 10) === fid);
+        if (cf) {
+          let parsedVal = val;
+          if (cf.kind === "number") parsedVal = parseFloat(val);
+          else if (cf.kind === "date") parsedVal = parseMspdiDateTime(val);
+          else if (cf.kind === "flag") parsedVal = val === "1" || val === "true";
+          t.customValues[cf.id] = parsedVal;
+        }
+      }
+      // Predecessors
+      const predLinks = xmlChildren(tEl, "PredecessorLink");
+      // Store temporarily; resolve to task IDs after all tasks read
+      t._mspdiPredLinks = predLinks.map(pl => ({
+        predUid: parseMspdiInt(xmlChildText(pl, "PredecessorUID")),
+        type: parseMspdiInt(xmlChildText(pl, "Type")),
+        crossProject: parseMspdiBool(xmlChildText(pl, "CrossProject")),
+        crossProjectName: xmlChildText(pl, "CrossProjectName"),
+        linkLag: parseMspdiInt(xmlChildText(pl, "LinkLag")) || 0,   // tenths of minute
+        lagFormat: parseMspdiInt(xmlChildText(pl, "LagFormat")) || 7,
+      }));
+      // Preserve other fields
+      const known = new Set([
+        "UID","ID","Name","Type","IsNull","CreateDate","Contact","WBS","WBSLevel",
+        "OutlineNumber","OutlineLevel","Priority","Start","Finish","Duration","DurationFormat",
+        "Work","Stop","Resume","ResumeValid","EffortDriven","Recurring","OverAllocated",
+        "Estimated","Milestone","Summary","Critical","IsSubproject","IsSubprojectReadOnly",
+        "SubprojectName","ExternalTask","ExternalTaskProject","EarlyStart","EarlyFinish",
+        "LateStart","LateFinish","StartVariance","FinishVariance","WorkVariance","FreeSlack",
+        "TotalSlack","FixedCost","FixedCostAccrual","PercentComplete","PercentWorkComplete",
+        "Cost","OvertimeCost","OvertimeWork","ActualStart","ActualFinish","ActualDuration",
+        "ActualCost","ActualOvertimeCost","ActualWork","ActualOvertimeWork","RegularWork",
+        "RemainingDuration","RemainingCost","RemainingWork","RemainingOvertimeCost",
+        "RemainingOvertimeWork","ACWP","CV","ConstraintType","CalendarUID","ConstraintDate",
+        "Deadline","LevelAssignments","LevelingCanSplit","LevelingDelay","LevelingDelayFormat",
+        "PreLeveledStart","PreLeveledFinish","HyperlinkAddress","HyperlinkSubAddress","Hyperlink",
+        "IgnoreResourceCalendar","Notes","HideBar","Rollup","BCWS","BCWP","PhysicalPercentComplete",
+        "EarnedValueMethod","PredecessorLink","ActualWorkProtected","ActualOvertimeWorkProtected",
+        "Active","Manual","ManualStart","ManualFinish","ManualDuration","DurationText","StartText",
+        "FinishText","PercentWorkComplete","RecurringInfo","Baseline","Baseline1","Baseline2","Baseline3","Baseline4","Baseline5","Baseline6","Baseline7","Baseline8","Baseline9","Baseline10",
+        "ExtendedAttribute","TimephasedData","Split","OutlineCode1","OutlineCode2","OutlineCode3",
+        "OutlineCode4","OutlineCode5","OutlineCode6","OutlineCode7","OutlineCode8","OutlineCode9","OutlineCode10",
+        "IsPublished",
+      ]);
+      const opaqueFields = {};
+      for (const child of tEl.children) {
+        const tag = child.localName || child.tagName;
+        if (!known.has(tag)) opaqueFields[tag] = child.outerHTML;
+      }
+      t._mspdiOpaque = { fields: opaqueFields };
+      // Also preserve full XML for fully-untouched round trip
+      t._mspdiOpaque.rawXml = tEl.outerHTML;
+
+      p.tasks.push(t);
+      taskByUid[t.uid] = t;
+      taskUidByMspdi[t.uid] = t;
+    }
+    // Build parentId from OutlineLevel sequence
+    const stack = [];
+    for (const t of p.tasks) {
+      while (stack.length && stack[stack.length-1].outlineLevel >= t.outlineLevel) stack.pop();
+      t.parentId = stack.length ? stack[stack.length-1].id : null;
+      stack.push(t);
+    }
+    // Resolve PredecessorLinks → links
+    for (const t of p.tasks) {
+      if (!t._mspdiPredLinks) continue;
+      for (const pl of t._mspdiPredLinks) {
+        const pred = taskByUid[pl.predUid];
+        if (!pred) continue;
+        const type = MSPDI_LINK_TYPE[pl.type] || "FS";
+        // LinkLag is in tenths of minutes → convert to days using project minutesPerDay
+        const lagMin = (pl.linkLag || 0) / 10;
+        const lagDays = lagMin / (p.minutesPerDay || 480);
+        p.links.push({
+          predId: pred.id, succId: t.id,
+          type, lag: lagDays,
+          _mspdiLagFormat: pl.lagFormat,
+          crossProject: pl.crossProject,
+          crossProjectName: pl.crossProjectName,
+        });
+      }
+      delete t._mspdiPredLinks;
+    }
+  }
+
+  // === Resources ===
+  const resContainer = xmlChild(root, "Resources");
+  const resByUid = {};
+  if (resContainer) {
+    for (const rEl of xmlChildren(resContainer, "Resource")) {
+      const r = newResource();
+      r.uid = parseMspdiInt(xmlChildText(rEl, "UID"));
+      if (r.uid === 0) continue;  // resource 0 = unassigned placeholder
+      r.id = "res_uid_" + r.uid + "_" + uid();
+      r.name = xmlChildText(rEl, "Name");
+      r.type = parseMspdiInt(xmlChildText(rEl, "Type"));
+      if (r.type == null) r.type = 1;
+      r.isGeneric = parseMspdiBool(xmlChildText(rEl, "IsGeneric")) || false;
+      r.isInactive = parseMspdiBool(xmlChildText(rEl, "IsInactive")) || false;
+      r.initials = xmlChildText(rEl, "Initials");
+      r.group = xmlChildText(rEl, "Group");
+      r.code = xmlChildText(rEl, "Code");
+      r.emailAddress = xmlChildText(rEl, "EmailAddress");
+      r.materialLabel = xmlChildText(rEl, "MaterialLabel");
+      r.maxUnits = parseMspdiFloat(xmlChildText(rEl, "MaxUnits")) || 1.0;
+      r.peakUnits = parseMspdiFloat(xmlChildText(rEl, "PeakUnits")) || 0;
+      r.overAllocated = parseMspdiBool(xmlChildText(rEl, "OverAllocated")) || false;
+      r.standardRate = parseMspdiFloat(xmlChildText(rEl, "StandardRate")) || 0;
+      r.standardRateFormat = parseMspdiInt(xmlChildText(rEl, "StandardRateFormat")) || 2;
+      r.overtimeRate = parseMspdiFloat(xmlChildText(rEl, "OvertimeRate")) || 0;
+      r.overtimeRateFormat = parseMspdiInt(xmlChildText(rEl, "OvertimeRateFormat")) || 2;
+      r.costPerUse = parseMspdiFloat(xmlChildText(rEl, "CostPerUse")) || 0;
+      r.accrueAt = parseMspdiInt(xmlChildText(rEl, "AccrueAt")) || 3;
+      const calUidR = parseMspdiInt(xmlChildText(rEl, "CalendarUID"));
+      if (calUidR != null && calByUid[calUidR]) r.calendarId = calByUid[calUidR].id;
+      const notesR = xmlChildText(rEl, "Notes");
+      if (notesR) { r.notesRTF = notesR; r.notes = stripRTF(notesR); }
+      // Hyperlink
+      const hlAddrR = xmlChildText(rEl, "HyperlinkAddress");
+      if (hlAddrR || xmlChildText(rEl, "Hyperlink")) {
+        r.hyperlink = {
+          name: xmlChildText(rEl, "Hyperlink"),
+          address: hlAddrR,
+          subAddress: xmlChildText(rEl, "HyperlinkSubAddress"),
+        };
+      }
+      // AvailabilityPeriods
+      const apContainer = xmlChild(rEl, "AvailabilityPeriods");
+      if (apContainer) {
+        for (const ap of xmlChildren(apContainer, "AvailabilityPeriod")) {
+          r.availabilityPeriods.push({
+            from: parseMspdiDateTime(xmlChildText(ap, "AvailableFrom")),
+            to: parseMspdiDateTime(xmlChildText(ap, "AvailableTo")),
+            units: parseMspdiFloat(xmlChildText(ap, "AvailableUnits")) || 1.0,
+          });
+        }
+      }
+      // Preserve raw
+      r._mspdiOpaque = { rawXml: rEl.outerHTML };
+      p.resources.push(r);
+      resByUid[r.uid] = r;
+    }
+  }
+
+  // === Assignments ===
+  const asgContainer = xmlChild(root, "Assignments");
+  if (asgContainer) {
+    for (const aEl of xmlChildren(asgContainer, "Assignment")) {
+      const a = newAssignment();
+      a.uid = parseMspdiInt(xmlChildText(aEl, "UID"));
+      const tUid = parseMspdiInt(xmlChildText(aEl, "TaskUID"));
+      const rUid = parseMspdiInt(xmlChildText(aEl, "ResourceUID"));
+      const task = taskByUid[tUid];
+      const res = resByUid[rUid];
+      if (!task) continue;       // skip if task missing
+      a.id = "asg_uid_" + a.uid + "_" + uid();
+      a.taskId = task.id;
+      a.resourceId = res ? res.id : null;
+      a.units = parseMspdiFloat(xmlChildText(aEl, "Units")) || 1.0;
+      a.work = minutesToDuration(xsdToMinutes(xmlChildText(aEl, "Work")), "h");
+      a.workUnit = "h";
+      a.actualWork = minutesToDuration(xsdToMinutes(xmlChildText(aEl, "ActualWork")), "h");
+      a.remainingWork = minutesToDuration(xsdToMinutes(xmlChildText(aEl, "RemainingWork")), "h");
+      a.overtimeWork = minutesToDuration(xsdToMinutes(xmlChildText(aEl, "OvertimeWork")), "h");
+      a.actualOvertimeWork = minutesToDuration(xsdToMinutes(xmlChildText(aEl, "ActualOvertimeWork")), "h");
+      a.percentWorkComplete = parseMspdiInt(xmlChildText(aEl, "PercentWorkComplete")) || 0;
+      a.start = parseMspdiDateTime(xmlChildText(aEl, "Start"));
+      a.finish = parseMspdiDateTime(xmlChildText(aEl, "Finish"));
+      a.actualStart = parseMspdiDateTime(xmlChildText(aEl, "ActualStart"));
+      a.actualFinish = parseMspdiDateTime(xmlChildText(aEl, "ActualFinish"));
+      a.cost = parseMspdiFloat(xmlChildText(aEl, "Cost")) || 0;
+      a.costRateTable = parseMspdiInt(xmlChildText(aEl, "CostRateTable")) || 0;
+      a.delay = parseMspdiInt(xmlChildText(aEl, "Delay")) || 0;
+      a.levelingDelay = parseMspdiInt(xmlChildText(aEl, "LevelingDelay")) || 0;
+      a.workContour = parseMspdiInt(xmlChildText(aEl, "WorkContour")) || 0;
+      const aNotes = xmlChildText(aEl, "Notes");
+      if (aNotes) { a.notesRTF = aNotes; a.notes = stripRTF(aNotes); }
+      a._mspdiOpaque = { rawXml: aEl.outerHTML };
+      p.assignments.push(a);
+    }
+  }
+
+  // Renumber tasks; assign fresh ids (we already have stable ones); ensure nextId reasonable
+  p.nextId = (p.tasks.length || 0) + 1;
+
+  // Replace the global project and re-schedule
+  project = p;
+  history.stack = []; history.pointer = -1;
+  snapshot("import_mspdi");
+  schedule();
+  recomputeWBS();
+  return p;
+}
+
+/* ===============================================================
+   MSPDI WRITER
+   =============================================================== */
+function exportMSPDI() {
+  // Assign integer UIDs to tasks, resources, calendars, assignments
+  const tasks = project.tasks;
+  tasks.forEach((t, i) => { t.uid = i + 1; });
+  project.resources.forEach((r, i) => { r.uid = i + 1; });
+  project.calendars.forEach((c, i) => { if (c.uid == null) c.uid = i + 1; });
+  project.assignments.forEach((a, i) => { a.uid = i + 1; });
+
+  const lines = [];
+  lines.push('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>');
+  lines.push('<Project xmlns="http://schemas.microsoft.com/project">');
+
+  // ---- Project root attributes ----
+  lines.push(xmlTag("SaveVersion", project.saveVersion || 14));
+  lines.push(xmlTag("Name", project.name));
+  lines.push(xmlTag("Title", project.title));
+  lines.push(xmlTag("Subject", project.subject));
+  lines.push(xmlTag("Category", project.category));
+  lines.push(xmlTag("Company", project.company));
+  lines.push(xmlTag("Manager", project.manager));
+  lines.push(xmlTag("Author", project.author));
+  lines.push(xmlTag("Keywords", project.keywords));
+  lines.push(xmlTagInt("Revision", project.revision || 1));
+  lines.push(xmlTagDateTime("CreationDate", project.creationDate));
+  lines.push(xmlTagDateTime("LastSaved", project.lastSaved || formatDate(new Date())));
+  lines.push(xmlTagDateTime("StartDate", project.startDate, "08:00:00"));
+  if (project.finishDate) lines.push(xmlTagDateTime("FinishDate", project.finishDate, "17:00:00"));
+  else if (project.currentEndDate) lines.push(xmlTagDateTime("FinishDate", project.currentEndDate, "17:00:00"));
+  lines.push(xmlTagBool("ScheduleFromStart", project.scheduleFromStart));
+  lines.push(xmlTagInt("FYStartDate", project.fyStartMonth || 1));
+  lines.push(xmlTagInt("CriticalSlackLimit", project.criticalSlackLimit || 0));
+  lines.push(xmlTagInt("CurrentDate", project.currentDate ? null : null)); // skip
+  if (project.currentDate) lines.push(xmlTagDateTime("CurrentDate", project.currentDate));
+  if (project.statusDate) lines.push(xmlTagDateTime("StatusDate", project.statusDate));
+  lines.push(xmlTagInt("WeekStartDay", project.weekStartDay || 1));
+  lines.push(xmlTag("DefaultStartTime", project.defaultStartTime || "08:00:00"));
+  lines.push(xmlTag("DefaultFinishTime", project.defaultFinishTime || "17:00:00"));
+  lines.push(xmlTagInt("MinutesPerDay", project.minutesPerDay || 480));
+  lines.push(xmlTagInt("MinutesPerWeek", project.minutesPerWeek || 2400));
+  lines.push(xmlTagInt("DaysPerMonth", project.daysPerMonth || 20));
+  lines.push(xmlTagInt("DefaultTaskType", project.defaultTaskType));
+  lines.push(xmlTagInt("DefaultFixedCostAccrual", project.defaultFixedCostAccrual));
+  lines.push(xmlTag("DefaultStandardRate", project.defaultStandardRate || 0));
+  lines.push(xmlTag("DefaultOvertimeRate", project.defaultOvertimeRate || 0));
+  lines.push(xmlTagInt("DurationFormat", project.durationFormat || 7));
+  lines.push(xmlTagInt("WorkFormat", project.workFormat || 2));
+  lines.push(xmlTagInt("DefaultTaskEVMethod", project.defaultTaskEVMethod || 0));
+  lines.push(xmlTagBool("NewTasksEstimated", project.newTasksEstimated));
+  lines.push(xmlTagBool("SplitsInProgressTasks", project.splitsInProgressTasks));
+  lines.push(xmlTagBool("TaskUpdatesResource", project.taskUpdatesResource));
+  lines.push(xmlTagBool("FiscalYearStart", project.fiscalYearStart));
+  lines.push(xmlTagBool("HonorConstraints", project.honorConstraints));
+  lines.push(xmlTagBool("Autolink", project.autolink));
+  lines.push(xmlTagBool("InsertedProjectsLikeSummary", project.inserteddProjectsLikeSummary));
+  lines.push(xmlTagBool("MultipleCriticalPaths", project.multipleCriticalPaths));
+  lines.push(xmlTagBool("NewTasksEffortDriven", project.newTasksEffortDriven));
+  lines.push(xmlTagBool("ActualsInSync", project.actualsInSync));
+  lines.push(xmlTagBool("RemoveFileProperties", project.removeFileProperties));
+  lines.push(xmlTagBool("AdminProject", project.adminProject));
+  lines.push(xmlTagInt("CurrencyDigits", project.currencyDigits != null ? project.currencyDigits : 2));
+  lines.push(xmlTag("CurrencySymbol", project.currencySymbol));
+  lines.push(xmlTagInt("CurrencySymbolPosition", project.currencySymbolPosition));
+  lines.push(xmlTag("CurrencyCode", project.currencyCode));
+  // Project default calendar UID
+  const pCal = getCalendar(project.projectCalendarId);
+  if (pCal) lines.push(xmlTagInt("CalendarUID", pCal.uid));
+  // Preserved root attributes
+  if (project._mspdiOpaque && project._mspdiOpaque.rawAttributes) {
+    for (const [k, v] of Object.entries(project._mspdiOpaque.rawAttributes)) {
+      // Skip ones we already wrote
+      if (["CalendarUID","Name","Title","Subject","Category","Company","Manager","Author","Keywords"].includes(k)) continue;
+      // Skip empty
+      if (v === "" || v == null) continue;
+      lines.push(xmlTag(k, v));
+    }
+  }
+
+  // ---- OutlineCodes (preserved) ----
+  if (project._mspdiOpaque && project._mspdiOpaque.outlineCodes) {
+    lines.push(project._mspdiOpaque.outlineCodes);
+  } else {
+    lines.push("<OutlineCodes/>");
+  }
+
+  // ---- WBSMasks (preserved or empty) ----
+  if (project._mspdiOpaque && project._mspdiOpaque.wbsMasks) {
+    lines.push(project._mspdiOpaque.wbsMasks);
+  } else {
+    lines.push("<WBSMasks/>");
+  }
+
+  // ---- ExtendedAttributes ----
+  lines.push("<ExtendedAttributes>");
+  for (const cf of project.customFields) {
+    let fieldID = cf._mspdiFieldID;
+    if (fieldID == null) {
+      // assign new slot
+      const slots = cf.kind === "number" ? MSPDI_FIELD_IDS.taskNumber
+        : cf.kind === "date" ? MSPDI_FIELD_IDS.taskDate
+        : cf.kind === "flag" ? MSPDI_FIELD_IDS.taskFlag
+        : MSPDI_FIELD_IDS.taskText;
+      const usedIdx = project.customFields.filter(c => c !== cf && c.kind === cf.kind).length;
+      fieldID = slots[Math.min(usedIdx, slots.length - 1)];
+      cf._mspdiFieldID = fieldID;
+    }
+    const dt = cf.kind === "formula" ? EA_DATA_TYPE.text : (EA_DATA_TYPE[cf.kind] || EA_DATA_TYPE.text);
+    lines.push("<ExtendedAttribute>");
+    lines.push(xmlTagInt("FieldID", fieldID));
+    lines.push(xmlTag("FieldName", cf.label));
+    lines.push(xmlTag("Alias", cf.key || cf.label));
+    lines.push(xmlTagInt("FieldType", dt));
+    if (cf.formula) lines.push(xmlTag("Formula", cf.formula));
+    if (cf.lookup && cf.lookup.length) {
+      lines.push("<ValueList>");
+      for (const v of cf.lookup) {
+        lines.push("<Value>" + xmlTag("Value", v) + "</Value>");
+      }
+      lines.push("</ValueList>");
+    }
+    lines.push("</ExtendedAttribute>");
+  }
+  lines.push("</ExtendedAttributes>");
+
+  // ---- Calendars ----
+  lines.push("<Calendars>");
+  for (const cal of project.calendars) {
+    lines.push("<Calendar>");
+    lines.push(xmlTagInt("UID", cal.uid));
+    lines.push(xmlTag("Name", cal.name));
+    lines.push(xmlTagBool("IsBaseCalendar", cal.isBaseCalendar !== false));
+    if (cal.baseCalendarId) {
+      const base = getCalendar(cal.baseCalendarId);
+      if (base) lines.push(xmlTagInt("BaseCalendarUID", base.uid));
+      else lines.push(xmlTagInt("BaseCalendarUID", -1));
+    } else {
+      lines.push(xmlTagInt("BaseCalendarUID", -1));
+    }
+    lines.push("<WeekDays>");
+    for (const wd of cal.weekDays) {
+      lines.push("<WeekDay>");
+      lines.push(xmlTagInt("DayType", wd.dayType));
+      lines.push(xmlTagBool("DayWorking", wd.dayWorking));
+      if (wd.dayWorking && wd.workingTimes && wd.workingTimes.length) {
+        lines.push("<WorkingTimes>");
+        for (const wt of wd.workingTimes) {
+          lines.push("<WorkingTime>");
+          lines.push(xmlTag("FromTime", wt.from + ":00"));
+          lines.push(xmlTag("ToTime", wt.to + ":00"));
+          lines.push("</WorkingTime>");
+        }
+        lines.push("</WorkingTimes>");
+      }
+      lines.push("</WeekDay>");
+    }
+    // Old-style exceptions (Project 2002 compat) — write into WeekDays as DayType=0
+    for (const ex of cal.exceptions || []) {
+      // Only write simple, non-recurring exceptions in legacy format
+      if (ex.type && ex.type !== 0) continue;
+      lines.push("<WeekDay>");
+      lines.push(xmlTagInt("DayType", 0));
+      lines.push(xmlTagBool("DayWorking", ex.dayWorking || false));
+      lines.push("<TimePeriod>");
+      lines.push(xmlTagDateTime("FromDate", ex.fromDate, "00:00:00"));
+      lines.push(xmlTagDateTime("ToDate", ex.toDate || ex.fromDate, "23:59:00"));
+      lines.push("</TimePeriod>");
+      if (ex.dayWorking && ex.workingTimes && ex.workingTimes.length) {
+        lines.push("<WorkingTimes>");
+        for (const wt of ex.workingTimes) {
+          lines.push("<WorkingTime>");
+          lines.push(xmlTag("FromTime", wt.from + ":00"));
+          lines.push(xmlTag("ToTime", wt.to + ":00"));
+          lines.push("</WorkingTime>");
+        }
+        lines.push("</WorkingTimes>");
+      }
+      lines.push("</WeekDay>");
+    }
+    lines.push("</WeekDays>");
+    // New-style Exceptions (Project 2003+)
+    if (cal.exceptions && cal.exceptions.length) {
+      lines.push("<Exceptions>");
+      for (const ex of cal.exceptions) {
+        lines.push("<Exception>");
+        if (ex.enteredByOccurrences !== undefined) lines.push(xmlTagBool("EnteredByOccurrences", ex.enteredByOccurrences));
+        lines.push("<TimePeriod>");
+        lines.push(xmlTagDateTime("FromDate", ex.fromDate, "00:00:00"));
+        lines.push(xmlTagDateTime("ToDate", ex.toDate || ex.fromDate, "23:59:00"));
+        lines.push("</TimePeriod>");
+        if (ex.occurrences) lines.push(xmlTagInt("Occurrences", ex.occurrences));
+        lines.push(xmlTagInt("Name", null));   // skip empty
+        if (ex.name) lines.push(xmlTag("Name", ex.name));
+        lines.push(xmlTagInt("Type", ex.type || 0));
+        if (ex.period) lines.push(xmlTagInt("Period", ex.period));
+        if (ex.daysOfWeek && ex.daysOfWeek.length) {
+          let bits = 0;
+          for (const d of ex.daysOfWeek) bits |= (1 << d);
+          lines.push(xmlTagInt("DaysOfWeek", bits));
+        }
+        if (ex.monthDay) lines.push(xmlTagInt("MonthDay", ex.monthDay));
+        if (ex.monthItem) lines.push(xmlTagInt("MonthItem", ex.monthItem));
+        if (ex.monthPosition) lines.push(xmlTagInt("MonthPosition", ex.monthPosition));
+        if (ex.month) lines.push(xmlTagInt("Month", ex.month));
+        lines.push(xmlTagBool("DayWorking", ex.dayWorking || false));
+        if (ex.dayWorking && ex.workingTimes && ex.workingTimes.length) {
+          lines.push("<WorkingTimes>");
+          for (const wt of ex.workingTimes) {
+            lines.push("<WorkingTime>");
+            lines.push(xmlTag("FromTime", wt.from + ":00"));
+            lines.push(xmlTag("ToTime", wt.to + ":00"));
+            lines.push("</WorkingTime>");
+          }
+          lines.push("</WorkingTimes>");
+        }
+        lines.push("</Exception>");
+      }
+      lines.push("</Exceptions>");
+    }
+    // WorkWeeks preserved
+    if (cal._mspdiOpaque && cal._mspdiOpaque.workWeeks) {
+      lines.push(cal._mspdiOpaque.workWeeks);
+    }
+    lines.push("</Calendar>");
+  }
+  lines.push("</Calendars>");
+
+  // ---- Tasks ----
+  lines.push("<Tasks>");
+  // Synthesize project-summary task (UID=0) if originally present, OR always for compatibility
+  if (project._mspdiOpaque && project._mspdiOpaque.taskPlaceholderForUid1) {
+    lines.push("<Task>");
+    lines.push("<UID>0</UID>");
+    lines.push("<ID>0</ID>");
+    lines.push(xmlTag("Name", project.name));
+    lines.push(xmlTagInt("Type", 1));
+    lines.push(xmlTagBool("IsNull", false));
+    lines.push(xmlTagBool("Summary", true));
+    lines.push(xmlTagBool("Active", true));
+    lines.push(xmlTagInt("OutlineLevel", 0));
+    lines.push(xmlTagDateTime("Start", project.startDate, "08:00:00"));
+    if (project.currentEndDate) lines.push(xmlTagDateTime("Finish", project.currentEndDate, "17:00:00"));
+    lines.push("</Task>");
+  }
+  project.tasks.forEach((t, i) => {
+    lines.push(writeTaskMSPDI(t, i));
+  });
+  lines.push("</Tasks>");
+
+  // ---- Resources ----
+  lines.push("<Resources>");
+  // Resource UID=0 (unassigned) is required by some readers
+  lines.push("<Resource><UID>0</UID><ID>0</ID><Name></Name><Type>1</Type><IsNull>0</IsNull></Resource>");
+  for (const r of project.resources) {
+    lines.push(writeResourceMSPDI(r));
+  }
+  lines.push("</Resources>");
+
+  // ---- Assignments ----
+  lines.push("<Assignments>");
+  for (const a of project.assignments) {
+    lines.push(writeAssignmentMSPDI(a));
+  }
+  lines.push("</Assignments>");
+
+  lines.push("</Project>");
+  return lines.join("\n");
+}
+
+function writeTaskMSPDI(t, idx) {
+  const lines = [];
+  lines.push("<Task>");
+  lines.push(xmlTagInt("UID", t.uid));
+  lines.push(xmlTagInt("ID", idx + 1));
+  lines.push(xmlTag("Name", t.name));
+  lines.push(xmlTagInt("Type", t.type != null ? t.type : 1));
+  lines.push(xmlTagBool("IsNull", t.isNull || false));
+  lines.push(xmlTagDateTime("CreateDate", t.createDate));
+  lines.push(xmlTag("WBS", t.wbs));
+  lines.push(xmlTag("OutlineNumber", t.outlineNumber || t.wbs));
+  lines.push(xmlTagInt("OutlineLevel", (t.outlineLevel || 0) + 1));
+  lines.push(xmlTagInt("Priority", t.priority || 500));
+  // Schedule
+  if (t.start) lines.push(xmlTagDateTime("Start", t.start, "08:00:00"));
+  if (t.finish) lines.push(xmlTagDateTime("Finish", t.finish, "17:00:00"));
+  if (t.earlyStart) lines.push(xmlTagDateTime("EarlyStart", t.earlyStart, "08:00:00"));
+  if (t.earlyFinish) lines.push(xmlTagDateTime("EarlyFinish", t.earlyFinish, "17:00:00"));
+  if (t.lateStart) lines.push(xmlTagDateTime("LateStart", t.lateStart, "08:00:00"));
+  if (t.lateFinish) lines.push(xmlTagDateTime("LateFinish", t.lateFinish, "17:00:00"));
+  lines.push(xmlTag("Duration", durationToXsd(t.duration || 0, t.durationUnit)));
+  lines.push(xmlTagInt("DurationFormat", unitToMspdiDurationFormat(t.durationUnit, t.durationEstimated)));
+  if (t.work) lines.push(xmlTag("Work", durationToXsd(t.work, t.workUnit || "h")));
+  if (t.stop) lines.push(xmlTagDateTime("Stop", t.stop));
+  if (t.resume) lines.push(xmlTagDateTime("Resume", t.resume));
+  lines.push(xmlTagBool("ResumeValid", t.resumeValid !== false));
+  lines.push(xmlTagBool("EffortDriven", t.effortDriven || false));
+  lines.push(xmlTagBool("Recurring", t.isRecurring || false));
+  lines.push(xmlTagBool("OverAllocated", false));
+  lines.push(xmlTagBool("Estimated", t.durationEstimated || t.estimated || false));
+  lines.push(xmlTagBool("Milestone", t.isMilestone || false));
+  lines.push(xmlTagBool("Summary", isSummary(t)));
+  lines.push(xmlTagBool("Critical", !!t._critical));
+  lines.push(xmlTagBool("IsSubproject", t.isSubproject || false));
+  lines.push(xmlTagBool("IsSubprojectReadOnly", t.isSubprojectReadOnly || false));
+  if (t.externalTaskProject) lines.push(xmlTag("ExternalTaskProject", t.externalTaskProject));
+  lines.push(xmlTagBool("ExternalTask", t.externalTask || false));
+  if (t.earlyStart) lines.push(xmlTag("StartVariance", 0));
+  if (t.earlyFinish) lines.push(xmlTag("FinishVariance", 0));
+  if (t.work) lines.push(xmlTag("WorkVariance", "0"));
+  lines.push(xmlTag("FreeSlack", Math.round(durationToMinutes(t._freeSlack || 0, "d") * 10)));
+  lines.push(xmlTag("TotalSlack", Math.round(durationToMinutes(t._totalSlack || 0, "d") * 10)));
+  lines.push(xmlTag("FixedCost", t.fixedCost || 0));
+  lines.push(xmlTagInt("FixedCostAccrual", t.fixedCostAccrual || 3));
+  lines.push(xmlTagInt("PercentComplete", t.percentComplete || 0));
+  lines.push(xmlTagInt("PercentWorkComplete", t.percentWorkComplete || 0));
+  lines.push(xmlTag("Cost", t.cost || 0));
+  lines.push(xmlTag("OvertimeCost", t.overtimeCost || 0));
+  if (t.overtimeWork) lines.push(xmlTag("OvertimeWork", durationToXsd(t.overtimeWork, "h")));
+  if (t.actualStart) lines.push(xmlTagDateTime("ActualStart", t.actualStart, "08:00:00"));
+  if (t.actualFinish) lines.push(xmlTagDateTime("ActualFinish", t.actualFinish, "17:00:00"));
+  lines.push(xmlTag("ActualDuration", durationToXsd(t.actualDuration || 0, t.actualDurationUnit || t.durationUnit)));
+  lines.push(xmlTag("ActualCost", t.actualCost || 0));
+  lines.push(xmlTag("ActualOvertimeCost", t.actualOvertimeCost || 0));
+  if (t.actualWork) lines.push(xmlTag("ActualWork", durationToXsd(t.actualWork, "h")));
+  if (t.actualOvertimeWork) lines.push(xmlTag("ActualOvertimeWork", durationToXsd(t.actualOvertimeWork, "h")));
+  if (t.regularWork) lines.push(xmlTag("RegularWork", durationToXsd(t.regularWork, "h")));
+  if (t.remainingDuration != null) lines.push(xmlTag("RemainingDuration", durationToXsd(t.remainingDuration, t.durationUnit)));
+  lines.push(xmlTag("RemainingCost", t.remainingCost || 0));
+  if (t.remainingWork) lines.push(xmlTag("RemainingWork", durationToXsd(t.remainingWork, "h")));
+  lines.push(xmlTag("RemainingOvertimeCost", t.remainingOvertimeCost || 0));
+  lines.push(xmlTagInt("ConstraintType", CONSTRAINT_TYPE_TO_MSPDI[t.constraint] != null ? CONSTRAINT_TYPE_TO_MSPDI[t.constraint] : 0));
+  // CalendarUID (only if task has its own calendar)
+  if (t.calendarId) {
+    const tc = getCalendar(t.calendarId);
+    if (tc) lines.push(xmlTagInt("CalendarUID", tc.uid));
+    else lines.push(xmlTagInt("CalendarUID", -1));
+  } else {
+    lines.push(xmlTagInt("CalendarUID", -1));
+  }
+  if (t.constraintDate) lines.push(xmlTagDateTime("ConstraintDate", t.constraintDate, "08:00:00"));
+  if (t.deadline) lines.push(xmlTagDateTime("Deadline", t.deadline, "17:00:00"));
+  lines.push(xmlTagBool("LevelAssignments", t.levelAssignments !== false));
+  lines.push(xmlTagBool("LevelingCanSplit", t.levelingCanSplit !== false));
+  lines.push(xmlTagInt("LevelingDelay", t.levelingDelay || 0));
+  lines.push(xmlTagInt("LevelingDelayFormat", t.levelingDelayFormat || 8));
+  if (t.preLeveledStart) lines.push(xmlTagDateTime("PreLeveledStart", t.preLeveledStart));
+  if (t.preLeveledFinish) lines.push(xmlTagDateTime("PreLeveledFinish", t.preLeveledFinish));
+  // Hyperlink
+  if (t.hyperlink && (t.hyperlink.address || t.hyperlink.name)) {
+    if (t.hyperlink.name) lines.push(xmlTag("Hyperlink", t.hyperlink.name));
+    if (t.hyperlink.address) lines.push(xmlTag("HyperlinkAddress", t.hyperlink.address));
+    if (t.hyperlink.subAddress) lines.push(xmlTag("HyperlinkSubAddress", t.hyperlink.subAddress));
+  }
+  lines.push(xmlTagBool("IgnoreResourceCalendar", t.ignoreResourceCalendar || false));
+  // Notes — use preserved RTF if available; else wrap plain text
+  if (t.notesRTF && t.notes && stripRTF(t.notesRTF) === t.notes) {
+    lines.push(xmlTag("Notes", t.notesRTF));
+  } else if (t.notes) {
+    lines.push(xmlTag("Notes", wrapAsRTF(t.notes)));
+  }
+  lines.push(xmlTagBool("HideBar", t.hideBar || false));
+  lines.push(xmlTagBool("Rollup", t.rollup || false));
+  lines.push(xmlTag("BCWS", 0));
+  lines.push(xmlTag("BCWP", 0));
+  lines.push(xmlTagInt("PhysicalPercentComplete", t.physicalPercentComplete || 0));
+  lines.push(xmlTagInt("EarnedValueMethod", t.earnedValueMethod || 0));
+  lines.push(xmlTagBool("IsPublished", t.isPublished !== false));
+  lines.push(xmlTagBool("Active", t.isActive !== false));
+  lines.push(xmlTagBool("Manual", t.manual || false));
+  if (t.manualStart) lines.push(xmlTagDateTime("ManualStart", t.manualStart));
+  if (t.manualFinish) lines.push(xmlTagDateTime("ManualFinish", t.manualFinish));
+  if (t.manualDuration != null) lines.push(xmlTag("ManualDuration", durationToXsd(t.manualDuration, t.manualDurationUnit || t.durationUnit)));
+  if (t.startText) lines.push(xmlTag("StartText", t.startText));
+  if (t.finishText) lines.push(xmlTag("FinishText", t.finishText));
+  if (t.durationText) lines.push(xmlTag("DurationText", t.durationText));
+  // PredecessorLinks
+  const preds = getPredecessors(t.id);
+  for (const l of preds) {
+    const pred = getTaskById(l.predId);
+    if (!pred) continue;
+    lines.push("<PredecessorLink>");
+    lines.push(xmlTagInt("PredecessorUID", pred.uid));
+    lines.push(xmlTagInt("Type", LINK_TYPE_TO_MSPDI[l.type] != null ? LINK_TYPE_TO_MSPDI[l.type] : 1));
+    lines.push(xmlTagBool("CrossProject", l.crossProject || false));
+    if (l.crossProjectName) lines.push(xmlTag("CrossProjectName", l.crossProjectName));
+    // LinkLag in tenths of minute
+    const lagMin = (l.lag || 0) * (project.minutesPerDay || 480);
+    lines.push(xmlTagInt("LinkLag", Math.round(lagMin * 10)));
+    lines.push(xmlTagInt("LagFormat", l._mspdiLagFormat || 7));
+    lines.push("</PredecessorLink>");
+  }
+  // Recurring info
+  if (t.recurringInfo) {
+    const ri = t.recurringInfo;
+    if (ri._rawXml) {
+      lines.push(ri._rawXml);
+    } else {
+      lines.push("<RecurringInfo>");
+      lines.push(xmlTagInt("Type", ri.type));
+      lines.push(xmlTagInt("Frequency", ri.frequency));
+      if (ri.startDate) lines.push(xmlTagDateTime("StartDate", ri.startDate));
+      if (ri.endDate) lines.push(xmlTagDateTime("EndDate", ri.endDate));
+      if (ri.endOccurrences) lines.push(xmlTagInt("EndOccurrences", ri.endOccurrences));
+      if (ri.dailyWorkdays) lines.push(xmlTag("DailyWorkdays", ri.dailyWorkdays));
+      if (ri.weeklyDays) lines.push(xmlTag("WeeklyDays", ri.weeklyDays));
+      if (ri.monthlyOnDay) lines.push(xmlTagInt("MonthlyOnDay", ri.monthlyOnDay));
+      if (ri.yearlyMonth) lines.push(xmlTagInt("YearlyMonth", ri.yearlyMonth));
+      if (ri.yearlyDay) lines.push(xmlTagInt("YearlyDay", ri.yearlyDay));
+      lines.push("</RecurringInfo>");
+    }
+  }
+  // Baselines per task
+  if (t.baselines) {
+    for (const [num, b] of Object.entries(t.baselines)) {
+      if (!b) continue;
+      lines.push("<Baseline>");
+      lines.push(xmlTagInt("Number", parseInt(num, 10)));
+      if (b.start) lines.push(xmlTagDateTime("Start", b.start, "08:00:00"));
+      if (b.finish) lines.push(xmlTagDateTime("Finish", b.finish, "17:00:00"));
+      lines.push(xmlTag("Duration", durationToXsd(b.duration || 0, b.durationUnit || "d")));
+      lines.push(xmlTagInt("DurationFormat", unitToMspdiDurationFormat(b.durationUnit || "d", false)));
+      if (b.work) lines.push(xmlTag("Work", durationToXsd(b.work, "h")));
+      lines.push(xmlTag("Cost", b.cost || 0));
+      lines.push("</Baseline>");
+    }
+  }
+  // Extended attribute values
+  for (const cf of project.customFields) {
+    const val = t.customValues ? t.customValues[cf.id] : undefined;
+    if (val == null || val === "") continue;
+    let valStr;
+    if (cf.kind === "date") valStr = formatDate(val) + "T00:00:00";
+    else if (cf.kind === "flag") valStr = val ? "1" : "0";
+    else valStr = String(val);
+    lines.push("<ExtendedAttribute>");
+    lines.push(xmlTagInt("FieldID", cf._mspdiFieldID));
+    lines.push(xmlTag("Value", valStr));
+    lines.push("</ExtendedAttribute>");
+  }
+  // Splits
+  if (t.splits && t.splits.length) {
+    for (const sp of t.splits) {
+      lines.push("<Split>");
+      if (sp.start) lines.push(xmlTagDateTime("Start", sp.start, "08:00:00"));
+      if (sp.finish) lines.push(xmlTagDateTime("Finish", sp.finish, "17:00:00"));
+      lines.push("</Split>");
+    }
+  }
+  // Preserved opaque fields
+  if (t._mspdiOpaque && t._mspdiOpaque.fields) {
+    for (const [k, xml] of Object.entries(t._mspdiOpaque.fields)) {
+      lines.push(xml);
+    }
+  }
+  lines.push("</Task>");
+  return lines.join("\n");
+}
+
+function writeResourceMSPDI(r) {
+  const lines = [];
+  lines.push("<Resource>");
+  lines.push(xmlTagInt("UID", r.uid));
+  lines.push(xmlTagInt("ID", r.uid));
+  lines.push(xmlTag("Name", r.name));
+  lines.push(xmlTagInt("Type", r.type != null ? r.type : 1));
+  lines.push(xmlTagBool("IsNull", false));
+  if (r.initials) lines.push(xmlTag("Initials", r.initials));
+  if (r.group) lines.push(xmlTag("Group", r.group));
+  if (r.code) lines.push(xmlTag("Code", r.code));
+  if (r.emailAddress) lines.push(xmlTag("EmailAddress", r.emailAddress));
+  if (r.materialLabel) lines.push(xmlTag("MaterialLabel", r.materialLabel));
+  lines.push(xmlTag("MaxUnits", r.maxUnits != null ? r.maxUnits : 1.0));
+  lines.push(xmlTag("PeakUnits", r.peakUnits || 0));
+  lines.push(xmlTag("StandardRate", r.standardRate || 0));
+  lines.push(xmlTagInt("StandardRateFormat", r.standardRateFormat || 2));
+  lines.push(xmlTag("OvertimeRate", r.overtimeRate || 0));
+  lines.push(xmlTagInt("OvertimeRateFormat", r.overtimeRateFormat || 2));
+  lines.push(xmlTag("CostPerUse", r.costPerUse || 0));
+  lines.push(xmlTagInt("AccrueAt", r.accrueAt || 3));
+  lines.push(xmlTagBool("IsGeneric", r.isGeneric || false));
+  lines.push(xmlTagBool("IsInactive", r.isInactive || false));
+  if (r.calendarId) {
+    const rc = getCalendar(r.calendarId);
+    if (rc) lines.push(xmlTagInt("CalendarUID", rc.uid));
+  }
+  if (r.notesRTF) lines.push(xmlTag("Notes", r.notesRTF));
+  else if (r.notes) lines.push(xmlTag("Notes", wrapAsRTF(r.notes)));
+  if (r.hyperlink && (r.hyperlink.address || r.hyperlink.name)) {
+    if (r.hyperlink.name) lines.push(xmlTag("Hyperlink", r.hyperlink.name));
+    if (r.hyperlink.address) lines.push(xmlTag("HyperlinkAddress", r.hyperlink.address));
+    if (r.hyperlink.subAddress) lines.push(xmlTag("HyperlinkSubAddress", r.hyperlink.subAddress));
+  }
+  // AvailabilityPeriods
+  if (r.availabilityPeriods && r.availabilityPeriods.length) {
+    lines.push("<AvailabilityPeriods>");
+    for (const ap of r.availabilityPeriods) {
+      lines.push("<AvailabilityPeriod>");
+      if (ap.from) lines.push(xmlTagDateTime("AvailableFrom", ap.from));
+      if (ap.to) lines.push(xmlTagDateTime("AvailableTo", ap.to));
+      lines.push(xmlTag("AvailableUnits", ap.units != null ? ap.units : 1.0));
+      lines.push("</AvailabilityPeriod>");
+    }
+    lines.push("</AvailabilityPeriods>");
+  }
+  lines.push("</Resource>");
+  return lines.join("\n");
+}
+
+function writeAssignmentMSPDI(a) {
+  const lines = [];
+  lines.push("<Assignment>");
+  lines.push(xmlTagInt("UID", a.uid));
+  const task = getTaskById(a.taskId);
+  const res = a.resourceId ? project.resources.find(r => r.id === a.resourceId) : null;
+  lines.push(xmlTagInt("TaskUID", task ? task.uid : 0));
+  lines.push(xmlTagInt("ResourceUID", res ? res.uid : -65535));
+  lines.push(xmlTag("Units", a.units != null ? a.units : 1.0));
+  lines.push(xmlTag("Work", durationToXsd(a.work || 0, "h")));
+  if (a.actualWork) lines.push(xmlTag("ActualWork", durationToXsd(a.actualWork, "h")));
+  if (a.remainingWork) lines.push(xmlTag("RemainingWork", durationToXsd(a.remainingWork, "h")));
+  if (a.overtimeWork) lines.push(xmlTag("OvertimeWork", durationToXsd(a.overtimeWork, "h")));
+  lines.push(xmlTagInt("PercentWorkComplete", a.percentWorkComplete || 0));
+  if (a.start) lines.push(xmlTagDateTime("Start", a.start, "08:00:00"));
+  if (a.finish) lines.push(xmlTagDateTime("Finish", a.finish, "17:00:00"));
+  if (a.actualStart) lines.push(xmlTagDateTime("ActualStart", a.actualStart, "08:00:00"));
+  if (a.actualFinish) lines.push(xmlTagDateTime("ActualFinish", a.actualFinish, "17:00:00"));
+  lines.push(xmlTag("Cost", a.cost || 0));
+  lines.push(xmlTagInt("CostRateTable", a.costRateTable || 0));
+  if (a.delay) lines.push(xmlTagInt("Delay", a.delay));
+  if (a.levelingDelay) lines.push(xmlTagInt("LevelingDelay", a.levelingDelay));
+  lines.push(xmlTagInt("WorkContour", a.workContour || 0));
+  if (a.notesRTF) lines.push(xmlTag("Notes", a.notesRTF));
+  else if (a.notes) lines.push(xmlTag("Notes", wrapAsRTF(a.notes)));
+  lines.push("</Assignment>");
+  return lines.join("\n");
+}
+
+/* ===============================================================
+   MSPDI Save / Load (file operations)
+   =============================================================== */
+function saveProjectAsMSPDI() {
+  try {
+    const xml = exportMSPDI();
+    const fname = (project.name || "projekt").replace(/[^a-z0-9]/gi, "_") + ".xml";
+    downloadFile(xml, fname, "application/xml");
+    project.lastSaved = formatDate(new Date());
+    saveState();
+    toast(T("toast_saved"), "ok");
+    sfx("save");
+  } catch(e) {
+    console.error(e);
+    toast(T("toast_error") + ": " + e.message, "err");
+    sfx("error");
+  }
+}
+
+function loadProjectFromMSPDIFile() {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".json,application/json";
+  input.accept = ".xml,.mspdi,application/xml,text/xml";
   input.addEventListener("change", (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = JSON.parse(e.target.result);
-        loadProjectData(data);
+        importMSPDI(e.target.result);
+        renderAll();
+        saveState();
         toast(T("toast_loaded"), "ok");
         sfx("load");
       } catch(err) {
+        console.error(err);
         toast(T("toast_error") + ": " + err.message, "err");
         sfx("error");
       }
@@ -5683,49 +8200,26 @@ function loadProjectFromFile() {
   input.click();
 }
 
-function loadProjectData(data) {
-  if (!data || typeof data !== "object") throw new Error("Invalid data");
-  const base = newProject();
-  project = Object.assign(base, data);
-  if (!project.settings) project.settings = base.settings;
-  else {
-    // merge missing settings
-    for (const k of Object.keys(base.settings)) {
-      if (project.settings[k] === undefined) project.settings[k] = base.settings[k];
-    }
-  }
-  if (!project.calendars || !project.calendars.length) project.calendars = base.calendars;
-  if (!project.tasks) project.tasks = [];
-  if (!project.links) project.links = [];
-  if (!project.baselines) project.baselines = [];
-  if (!project.customFields) project.customFields = [];
-  if (!project.risks) project.risks = [];
-  if (!project.nextId) project.nextId = project.tasks.length + 1;
-  history.stack = []; history.pointer = -1;
-  snapshot("initial");
-  schedule();
-  recomputeWBS();
-  renderAll();
-  saveState();
-}
-
 /* ===============================================================
-   EXPORT DIALOG
+   REPORT EXPORT DIALOG (CSV, Markdown, HTML, iCal)
+   These are read-only export formats (one-way).
    =============================================================== */
 function openExportDialog() {
   const dlg = buildDialog("dlgExport", "dlgExportTitle",
-    currentLang==="cs"?"Export":"Export",
+    currentLang==="cs"?"Export reportu":"Export report",
     (body) => {
-      body.appendChild(el("p", null, currentLang==="cs"?"Vyberte formát:":"Choose format:"));
+      body.appendChild(el("p", null,
+        currentLang==="cs"
+          ? "Pro hlavní formát použijte tlačítko Uložit (MS Project XML / MSPDI). Tyto exporty jsou jednosměrné — pro reporty a sdílení."
+          : "For main format use Save (MS Project XML / MSPDI). These exports are one-way reports."));
       const list = el("div", { style:"display:grid; gap:8px;" });
       const formats = [
-        ["json", "JSON", currentLang==="cs"?"Nativní formát Projektoru":"Native Projektor format"],
+        ["mspdi", "MS Project XML (MSPDI)", currentLang==="cs"?"Hlavní formát — totéž jako Uložit":"Main format — same as Save"],
         ["csv", "CSV", currentLang==="cs"?"Tabulka úkolů (čárka)":"Task table (comma)"],
         ["tsv", "TSV", currentLang==="cs"?"Tabulka úkolů (tabulátor)":"Task table (tab)"],
         ["md", "Markdown", currentLang==="cs"?"Strukturovaný text":"Structured text"],
         ["html", "HTML", currentLang==="cs"?"Tisknutelný report":"Printable report"],
         ["ical", "iCalendar", currentLang==="cs"?"Úkoly jako události":"Tasks as events"],
-        ["mspdi", "MS Project XML", currentLang==="cs"?"Zjednodušený MSPDI":"Simplified MSPDI"]
       ];
       for (const [fmt, label, desc] of formats) {
         list.appendChild(el("button", { class:"btn", type:"button",
@@ -5745,13 +8239,12 @@ function openExportDialog() {
 function exportAs(format) {
   const fname = (project.name || "projekt").replace(/[^a-z0-9]/gi, "_");
   switch (format) {
-    case "json": saveProjectToFile(); return;
+    case "mspdi": saveProjectAsMSPDI(); return;
     case "csv":  downloadFile(exportCSV(","), fname + ".csv", "text/csv"); break;
     case "tsv":  downloadFile(exportCSV("\t"), fname + ".tsv", "text/tab-separated-values"); break;
     case "md":   downloadFile(exportMarkdown(), fname + ".md", "text/markdown"); break;
     case "html": downloadFile(exportHTML(), fname + ".html", "text/html"); break;
     case "ical": downloadFile(exportICal(), fname + ".ics", "text/calendar"); break;
-    case "mspdi": downloadFile(exportMSPDI(), fname + ".xml", "application/xml"); break;
   }
   toast((currentLang==="cs"?"Exportováno: ":"Exported: ") + format.toUpperCase(), "ok");
   sfx("save");
@@ -5798,6 +8291,17 @@ function exportMarkdown() {
     lines.push("| " + (getTaskIndex(t.id)+1) + " | " + (t.wbs||"") + " | " + nameCell + " | " +
       formatDuration(t.duration, t.durationUnit) + " | " + formatDateLocale(t.start) + " | " +
       formatDateLocale(t.finish) + " | " + (t.percentComplete||0) + "% | " + predecessorsAsString(t.id) + " |");
+  }
+  if (project.resources.length) {
+    lines.push("");
+    lines.push("## " + (currentLang==="cs"?"Zdroje":"Resources"));
+    lines.push("");
+    lines.push("| " + T("name") + " | " + (currentLang==="cs"?"Typ":"Type") + " | Max | " + (currentLang==="cs"?"Skupina":"Group") + " |");
+    lines.push("|---|---|---|---|");
+    for (const r of project.resources) {
+      const typeStr = r.type === 0 ? "Material" : r.type === 2 ? "Cost" : "Work";
+      lines.push("| " + r.name + " | " + typeStr + " | " + ((r.maxUnits||1)*100) + "% | " + (r.group||"") + " |");
+    }
   }
   if (project.baselines.length) {
     lines.push("");
@@ -5849,7 +8353,7 @@ function exportHTML() {
 }
 
 function exportICal() {
-  const lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Projektor//CS//CS"];
+  const lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Mroject//" + APP_VERSION + "//CS"];
   const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
   for (const t of project.tasks) {
     if (!t.start) continue;
@@ -5857,7 +8361,7 @@ function exportICal() {
     const finishDate = parseDate(t.finish || t.start);
     const endPlus = finishDate ? formatDate(addDays(finishDate, 1)).replace(/-/g, "") : start;
     lines.push("BEGIN:VEVENT");
-    lines.push("UID:projektor-" + t.id + "@local");
+    lines.push("UID:mroject-" + t.id + "@local");
     lines.push("DTSTAMP:" + stamp);
     lines.push("DTSTART;VALUE=DATE:" + start);
     lines.push("DTEND;VALUE=DATE:" + endPlus);
@@ -5869,410 +8373,7 @@ function exportICal() {
   return lines.join("\r\n");
 }
 
-function exportMSPDI() {
-  const esc = (s) => escapeHtml(String(s == null ? "" : s));
-  const lines = [];
-  lines.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-  lines.push("<Project xmlns=\"http://schemas.microsoft.com/project\">");
-  lines.push("<Name>" + esc(project.name) + "</Name>");
-  lines.push("<StartDate>" + (project.startDate || "") + "T08:00:00</StartDate>");
-  lines.push("<Tasks>");
-  project.tasks.forEach((t, i) => {
-    lines.push("<Task>");
-    lines.push("<UID>" + (i+1) + "</UID>");
-    lines.push("<ID>" + (i+1) + "</ID>");
-    lines.push("<Name>" + esc(t.name) + "</Name>");
-    lines.push("<WBS>" + esc(t.wbs || "") + "</WBS>");
-    lines.push("<OutlineLevel>" + ((t.outlineLevel || 0) + 1) + "</OutlineLevel>");
-    lines.push("<OutlineNumber>" + esc(t.wbs || "") + "</OutlineNumber>");
-    lines.push("<Summary>" + (isSummary(t) ? 1 : 0) + "</Summary>");
-    lines.push("<Milestone>" + (t.isMilestone ? 1 : 0) + "</Milestone>");
-    lines.push("<Active>1</Active>");
-    lines.push("<Manual>" + (t.manual ? 1 : 0) + "</Manual>");
-    lines.push("<Start>" + (t.start || "") + "T08:00:00</Start>");
-    lines.push("<Finish>" + (t.finish || "") + "T17:00:00</Finish>");
-    lines.push("<Duration>PT" + Math.round((t.duration || 0) * 8) + "H0M0S</Duration>");
-    lines.push("<PercentComplete>" + (t.percentComplete || 0) + "</PercentComplete>");
-    if (t.deadline) lines.push("<Deadline>" + t.deadline + "T17:00:00</Deadline>");
-    lines.push("<Priority>" + (t.priority || 500) + "</Priority>");
-    if (t.notes) lines.push("<Notes>" + esc(t.notes) + "</Notes>");
-    const preds = getPredecessors(t.id);
-    for (const l of preds) {
-      const predIdx = getTaskIndex(l.predId) + 1;
-      const typeMap = { FS: 1, SS: 3, FF: 0, SF: 2 };
-      lines.push("<PredecessorLink>");
-      lines.push("<PredecessorUID>" + predIdx + "</PredecessorUID>");
-      lines.push("<Type>" + (typeMap[l.type] != null ? typeMap[l.type] : 1) + "</Type>");
-      lines.push("<LinkLag>" + Math.round((l.lag || 0) * 4800) + "</LinkLag>");
-      lines.push("<LagFormat>7</LagFormat>");
-      lines.push("</PredecessorLink>");
-    }
-    lines.push("</Task>");
-  });
-  lines.push("</Tasks>");
-  lines.push("</Project>");
-  return lines.join("\n");
-}
 
-/* ===============================================================
-   IMPORT DIALOG
-   =============================================================== */
-function openImportDialog() {
-  const dlg = buildDialog("dlgImport", "dlgImportTitle",
-    currentLang==="cs"?"Import":"Import",
-    (body) => {
-      body.appendChild(el("p", null,
-        currentLang==="cs"
-          ? "Import nahradí stávající projekt. Podporované formáty: JSON (nativní), CSV."
-          : "Import will replace current project. Supported formats: JSON (native), CSV."));
-
-      body.appendChild(el("h3", { style:"margin-top:12px;" }, currentLang==="cs"?"Ze souboru":"From file"));
-      body.appendChild(el("div", { style:"display:flex; gap:8px;" },
-        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); loadProjectFromFile(); }},
-          currentLang==="cs"?"Nahrát JSON":"Load JSON"),
-        el("button", { class:"btn", type:"button", onClick: () => {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.accept = ".csv,.tsv,text/csv";
-          input.addEventListener("change", (ev) => {
-            const file = ev.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => { dlg.close(); importCSV(e.target.result); };
-            reader.readAsText(file);
-          });
-          input.click();
-        }}, currentLang==="cs"?"Nahrát CSV":"Load CSV")
-      ));
-
-      body.appendChild(el("h3", { style:"margin-top:16px;" }, currentLang==="cs"?"Z textu":"From text"));
-      body.appendChild(el("textarea", { id:"importText", rows:"10",
-        placeholder: currentLang==="cs" ? "Vložte CSV nebo JSON obsah…" : "Paste CSV or JSON content..." }));
-      body.appendChild(el("div", { style:"margin-top:6px; display:flex; gap:6px;" },
-        el("button", { class:"btn", type:"button", onClick: () => {
-          const txt = $("#importText").value.trim();
-          if (!txt) return;
-          try {
-            if (txt.startsWith("{")) {
-              loadProjectData(JSON.parse(txt));
-              dlg.close();
-              toast(T("toast_loaded"), "ok");
-              sfx("load");
-            } else {
-              dlg.close(); importCSV(txt);
-            }
-          } catch(err) {
-            toast(T("toast_error") + ": " + err.message, "err");
-          }
-        }}, currentLang==="cs"?"Importovat":"Import")));
-    },
-    (footer) => {
-      footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => dlg.close() }, T("close")));
-    });
-  openDialog(dlg);
-}
-
-function importCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (!lines.length) return;
-  const first = lines[0];
-  let sep = ",";
-  if (first.includes("\t")) sep = "\t";
-  else if (first.split(";").length > first.split(",").length) sep = ";";
-
-  const parseRow = (line) => {
-    const out = [];
-    let cur = "", inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQ) {
-        if (ch === "\"" && line[i+1] === "\"") { cur += "\""; i++; }
-        else if (ch === "\"") { inQ = false; }
-        else cur += ch;
-      } else {
-        if (ch === "\"") inQ = true;
-        else if (ch === sep) { out.push(cur); cur = ""; }
-        else cur += ch;
-      }
-    }
-    out.push(cur);
-    return out;
-  };
-
-  const headers = parseRow(lines[0]).map(h => h.trim().toLowerCase());
-  const findCol = (names) => {
-    for (const n of names) {
-      const idx = headers.findIndex(h => h === n.toLowerCase());
-      if (idx >= 0) return idx;
-    }
-    return -1;
-  };
-  const cName = findCol(["name", "název", "nazev", "task", "úkol"]);
-  const cDur = findCol(["duration", "trvání", "trvani", "dur"]);
-  const cStart = findCol(["start", "začátek", "zacatek"]);
-  const cFinish = findCol(["finish", "konec", "end"]);
-  const cPct = findCol(["percent", "%", "progress", "hotovo", "% hotovo"]);
-  const cPred = findCol(["predecessors", "předchůdci", "predchudci", "preds"]);
-  const cNotes = findCol(["notes", "poznámky", "poznamky"]);
-
-  action(currentLang==="cs"?"Import CSV":"Import CSV", () => {
-    project.tasks = [];
-    project.links = [];
-    const rowsToLink = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cells = parseRow(lines[i]);
-      if (!cells.length || !cells.join("").trim()) continue;
-      const name = cName >= 0 ? cells[cName] : cells[0];
-      if (!name || !name.trim()) continue;
-      let duration = 1, durationUnit = "d";
-      if (cDur >= 0 && cells[cDur]) {
-        const pd = parseDurationString(cells[cDur]);
-        duration = pd.duration; durationUnit = pd.unit;
-      }
-      const t = newTask({
-        name: name.trim(),
-        duration, durationUnit,
-        start: cStart >= 0 ? (cells[cStart] || null) : null,
-        finish: cFinish >= 0 ? (cells[cFinish] || null) : null,
-        percentComplete: cPct >= 0 ? (parseInt(cells[cPct],10) || 0) : 0,
-        notes: cNotes >= 0 ? (cells[cNotes] || "") : "",
-      });
-      t.id = "t_" + (project.nextId++);
-      project.tasks.push(t);
-      if (cPred >= 0 && cells[cPred]) rowsToLink.push({ id: t.id, str: cells[cPred] });
-    }
-    for (const { id, str } of rowsToLink) {
-      const parsed = parsePredecessorsString(str, id);
-      for (const p of parsed) addLink(p.predId, id, p.type, p.lag);
-    }
-  });
-  toast(T("toast_loaded"), "ok");
-  sfx("load");
-}
-
-/* ===============================================================
-   GITHUB INTEGRATION
-   =============================================================== */
-const GH_STORAGE_KEY = "projektor_github_config";
-
-function getGitHubConfig() {
-  try {
-    const raw = localStorage.getItem(GH_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch(e) { return null; }
-}
-function setGitHubConfig(cfg) {
-  localStorage.setItem(GH_STORAGE_KEY, JSON.stringify(cfg));
-}
-
-function openGitHubDialog() {
-  const cfg = getGitHubConfig() || { token: "", owner: "", repo: "", path: "projekty", branch: "main" };
-  const dlg = buildDialog("dlgGitHub", "dlgGitHubTitle",
-    "GitHub",
-    (body) => {
-      body.appendChild(el("p", { class:"muted" },
-        currentLang==="cs"
-          ? "Token se ukládá jen ve vašem prohlížeči (localStorage)."
-          : "Token is stored only in your browser (localStorage)."));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghToken" }, "Personal Access Token"),
-        el("input", { id:"ghToken", type:"password", value: cfg.token || "", placeholder: "ghp_..." })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghOwner" }, "Owner"),
-        el("input", { id:"ghOwner", type:"text", value: cfg.owner || "" })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghRepo" }, "Repository"),
-        el("input", { id:"ghRepo", type:"text", value: cfg.repo || "" })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghBranch" }, "Branch"),
-        el("input", { id:"ghBranch", type:"text", value: cfg.branch || "main" })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghPath" }, currentLang==="cs"?"Adresář":"Directory"),
-        el("input", { id:"ghPath", type:"text", value: cfg.path || "projekty" })));
-      body.appendChild(el("div", { class:"form-row" },
-        el("label", { for:"ghFilename" }, currentLang==="cs"?"Soubor":"File"),
-        el("input", { id:"ghFilename", type:"text",
-          value: (project.name || "projekt").replace(/[^a-z0-9]/gi,"_") + ".projektor.json" })));
-
-      const collect = () => ({
-        token: $("#ghToken").value.trim(),
-        owner: $("#ghOwner").value.trim(),
-        repo: $("#ghRepo").value.trim(),
-        branch: $("#ghBranch").value.trim() || "main",
-        path: $("#ghPath").value.trim().replace(/^\/+|\/+$/g, ""),
-        filename: $("#ghFilename").value.trim(),
-      });
-
-      body.appendChild(el("div", { style:"margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;" },
-        el("button", { class:"btn primary", type:"button", onClick: async () => {
-          const c = collect(); setGitHubConfig(c); await ghSave(c);
-        }}, currentLang==="cs"?"Uložit":"Save"),
-        el("button", { class:"btn", type:"button", onClick: async () => {
-          const c = collect(); setGitHubConfig(c); await ghLoad(c); dlg.close();
-        }}, currentLang==="cs"?"Načíst":"Load"),
-        el("button", { class:"btn", type:"button", onClick: async () => {
-          const c = collect(); setGitHubConfig(c); await ghList(c);
-        }}, currentLang==="cs"?"Seznam":"List"),
-      ));
-
-      body.appendChild(el("div", { id:"ghOutput",
-        style:"margin-top:12px; padding:8px; background:var(--paper-3); border-radius:var(--radius); font-family:var(--mono); font-size:0.82rem; min-height:60px; max-height:240px; overflow:auto;",
-        role:"log", "aria-live":"polite" }));
-    },
-    (footer) => {
-      footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => dlg.close() }, T("close")));
-    });
-  openDialog(dlg);
-}
-
-function ghLog(msg) {
-  const out = $("#ghOutput");
-  if (out) {
-    out.appendChild(el("div", null, "[" + new Date().toLocaleTimeString() + "] " + msg));
-    out.scrollTop = out.scrollHeight;
-  }
-}
-
-async function ghFetch(url, options) {
-  const cfg = getGitHubConfig();
-  const headers = Object.assign({
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  }, (options && options.headers) || {});
-  if (cfg && cfg.token) headers["Authorization"] = "Bearer " + cfg.token;
-  const resp = await fetch(url, Object.assign({}, options, { headers }));
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error("GitHub API " + resp.status + ": " + txt.slice(0, 200));
-  }
-  return resp.json();
-}
-
-function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
-function b64decode(b64) { return decodeURIComponent(escape(atob(b64))); }
-
-async function ghSave(cfg) {
-  if (!cfg.token || !cfg.owner || !cfg.repo) {
-    toast(currentLang==="cs"?"Vyplňte token, owner, repo":"Fill token, owner, repo", "warn");
-    return;
-  }
-  const filepath = (cfg.path ? cfg.path + "/" : "") + cfg.filename;
-  ghLog("Saving " + filepath + "…");
-  try {
-    const clone = JSON.parse(JSON.stringify(project, (k, v) => k.startsWith("_") ? undefined : v));
-    const content = JSON.stringify(clone, null, 2);
-
-    if (content.length > 900000) {
-      ghLog("Large file — using Git Blob API…");
-      await ghSaveBlob(cfg, filepath, content);
-    } else {
-      const b64 = b64encode(content);
-      let sha;
-      try {
-        const existing = await ghFetch(
-          "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/contents/" +
-          encodeURIComponent(filepath) + "?ref=" + cfg.branch
-        );
-        sha = existing.sha;
-      } catch(e) { /* does not exist */ }
-      const body = {
-        message: "Update " + cfg.filename + " via Projektor",
-        content: b64, branch: cfg.branch,
-      };
-      if (sha) body.sha = sha;
-      await ghFetch(
-        "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/contents/" + encodeURIComponent(filepath),
-        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-      );
-    }
-    ghLog("✓ " + (currentLang==="cs"?"Uloženo":"Saved"));
-    toast(currentLang==="cs"?"Uloženo do GitHubu":"Saved to GitHub", "ok");
-    sfx("save");
-  } catch(e) {
-    ghLog("✗ " + e.message);
-    toast(e.message, "err");
-    sfx("error");
-  }
-}
-
-async function ghSaveBlob(cfg, filepath, content) {
-  const blob = await ghFetch(
-    "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/git/blobs",
-    { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: b64encode(content), encoding: "base64" }) });
-  const refData = await ghFetch("https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/git/ref/heads/" + cfg.branch);
-  const commitData = await ghFetch(refData.object.url);
-  const tree = await ghFetch(
-    "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/git/trees",
-    { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        base_tree: commitData.tree.sha,
-        tree: [{ path: filepath, mode: "100644", type: "blob", sha: blob.sha }]
-      }) });
-  const newCommit = await ghFetch(
-    "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/git/commits",
-    { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: "Update " + filepath + " via Projektor",
-        tree: tree.sha, parents: [commitData.sha]
-      }) });
-  await ghFetch(
-    "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/git/refs/heads/" + cfg.branch,
-    { method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sha: newCommit.sha }) });
-}
-
-async function ghLoad(cfg) {
-  if (!cfg.token || !cfg.owner || !cfg.repo) {
-    toast(currentLang==="cs"?"Vyplňte token, owner, repo":"Fill token, owner, repo", "warn");
-    return;
-  }
-  const filepath = (cfg.path ? cfg.path + "/" : "") + cfg.filename;
-  ghLog("Loading " + filepath + "…");
-  try {
-    const data = await ghFetch(
-      "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/contents/" +
-      encodeURIComponent(filepath) + "?ref=" + cfg.branch
-    );
-    const content = b64decode(data.content.replace(/\s/g, ""));
-    const parsed = JSON.parse(content);
-    loadProjectData(parsed);
-    ghLog("✓ " + (currentLang==="cs"?"Načteno":"Loaded"));
-    toast(currentLang==="cs"?"Načteno z GitHubu":"Loaded from GitHub", "ok");
-    sfx("load");
-  } catch(e) {
-    ghLog("✗ " + e.message);
-    toast(e.message, "err");
-    sfx("error");
-  }
-}
-
-async function ghList(cfg) {
-  if (!cfg.token || !cfg.owner || !cfg.repo) {
-    toast(currentLang==="cs"?"Vyplňte token, owner, repo":"Fill token, owner, repo", "warn");
-    return;
-  }
-  const dir = cfg.path || "";
-  ghLog("Listing " + (dir || "/") + "…");
-  try {
-    const items = await ghFetch(
-      "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo + "/contents/" +
-      encodeURIComponent(dir) + "?ref=" + cfg.branch
-    );
-    const json = items.filter(it => it.type === "file" && it.name.endsWith(".json"));
-    if (!json.length) { ghLog(currentLang==="cs"?"(žádné .json)":"(no .json)"); return; }
-    const out = $("#ghOutput");
-    out.appendChild(el("div", { style:"margin-top:4px; font-weight:600;" }, currentLang==="cs"?"Soubory:":"Files:"));
-    for (const it of json) {
-      out.appendChild(el("div", null,
-        el("button", { class:"btn", type:"button", style:"font-size:0.8rem; padding:2px 6px; margin:2px;",
-          onClick: () => { $("#ghFilename").value = it.name; ghLog("Selected: " + it.name); }
-        }, it.name)));
-    }
-  } catch(e) {
-    ghLog("✗ " + e.message);
-  }
-}
 
 /* ===============================================================
    STATUS DATE / RECURRING / HELP / FILE DIALOGS
@@ -6434,8 +8535,10 @@ function openHelpDialog() {
       body.appendChild(el("h3", { style:"margin-top:16px;" }, currentLang==="cs"?"O aplikaci":"About"));
       body.appendChild(el("p", null,
         currentLang==="cs"
-          ? "Projektor — jeden HTML soubor, bez serveru. Data se ukládají v prohlížeči (localStorage). Lze exportovat, zálohovat na GitHub, importovat z CSV."
-          : "Projektor — single HTML file, no server. Data stored in browser (localStorage). Export, GitHub backup, CSV import."));
+          ? "Mroject — jeden HTML soubor, bez serveru. Data se ukládají v prohlížeči (localStorage). Hlavní formát pro výměnu je MS Project XML (MSPDI), který přečtou všechny verze MS Project od 2002."
+          : "Mroject — single HTML file, no server. Data stored in browser (localStorage). Main interchange format is MS Project XML (MSPDI), readable by Project 2002 onwards."));
+      body.appendChild(el("p", { class:"muted" },
+        (currentLang==="cs" ? "Verze: " : "Version: ") + APP_VERSION));
     },
     (footer) => {
       footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => dlg.close() }, T("close")));
@@ -6464,16 +8567,12 @@ function openFileMenu() {
           renderAll(); saveState();
           sfx("create");
         }}, currentLang==="cs"?"Nový projekt":"New project"),
-        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); saveProjectToFile(); }},
-          currentLang==="cs"?"Uložit (JSON)":"Save (JSON)"),
-        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); loadProjectFromFile(); }},
-          currentLang==="cs"?"Načíst":"Load"),
+        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); saveProjectAsMSPDI(); }},
+          currentLang==="cs"?"Uložit (MS Project XML)":"Save (MS Project XML)"),
+        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); loadProjectFromMSPDIFile(); }},
+          currentLang==="cs"?"Načíst (MS Project XML)":"Load (MS Project XML)"),
         el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); openExportDialog(); }},
-          "Export…"),
-        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); openImportDialog(); }},
-          "Import…"),
-        el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); openGitHubDialog(); }},
-          "GitHub…"),
+          currentLang==="cs"?"Export reportu…":"Export report…"),
         el("hr"),
         el("button", { class:"btn", type:"button", onClick: () => { dlg.close(); window.print(); }},
           currentLang==="cs"?"Tisk":"Print"),
@@ -6546,8 +8645,7 @@ function rebuildStaticLabels() {
     "btnCustomFields": currentLang==="cs"?"Vlastní pole":"Custom fields",
     "btnSave": currentLang==="cs"?"Uložit":"Save",
     "btnLoad": currentLang==="cs"?"Načíst":"Load",
-    "btnExport": "Export",
-    "btnImport": "Import",
+    "btnExport": currentLang==="cs"?"Export reportu":"Export report",
   };
   for (const [id, text] of Object.entries(map)) {
     const b = $("#" + id); if (b) b.textContent = text;
@@ -6563,6 +8661,203 @@ function rebuildStaticLabels() {
   $$(".view-tab").forEach(b => {
     if (tabMap[b.dataset.view]) b.textContent = tabMap[b.dataset.view];
   });
+}
+
+/* ===============================================================
+   RESOURCES DIALOG
+   =============================================================== */
+function openResourcesDialog() {
+  const dlg = buildDialog("dlgResources", "dlgResourcesTitle",
+    currentLang==="cs"?"Zdroje":"Resources",
+    (body) => {
+      body.appendChild(el("p", { class:"muted" },
+        currentLang==="cs"
+          ? "Zdroje (lidé, materiál, náklady) jsou ukládány do MS Project XML. Pro plnou kompatibilitu lze přiřazovat úkolům."
+          : "Resources (people, material, cost) are stored in MS Project XML. For full compatibility you can assign them to tasks."));
+
+      const listEl = el("div", { id:"resList", role:"region", "aria-label":"Resources" });
+      body.appendChild(listEl);
+
+      function refresh() {
+        listEl.innerHTML = "";
+        if (!project.resources.length) {
+          listEl.appendChild(el("p", { class:"muted" },
+            currentLang==="cs"?"Žádné zdroje. Klikněte níže pro přidání.":"No resources. Click below to add."));
+        } else {
+          const tbl = el("table", { class:"data-table" });
+          tbl.appendChild(el("thead", null, el("tr", null,
+            el("th", null, currentLang==="cs"?"Název":"Name"),
+            el("th", null, currentLang==="cs"?"Typ":"Type"),
+            el("th", null, "Max"),
+            el("th", null, currentLang==="cs"?"Iniciály":"Initials"),
+            el("th", null, currentLang==="cs"?"Skupina":"Group"),
+            el("th", null, currentLang==="cs"?"E-mail":"Email"),
+            el("th", null, currentLang==="cs"?"Sazba":"Rate"),
+            el("th", null, "")
+          )));
+          const tb = el("tbody");
+          for (const r of project.resources) {
+            const typeOptions = el("select", { onChange: (e) => {
+              action("Resource type", () => { r.type = parseInt(e.target.value, 10); });
+            }},
+              el("option", { value:"0", selected: r.type === 0 }, currentLang==="cs"?"Materiál":"Material"),
+              el("option", { value:"1", selected: r.type === 1 }, currentLang==="cs"?"Práce":"Work"),
+              el("option", { value:"2", selected: r.type === 2 }, currentLang==="cs"?"Náklady":"Cost")
+            );
+            tb.appendChild(el("tr", null,
+              el("td", null, el("input", { type:"text", value: r.name, "aria-label":"Name",
+                onChange: (e) => action("Resource rename", () => { r.name = e.target.value; }) })),
+              el("td", null, typeOptions),
+              el("td", null, el("input", { type:"number", min:"0", max:"100", step:"0.1",
+                value: (r.maxUnits || 1) * 100, style:"width:60px;", "aria-label":"Max %",
+                onChange: (e) => action("Resource max", () => { r.maxUnits = parseFloat(e.target.value) / 100; }) })),
+              el("td", null, el("input", { type:"text", value: r.initials || "",
+                style:"width:50px;", "aria-label":"Initials",
+                onChange: (e) => action("Resource initials", () => { r.initials = e.target.value; }) })),
+              el("td", null, el("input", { type:"text", value: r.group || "", "aria-label":"Group",
+                onChange: (e) => action("Resource group", () => { r.group = e.target.value; }) })),
+              el("td", null, el("input", { type:"email", value: r.emailAddress || "", "aria-label":"Email",
+                onChange: (e) => action("Resource email", () => { r.emailAddress = e.target.value; }) })),
+              el("td", null, el("input", { type:"number", min:"0", step:"10",
+                value: r.standardRate || 0, style:"width:80px;", "aria-label":"Rate",
+                onChange: (e) => action("Resource rate", () => { r.standardRate = parseFloat(e.target.value) || 0; }) })),
+              el("td", null, el("button", { class:"btn danger", type:"button",
+                onClick: () => {
+                  if (!confirm(currentLang==="cs"?"Smazat zdroj?":"Delete resource?")) return;
+                  action("Delete resource", () => {
+                    project.assignments = project.assignments.filter(a => a.resourceId !== r.id);
+                    project.resources = project.resources.filter(x => x !== r);
+                  });
+                  refresh();
+                }}, "🗑"))
+            ));
+          }
+          tbl.appendChild(tb);
+          listEl.appendChild(tbl);
+        }
+      }
+      refresh();
+
+      body.appendChild(el("button", { class:"btn", type:"button", style:"margin-top:12px;",
+        onClick: () => {
+          action("Add resource", () => {
+            project.resources.push(newResource({ name: currentLang==="cs"?"Nový zdroj":"New resource" }));
+          });
+          refresh();
+        }}, currentLang==="cs"?"+ Přidat zdroj":"+ Add resource"));
+    },
+    (footer) => {
+      footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => dlg.close() }, T("close")));
+    });
+  openDialog(dlg);
+}
+
+/* ===============================================================
+   ASSIGNMENTS DIALOG
+   =============================================================== */
+function openAssignmentsDialog() {
+  const dlg = buildDialog("dlgAssignments", "dlgAssignmentsTitle",
+    currentLang==="cs"?"Přiřazení zdrojů":"Resource assignments",
+    (body) => {
+      if (!project.resources.length) {
+        body.appendChild(el("p", { class:"muted" },
+          currentLang==="cs"
+            ? "Nejprve přidejte alespoň jeden zdroj v dialogu Zdroje."
+            : "First add at least one resource in the Resources dialog."));
+        body.appendChild(el("button", { class:"btn", type:"button",
+          onClick: () => { dlg.close(); openResourcesDialog(); }},
+          currentLang==="cs"?"Otevřít zdroje":"Open Resources"));
+        return;
+      }
+      const listEl = el("div", { id:"asgList" });
+      body.appendChild(listEl);
+
+      function refresh() {
+        listEl.innerHTML = "";
+        if (!project.assignments.length) {
+          listEl.appendChild(el("p", { class:"muted" },
+            currentLang==="cs"?"Žádná přiřazení.":"No assignments."));
+        } else {
+          const tbl = el("table", { class:"data-table" });
+          tbl.appendChild(el("thead", null, el("tr", null,
+            el("th", null, currentLang==="cs"?"Úkol":"Task"),
+            el("th", null, currentLang==="cs"?"Zdroj":"Resource"),
+            el("th", null, "Units %"),
+            el("th", null, currentLang==="cs"?"Práce (h)":"Work (h)"),
+            el("th", null, "%"),
+            el("th", null, "")
+          )));
+          const tb = el("tbody");
+          for (const a of project.assignments) {
+            const task = getTaskById(a.taskId);
+            const res = project.resources.find(r => r.id === a.resourceId);
+            tb.appendChild(el("tr", null,
+              el("td", null, task ? task.name : "—"),
+              el("td", null, res ? res.name : "—"),
+              el("td", null, el("input", { type:"number", min:"0", max:"500", step:"1",
+                value: Math.round((a.units || 1) * 100), style:"width:60px;",
+                onChange: (e) => action("Assignment units", () => { a.units = parseFloat(e.target.value) / 100; }) })),
+              el("td", null, el("input", { type:"number", min:"0", step:"1",
+                value: a.workUnit === "h" ? (a.work || 0) : durationToMinutes(a.work || 0, a.workUnit) / 60,
+                style:"width:70px;",
+                onChange: (e) => action("Assignment work", () => {
+                  a.work = parseFloat(e.target.value) || 0; a.workUnit = "h";
+                }) })),
+              el("td", null, el("input", { type:"number", min:"0", max:"100",
+                value: a.percentWorkComplete || 0, style:"width:55px;",
+                onChange: (e) => action("Assignment %", () => { a.percentWorkComplete = parseInt(e.target.value, 10) || 0; }) })),
+              el("td", null, el("button", { class:"btn danger", type:"button",
+                onClick: () => {
+                  action("Delete assignment", () => {
+                    project.assignments = project.assignments.filter(x => x !== a);
+                  });
+                  refresh();
+                }}, "🗑"))
+            ));
+          }
+          tbl.appendChild(tb);
+          listEl.appendChild(tbl);
+        }
+      }
+      refresh();
+
+      // Add new assignment row
+      body.appendChild(el("h3", { style:"margin-top:16px;" },
+        currentLang==="cs"?"Přidat přiřazení":"Add assignment"));
+      const addRow = el("div", { style:"display:flex; gap:8px; align-items:end; flex-wrap:wrap;" });
+      const selTask = el("select", { id:"newAsgTask", "aria-label":"Task" },
+        ...project.tasks.map(t => el("option", { value: t.id },
+          "  ".repeat(t.outlineLevel || 0) + t.name)));
+      const selRes = el("select", { id:"newAsgRes", "aria-label":"Resource" },
+        ...project.resources.map(r => el("option", { value: r.id }, r.name)));
+      const inpUnits = el("input", { id:"newAsgUnits", type:"number", min:"0", max:"500", step:"1",
+        value: "100", style:"width:60px;", "aria-label":"Units %" });
+      addRow.appendChild(el("div", null,
+        el("div", { class:"muted" }, currentLang==="cs"?"Úkol":"Task"), selTask));
+      addRow.appendChild(el("div", null,
+        el("div", { class:"muted" }, currentLang==="cs"?"Zdroj":"Resource"), selRes));
+      addRow.appendChild(el("div", null,
+        el("div", { class:"muted" }, "Units %"), inpUnits));
+      addRow.appendChild(el("button", { class:"btn primary", type:"button",
+        onClick: () => {
+          const task = getTaskById(selTask.value);
+          const res = project.resources.find(r => r.id === selRes.value);
+          if (!task || !res) return;
+          action("Add assignment", () => {
+            project.assignments.push(newAssignment({
+              taskId: task.id, resourceId: res.id,
+              units: parseFloat(inpUnits.value) / 100,
+              work: task.duration, workUnit: "d",
+            }));
+          });
+          refresh();
+        }}, currentLang==="cs"?"Přidat":"Add"));
+      body.appendChild(addRow);
+    },
+    (footer) => {
+      footer.appendChild(el("button", { class:"btn primary", type:"button", onClick: () => dlg.close() }, T("close")));
+    });
+  openDialog(dlg);
 }
 
 /* ===============================================================
@@ -6626,12 +8921,14 @@ function bindHandlers() {
   $("#btnRisks").addEventListener("click", openRisksDialog);
   $("#btnMonteCarlo").addEventListener("click", openMonteCarloDialog);
   $("#btnCustomFields").addEventListener("click", openCustomFieldsDialog);
+  const btnResources = $("#btnResources");
+  if (btnResources) btnResources.addEventListener("click", openResourcesDialog);
+  const btnAssignments = $("#btnAssignments");
+  if (btnAssignments) btnAssignments.addEventListener("click", openAssignmentsDialog);
 
-  $("#btnSave").addEventListener("click", saveProjectToFile);
-  $("#btnLoad").addEventListener("click", loadProjectFromFile);
+  $("#btnSave").addEventListener("click", saveProjectAsMSPDI);
+  $("#btnLoad").addEventListener("click", loadProjectFromMSPDIFile);
   $("#btnExport").addEventListener("click", openExportDialog);
-  $("#btnImport").addEventListener("click", openImportDialog);
-  $("#btnGitHub").addEventListener("click", openGitHubDialog);
 
   $$(".view-tab").forEach(btn => {
     btn.addEventListener("click", () => setCurrentView(btn.dataset.view));
@@ -6667,8 +8964,8 @@ function bindHandlers() {
         switch (ev.key.toLowerCase()) {
           case "z": if (!inEditable) { ev.preventDefault(); undo(); } return;
           case "y": if (!inEditable) { ev.preventDefault(); redo(); } return;
-          case "s": ev.preventDefault(); saveProjectToFile(); return;
-          case "o": ev.preventDefault(); loadProjectFromFile(); return;
+          case "s": ev.preventDefault(); saveProjectAsMSPDI(); return;
+          case "o": ev.preventDefault(); loadProjectFromMSPDIFile(); return;
           case "f": if (!inEditable) { ev.preventDefault(); openSearchDialog(); } return;
         }
         if (ev.key === "F2") { ev.preventDefault(); linkSelectedTasks(); return; }
@@ -6697,11 +8994,17 @@ function bindHandlers() {
    APP INITIALIZATION
    =============================================================== */
 function initApp() {
+  // Populate version badge as early as possible
+  const vBadge = document.getElementById("appVersion");
+  if (vBadge) vBadge.textContent = "v" + APP_VERSION;
+
   // Load existing project or create new
   const saved = loadState();
   if (saved) {
     try {
-      loadProjectData(saved);
+      project = saved;
+      history.stack = []; history.pointer = -1;
+      snapshot("initial");
     } catch(e) {
       console.error("Failed to load saved project", e);
       project = newProject();
@@ -6737,8 +9040,8 @@ function initApp() {
   // Welcome message for empty project
   if (!project.tasks.length) {
     announce(currentLang === "cs"
-      ? "Projektor připraven. Prázdný projekt. Stiskněte Alt+N pro nový úkol nebo F1 pro nápovědu."
-      : "Projektor ready. Empty project. Press Alt+N for new task or F1 for help.");
+      ? "Mroject připraven. Prázdný projekt. Stiskněte Alt+N pro nový úkol nebo F1 pro nápovědu."
+      : "Mroject ready. Empty project. Press Alt+N for new task or F1 for help.");
   } else {
     announce(currentLang === "cs"
       ? "Projekt načten: " + project.name + ", " + project.tasks.length + " úkolů"
