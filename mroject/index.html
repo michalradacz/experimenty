@@ -672,12 +672,6 @@ body {
 #page-content p { margin-bottom: 1rem; }
 #page-content a { color: var(--color-primary-light); }
 #page-content a:hover { color: var(--color-accent); }
-.broken-link {
-  color: var(--color-text-muted);
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-  cursor: not-allowed;
-}
 #page-content ul, #page-content ol { padding-left: 1.75rem; margin-bottom: 1rem; }
 #page-content li { margin-bottom: .3rem; }
 #page-content ul li::marker { color: var(--color-accent); }
@@ -1212,7 +1206,7 @@ const Engine = (() => {
     let current = null;
 
     for (const line of lines) {
-      const h1 = line.match(/^#\s+(.+)$/);
+      const h1 = line.match(/^#(?!#)\s+(.+)$/);
       if (h1) {
         if (current) rawH1s.push(current);
         const title = h1[1].trim();
@@ -1457,13 +1451,9 @@ const Engine = (() => {
       const resolved = resolveInternalTarget(target);
 
       if (resolved === null) {
-        // Replace with a plain span so it's not clickable
-        const span = document.createElement('span');
-        span.className = 'broken-link';
-        span.textContent = a.textContent;
-        span.setAttribute('title', (lang.broken_link || 'Neexistující odkaz') + ': ' + target);
-        span.setAttribute('aria-label', (lang.broken_link || 'Neexistující odkaz') + ': ' + target);
-        a.replaceWith(span);
+        // Replace with plain text including the original brackets
+        const text = document.createTextNode('[' + a.textContent + ']');
+        a.replaceWith(text);
       } else {
         a.href = `#${resolved}`;
         a.addEventListener('click', e => {
@@ -1550,7 +1540,7 @@ const Engine = (() => {
 
     nav.hidden = seen.size === 0;
     if (document.getElementById('ext-links-heading')) {
-      document.getElementById('ext-links-heading').textContent = (lang.ext_links_icon || '🔗') + ' ' + (lang.ext_links || 'Odkazy');
+      document.getElementById('ext-links-heading').textContent = (lang.ext_links_icon || '🔗') + ' ' + (lang.ext_links || 'Page links');
     }
   }
   function buildComments(pageContentEl) {
@@ -1563,7 +1553,7 @@ const Engine = (() => {
     if (!markers.length) {
       nav.hidden = true;
       document.getElementById('comments-heading').textContent =
-        (lang.comments_icon || '💬') + ' ' + (lang.comments || 'Komentáře');
+        (lang.comments_icon || '💬') + ' ' + (lang.comments || 'Comments');
       return;
     }
 
@@ -1581,8 +1571,8 @@ const Engine = (() => {
       const li = document.createElement('li');
       const a = document.createElement('a');
       a.href = `#${anchorId}`;
-      a.textContent = text || `(${lang.comment_empty || 'prázdný komentář'})`;
-      a.setAttribute('aria-label', `${lang.comments || 'Komentář'} ${n}: ${text}`);
+      a.textContent = text || `(${lang.comment_empty || 'empty comment'})`;
+      a.setAttribute('aria-label', `${lang.comments || 'Comment'} ${n}: ${text}`);
       a.addEventListener('click', e => {
         e.preventDefault();
         const target = document.getElementById(anchorId);
@@ -1599,7 +1589,7 @@ const Engine = (() => {
 
     nav.hidden = false;
     document.getElementById('comments-heading').textContent =
-      (lang.comments_icon || '💬') + ' ' + (lang.comments || 'Komentáře');
+      (lang.comments_icon || '💬') + ' ' + (lang.comments || 'Comments');
   }
 
   let scrollSpyObserver = null;
@@ -1632,17 +1622,17 @@ const Engine = (() => {
     pageContent.style.display = 'none';
 
     titleEl.textContent = results.length
-      ? (lang.search_results_for || 'Výsledky pro') + ` "${query}" (${results.length})`
-      : (lang.search_no_results || 'Žádné výsledky pro') + ` "${query}"`;
+      ? (lang.search_results_for || 'Results for') + ` "${query}" (${results.length})`
+      : (lang.search_no_results || 'No results for') + ` "${query}"`;
 
     if (!results.length) {
-      listEl.innerHTML = `<p class="search-no-results">${lang.search_try_other || 'Zkuste jiné klíčové slovo.'}</p>`;
+      listEl.innerHTML = `<p class="search-no-results">${lang.search_try_other || 'Try a different keyword.'}</p>`;
       return;
     }
     listEl.innerHTML = results.map(r => `
       <div class="search-result-item">
         <h3><a href="#${r.entry.slug}">${escHtml(r.entry.title)}</a></h3>
-        <p class="result-section">${lang.section || 'Sekce'}</p>
+        <p class="result-section">${lang.section || 'Section'}</p>
         <p class="result-excerpt">${r.excerpt}</p>
       </div>
     `).join('');
@@ -1701,15 +1691,15 @@ const Engine = (() => {
   }
 
   function applyLang() {
-    document.getElementById('toc-heading').textContent = (lang.toc_icon || '📋') + ' ' + (lang.toc || 'Obsah');
-    document.getElementById('search-btn-label').textContent = lang.search || 'Hledat';
-    document.getElementById('search-clear-label').textContent = lang.cancel || 'Zrušit';
-    document.getElementById('search-input').placeholder = lang.search_placeholder || 'Hledat…';
-    document.getElementById('search-input').setAttribute('aria-label', lang.search || 'Hledat');
-    document.getElementById('skip-link').textContent = lang.skip_to_content || 'Přeskočit na obsah';
+    document.getElementById('toc-heading').textContent = (lang.toc_icon || '📋') + ' ' + (lang.toc || 'On this page');
+    document.getElementById('search-btn-label').textContent = lang.search || 'Search';
+    document.getElementById('search-clear-label').textContent = lang.cancel || 'Clear';
+    document.getElementById('search-input').placeholder = lang.search_placeholder || 'Search…';
+    document.getElementById('search-input').setAttribute('aria-label', lang.search || 'Search');
+    document.getElementById('skip-link').textContent = lang.skip_to_content || 'Skip to content';
     const menuToggle = document.getElementById('menu-toggle');
     menuToggle.textContent = '☰ ' + (lang.menu || 'Menu');
-    menuToggle.setAttribute('aria-label', lang.open_sidebar || 'Otevřít postranní panel');
+    menuToggle.setAttribute('aria-label', lang.open_sidebar || 'Open sidebar');
   }
 
   function buildNav() {
@@ -1837,10 +1827,10 @@ const Engine = (() => {
 
     try {
       loadingText.textContent = 'Načítám konfiguraci…';
-      config = await fetchJSON('website.json');
+      config = await fetchJSON('./website.json');
 
       // Load language
-      const langFile = `lang/${config.language || 'cs'}.json`;
+      const langFile = `./${config.language || 'cs'}.json`;
       loadingText.textContent = 'Načítám jazyk…';
       try { lang = await fetchJSON(langFile); } catch { lang = {}; }
 
@@ -1849,10 +1839,10 @@ const Engine = (() => {
 
       // Load content
       loadingText.textContent = 'Načítám obsah…';
-      const mdText = await fetchText('website.md');
+      const mdText = await fetchText('./website.md');
 
       // Load sidebar (optional)
-      try { sidebarMD = await fetchText('sidebar.md'); } catch { sidebarMD = ''; }
+      try { sidebarMD = await fetchText('./sidebar.md'); } catch { sidebarMD = ''; }
 
       // Parse sections — groups have no rawContent, skip parsing for them
       const rawSections = splitSections(mdText);
@@ -1902,11 +1892,11 @@ const Engine = (() => {
       document.getElementById('loading-screen').style.display = 'none';
       const errScreen = document.getElementById('error-screen');
       errScreen.classList.add('active');
-      document.getElementById('error-title').textContent = lang.error_title || 'Chyba načítání';
+      document.getElementById('error-title').textContent = lang.error_title || 'Loading error';
       document.getElementById('error-msg').innerHTML =
-        (lang.error_msg || 'Nepodařilo se načíst soubory webu. Ujistěte se, že jsou přítomny soubory') +
+        (lang.error_msg || 'Could not load site files. Make sure the files') +
         ' <code>website.json</code>, <code>website.md</code>' +
-        (lang.error_server || ' a že web je spuštěn přes HTTP server (ne přímo jako soubor).') +
+        (lang.error_server || ' are present and the site is served over HTTP (not opened as a local file).') +
         `<br><br><small>${escHtml(err.message)}</small>`;
     }
   }
