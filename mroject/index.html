@@ -2,6 +2,7 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
+<base href="./">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Web</title>
 <style>
@@ -1042,7 +1043,8 @@ const Engine = (() => {
   async function fetchText(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
-    return r.text();
+    const text = await r.text();
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
   async function fetchJSON(url) {
     const r = await fetch(url);
