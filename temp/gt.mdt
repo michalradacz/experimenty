@@ -1,0 +1,77 @@
+{{{Tohle je draft šablony pro univerzální zápis ke konkrétnímu projektu. Tahle verze je k diskusi s Renatou a k případnému doplnění šablony.}}}
+
+
+GEM systems
+
+Úřad pro zastupování státu ve věcech majetkových
+
+**Projekt implementace ESSL v ÚZSVM**
+
+# Zápis z jednání [[[Text: Název schůzky]]]
+
+**Datum**: [[[Datum: Datum konání|j. f Y]]], **Místo***: [[[text: Místo konání]]]
+
+
+**[[[volba: Zapsal, Zapsala]]]**: [[[text: Zapisovatel]]], Ověřuje: [[[text: Ověřovatel]]]
+
+{{{Náhrada za nepoužitelnou tabulku podpisů, tady budou stačit jen dva, když vůbec. Buďme moderní a netiskněme to pro podpisy, není to potřeba.}}}
+
+**Účel jednání**
+
+{{{Sem se dá napsat pár vět, nebo jen jedno heslo, ale taky vypsat celý program, pokud by šlo o tématickou pravidelnou schůzku.}}}
+
+[[[textarea: Účel jednání]]]
+
+**Účastníci**
+
+{{{Tohle je jediná výrazná změna hlavičky. Účastníci jako odrážky. Má to dva důvody, jednak se lépe píše kdo je kdo a jednak při opakování schůzky z předchozí se tady jednoduše vymaže kdo nebyl a přidá kdo přibyl. Zkusme to takhle, sice to na první pohled asi vypadá jako plýtvání místem, ale myslím, že si na to zvykneme.}}}
+
+[[[Odrážky: Účastníci schůzky]]]
+
+
+## Průběh jednání
+
+[[[textarea: Úvod do průběhu]]]
+{{{Tohle nahrazuje tu trochu nepřehlednou tabulku, je to víc strukturované a navíc se nemusíme držet programu, což stejně nikdy nejde. V nadpisu se záhlavím je třeba vybrat i to číslo pokud chceme, pokud to nechceme číslované, tak nic nevybíráme, ono se to srovná samo.}}}
+
+
+[[[Opakování: Body průběhu]]]
+
+### [[[Volba: 1),2),3),4),5),6),7),8),9)]]] [[[Text: Název bodu]]]
+
+[[[Textarea: Podrobnosti k bodu]]]
+
+[[[/Opakování]]]
+
+
+Další jednání [[[text: další schůzka]]]
+
+## Sledování úkolů
+
+{{{Tady nejprve vyber správnou volbu, vypadá to profesionálněji. A nezapomeň, že tabulka se dá použít i pro další jednání pokud je správně uložen rozpracovaný zápis jako MDD.}}}
+
+
+[[[Volba: Na jednání neproběhla kontrola úkolů a ani nevzešly nové úkoly.,Na jednání neproběhla kontrola úkolů a vznikly z něj následující nové úkoly:, Na jednání došlo ke kontrole následujících úkolů:]]]
+
+[[[Tabulka: ID, Úkol, Termín, Zodpovědný, Stav]]]
+
+
+
+
+## Přílohy
+
+[[[Volba: Zápis nemá přílohy.,Zápis má následující přílohy:]]]
+
+[[[Tabulka: Název, Soubor, Popis]]]
+
+-----
+
+Tato verze zápisu je ve stavu [[[Volba: rozpracovaný, návrh, upravený dle připomínek, schválený, neschválený]]]
+
+
+V Praze dne [[[Datum: Datum konání|j. f Y]]]
+
+[[[Text: Zapisovatel]]] [[[volba: (nepodepsáno), (elektronický podpis), (souhlasí)]]]
+
+[[[Text: Ověřovatel]]] [[[volba: (nepodepsáno), (elektronický podpis), (souhlasí)]]]
+
