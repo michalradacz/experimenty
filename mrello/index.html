@@ -2364,7 +2364,7 @@ table.cards-table tr.row-complete td { color: var(--fg-muted); text-decoration: 
 "use strict";
 // Build info — pro uživatele, který chce vědět, jestli má aktuální verzi.
 // Pokud má prohlížeč cachnutou starou verzi, log v konzoli ukáže ten starý timestamp.
-const MRELLO_BUILD = "2026-04-23-board-archive-all-completed";
+const MRELLO_BUILD = "2026-04-23-folder-stats-time-and-comments";
 console.log("[mrello] build: " + MRELLO_BUILD);
 //#region ============= I18N =============
 // Česky. Jedna jazyková verze — Michal potřebuje pouze češtinu.
@@ -7891,6 +7891,41 @@ function openFolderDetail(real, board, list) {
       if (open > 0) {
         statsRow.appendChild(el("span", { class:"folder-stat-chip warning" },
           "Nedokončených ", el("strong", {}, String(open))));
+      }
+      // Agregát: celkový strávený čas, počet komentářů, počet komentářů z podkaret
+      // Sčítáme jen napříč kartami ve složce (ne jejich podkartami) pro čas a komentáře.
+      // Pro „komentáře z podkaret" projdeme všechny podkarty každé karty ve složce.
+      let totalSpentSec = 0;
+      let totalComments = 0;
+      let subcardComments = 0;
+      cards.forEach(c => {
+        // Čas: započítá i běžící časovač (jeho aktuální delta)
+        const t = c.time || {};
+        let sec = t.spentSec || 0;
+        if (t.runningSince) sec += Math.round((Date.now() - t.runningSince) / 1000);
+        totalSpentSec += sec;
+        // Komentáře přímo na kartě
+        totalComments += (c.comments || []).length;
+        // Komentáře z podkaret (getSubcards už existuje)
+        const subs = (typeof getSubcards === "function") ? getSubcards(c.id) : [];
+        subs.forEach(s => {
+          subcardComments += (s.comments || []).length;
+        });
+      });
+      // Čas — jen pokud někdo má aspoň něco zapsaného
+      if (totalSpentSec > 0) {
+        statsRow.appendChild(el("span", { class:"folder-stat-chip", title:"Sečtený čas všech karet ve složce" },
+          "⏱ Stráveno ", el("strong", {}, formatHours(totalSpentSec))));
+      }
+      // Komentáře — jen pokud aspoň jeden
+      if (totalComments > 0) {
+        statsRow.appendChild(el("span", { class:"folder-stat-chip", title:"Komentáře u karet ve složce (ne na podkartách)" },
+          "💬 Komentářů ", el("strong", {}, String(totalComments))));
+      }
+      // Komentáře z podkaret — jen pokud existují podkarty s komentáři
+      if (subcardComments > 0) {
+        statsRow.appendChild(el("span", { class:"folder-stat-chip", title:"Komentáře z podkaret karet ve složce" },
+          "💬 Z podkaret ", el("strong", {}, String(subcardComments))));
       }
     }
     // Tabulka karet podle nakonfigurovaných sloupců
