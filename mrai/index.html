@@ -3425,8 +3425,301 @@ function showCardTypePicker(chapterId, afterCardId) {
       });
       body.appendChild(grid);
     });
+
+    // Sekce pro import z Markdownu
+    body.appendChild(el('h3', {
+      style: { fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '1.25rem 0 0.5rem', color: 'var(--app-fg-mute)' }
+    }, 'Hromadné vložení'));
+    body.appendChild(el('button', {
+      class: 'btn',
+      style: { textAlign: 'left', padding: '0.6rem 0.75rem', width: '100%' },
+      onclick: function () {
+        closeModal();
+        openMarkdownImportDialog(chapterId, afterCardId);
+      }
+    }, 'Vložit z Markdownu\u2026'));
+
     return body;
   });
+}
+
+/* ----------------------------------------------------------------------
+   IMPORT MARKDOWNU – PARSER A DIALOG
+   ---------------------------------------------------------------------- */
+function parseMarkdownToCards(text) {
+  const cards = [];
+  const lines = String(text).split(/\r?\n/);
+  let i = 0;
+
+  function isHeading(l) { return /^#{1,6}\s+/.test(l); }
+  function isFence(l) { return /^```/.test(l); }
+  function isBlockquote(l) { return /^>\s/.test(l) || /^>$/.test(l); }
+  function isBullet(l) { return /^\s*[-*+]\s+/.test(l); }
+  function isNumbered(l) { return /^\s*\d+\.\s+/.test(l); }
+  function isHr(l) { return /^---\s*$/.test(l) || /^\*\*\*\s*$/.test(l) || /^___\s*$/.test(l); }
+  function isTablePipe(l) { return /^\|/.test(l); }
+  function isImageOnly(l) { return /^!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)\s*$/.test(l); }
+  function isLinkOnly(l) { return /^\[[^\]]+\]\([^)\s]+\)\s*$/.test(l); }
+
+  function mkCard(type, props) {
+    const c = createBlankCard(type);
+    Object.keys(props || {}).forEach(function (k) { c[k] = props[k]; });
+    return c;
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Prázdné řádky přeskoč
+    if (line.trim() === '') { i++; continue; }
+
+    // ```kód```
+    if (isFence(line)) {
+      const lang = line.replace(/^```/, '').trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !isFence(lines[i])) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++; // přeskoč zavírací ```
+      cards.push(mkCard('code', { language: lang, code: codeLines.join('\n') }));
+      continue;
+    }
+
+    // Nadpis
+    const hMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (hMatch) {
+      // # = titul prezentace ne, ale úroveň 1 nadpis (h2)
+      // Pro účely importu mapujeme: # → 1, ## → 2, ### + → 3
+      const level = Math.min(hMatch[1].length, 3);
+      cards.push(mkCard('heading', { level: level, text: hMatch[2].trim() }));
+      i++;
+      continue;
+    }
+
+    // Horizontální čára → předěl sekce
+    if (isHr(line)) {
+      let title = '';
+      let subtitle = '';
+      i++;
+      // Pokud následuje nadpis, použij ho jako titulek předělu a spotřebuj ho
+      while (i < lines.length && lines[i].trim() === '') i++;
+      if (i < lines.length && isHeading(lines[i])) {
+        const m = lines[i].match(/^#{1,6}\s+(.+)$/);
+        title = m[1].trim();
+        i++;
+        // Případný podtitul (následující odstavec)
+        while (i < lines.length && lines[i].trim() === '') i++;
+        if (i < lines.length && !isHeading(lines[i]) && !isHr(lines[i]) && !isBullet(lines[i]) && !isNumbered(lines[i]) && !isBlockquote(lines[i]) && !isFence(lines[i]) && !isTablePipe(lines[i]) && !isImageOnly(lines[i])) {
+          subtitle = lines[i].trim();
+          i++;
+        }
+      }
+      cards.push(mkCard('divider', { title: title, subtitle: subtitle }));
+      continue;
+    }
+
+    // Citace
+    if (isBlockquote(line)) {
+      const quoteLines = [];
+      while (i < lines.length && (isBlockquote(lines[i]))) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      // Poslední řádek může být — Autor nebo \u2014 Autor
+      let author = '';
+      let body = quoteLines.slice();
+      const lastIdx = body.length - 1;
+      if (lastIdx >= 0) {
+        const lastTrim = body[lastIdx].trim();
+        const m = lastTrim.match(/^[\u2014\u2013\-]\s+(.+)$/);
+        if (m) {
+          author = m[1].trim();
+          body = body.slice(0, lastIdx);
+        }
+      }
+      cards.push(mkCard('quote', { text: body.join('\n').trim(), author: author }));
+      continue;
+    }
+
+    // Odrážky
+    if (isBullet(line)) {
+      const items = [];
+      while (i < lines.length && isBullet(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*+]\s+/, ''));
+        i++;
+      }
+      cards.push(mkCard('bullet', { items: items }));
+      continue;
+    }
+
+    // Číslovaný seznam
+    if (isNumbered(line)) {
+      const items = [];
+      while (i < lines.length && isNumbered(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+        i++;
+      }
+      cards.push(mkCard('numbered', { items: items }));
+      continue;
+    }
+
+    // Tabulka (řádek začíná | a další řádek má separátor)
+    if (isTablePipe(line) && i + 1 < lines.length && /^\|[\s\-:|]+\|?\s*$/.test(lines[i + 1])) {
+      const splitRow = function (l) {
+        const parts = l.split('|').map(function (c) { return c.trim(); });
+        if (parts[0] === '') parts.shift();
+        if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+        return parts;
+      };
+      const headers = splitRow(line);
+      i += 2; // přeskoč hlavičku a separátor
+      const rows = [];
+      while (i < lines.length && isTablePipe(lines[i])) {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      // Normalizovat délku řádků
+      rows.forEach(function (r) {
+        while (r.length < headers.length) r.push('');
+        if (r.length > headers.length) r.length = headers.length;
+      });
+      cards.push(mkCard('table', { headers: headers, rows: rows }));
+      continue;
+    }
+
+    // Samostatný obrázek
+    if (isImageOnly(line)) {
+      const m = line.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)\s*$/);
+      // Zkus posbírat titulek z následujícího odstavce s *kurzívou* (volitelné)
+      let caption = m[3] || '';
+      cards.push(mkCard('image', { src: m[2], alt: m[1] || '', caption: caption }));
+      i++;
+      continue;
+    }
+
+    // Samostatný odkaz → karta Odkaz
+    if (isLinkOnly(line)) {
+      const m = line.match(/^\[([^\]]+)\]\(([^)\s]+)\)\s*$/);
+      cards.push(mkCard('link', { url: m[2], title: m[1], description: '' }));
+      i++;
+      continue;
+    }
+
+    // Odstavec (do prázdného řádku nebo jiné struktury)
+    const paragraph = [];
+    while (i < lines.length && lines[i].trim() !== '' &&
+      !isHeading(lines[i]) && !isFence(lines[i]) && !isBlockquote(lines[i]) &&
+      !isBullet(lines[i]) && !isNumbered(lines[i]) && !isHr(lines[i]) &&
+      !isTablePipe(lines[i]) && !isImageOnly(lines[i]) && !isLinkOnly(lines[i])) {
+      paragraph.push(lines[i]);
+      i++;
+    }
+    if (paragraph.length > 0) {
+      cards.push(mkCard('text', { text: paragraph.join('\n') }));
+    }
+  }
+
+  return cards;
+}
+
+function openMarkdownImportDialog(chapterId, afterCardId) {
+  openModal('Vložit z Markdownu', function () {
+    const wrap = el('div');
+    wrap.appendChild(el('p', null, 'Vložte Markdown text. Nadpisy, odstavce, seznamy, citace, blok kódu, obrázky a tabulky se převedou na karty a vloží na zvolené místo. CriticMarkup tokeny ({++…++} atd.) se zachovají uvnitř textových karet.'));
+
+    const taLabel = el('label', { for: 'md-import-ta' }, 'Markdown text');
+    taLabel.style.display = 'block';
+    taLabel.style.fontWeight = '600';
+    taLabel.style.fontSize = '0.85rem';
+    taLabel.style.marginBottom = '0.3rem';
+    wrap.appendChild(taLabel);
+
+    const ta = el('textarea', {
+      id: 'md-import-ta', rows: '14',
+      placeholder: '# Nadpis úrovně 1\n\nNějaký text odstavce.\n\n## Druhý nadpis\n\n- první položka\n- druhá položka\n\n> Citace\n> — Autor\n\n```\nblok kódu\n```\n\n| Sloupec A | Sloupec B |\n| --- | --- |\n| 1 | 2 |'
+    });
+    ta.style.width = '100%';
+    ta.style.fontFamily = "'JetBrains Mono', monospace";
+    ta.style.fontSize = '0.85rem';
+    wrap.appendChild(ta);
+
+    const status = el('p', {
+      class: 'field-hint',
+      role: 'status',
+      'aria-live': 'polite',
+      style: { marginTop: '0.5rem' }
+    }, 'Zatím nic k vložení.');
+    wrap.appendChild(status);
+
+    // Náhled (počty)
+    ta.addEventListener('input', function () {
+      const md = ta.value.trim();
+      if (!md) { status.textContent = 'Zatím nic k vložení.'; return; }
+      try {
+        const cards = parseMarkdownToCards(md);
+        const counts = {};
+        cards.forEach(function (c) { counts[c.type] = (counts[c.type] || 0) + 1; });
+        const parts = Object.keys(counts).map(function (k) {
+          return counts[k] + '\u00D7 ' + (CardTypes[k] ? CardTypes[k].label : k);
+        });
+        status.textContent = 'Bude vloženo ' + cards.length + ' karet: ' + parts.join(', ') + '.';
+      } catch (e) {
+        status.textContent = 'Chyba parsování: ' + e.message;
+      }
+    });
+
+    const actions = el('div', { style: { display: 'flex', gap: '0.5rem', marginTop: '1rem' } });
+    const importBtn = el('button', {
+      class: 'btn primary',
+      onclick: function () {
+        const md = ta.value.trim();
+        if (!md) {
+          status.textContent = 'Vložte nějaký text.';
+          toast('Vložte nějaký Markdown text.', 'error');
+          ta.focus();
+          return;
+        }
+        let newCards;
+        try {
+          newCards = parseMarkdownToCards(md);
+        } catch (e) {
+          status.textContent = 'Chyba: ' + e.message;
+          toast('Chyba parsování: ' + e.message, 'error');
+          return;
+        }
+        if (!newCards.length) {
+          status.textContent = 'Z textu se nepodařilo nic rozpoznat.';
+          toast('Z textu se nepodařilo nic rozpoznat.', 'error');
+          return;
+        }
+        const ch = findChapter(chapterId);
+        if (!ch) {
+          toast('Cílová kapitola neexistuje.', 'error');
+          return;
+        }
+        let insertIdx = ch.cards.length;
+        if (afterCardId) {
+          const idx = ch.cards.findIndex(function (c) { return c.id === afterCardId; });
+          if (idx >= 0) insertIdx = idx + 1;
+        }
+        ch.cards.splice.apply(ch.cards, [insertIdx, 0].concat(newCards));
+        State.ui.focusedCardId = newCards[0].id;
+        saveAutosaveDebounced();
+        renderEditor();
+        closeModal();
+        toast('Vloženo ' + newCards.length + ' karet z Markdownu.', 'success');
+        announce('Vloženo ' + newCards.length + ' karet z Markdownu.');
+      }
+    }, 'Vložit do prezentace');
+    actions.appendChild(importBtn);
+    actions.appendChild(el('button', { class: 'btn', onclick: closeModal }, 'Zrušit'));
+    wrap.appendChild(actions);
+
+    setTimeout(function () { ta.focus(); }, 100);
+    return wrap;
+  }, { large: true });
 }
 
 function renderCardEditor(ch, card, cardIndex) {
