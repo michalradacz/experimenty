@@ -120,6 +120,7 @@
     padding: 10px;
     border-right: 1px solid var(--border);
   }
+  .sidebar[hidden] { display: none; }
   main.outline-area {
     flex: 1 1 480px;
     min-width: 320px;
@@ -340,6 +341,7 @@
       <button type="button" id="btn-import">Import…</button>
     </div>
     <div class="group">
+      <button type="button" id="btn-toggle-sidebar" aria-pressed="false" aria-controls="app-sidebar">Skrýt panely</button>
       <button type="button" id="btn-theme">Tmavý režim</button>
       <button type="button" id="btn-help">Nápověda</button>
     </div>
@@ -347,7 +349,7 @@
 </header>
 
 <div class="layout">
-  <aside class="sidebar" aria-label="Postranní panely">
+  <aside class="sidebar" id="app-sidebar" aria-label="Postranní panely">
     <details class="panel" id="panel-sections" open>
       <summary>Sekce dokumentu</summary>
       <div class="panel-body">
@@ -2350,6 +2352,15 @@ document.getElementById("btn-theme").addEventListener("click", () => {
   document.getElementById("btn-theme").textContent = next === "dark" ? "Světlý režim" : "Tmavý režim";
 });
 document.getElementById("btn-help").addEventListener("click", () => document.getElementById("dlg-help").showModal());
+document.getElementById("btn-toggle-sidebar").addEventListener("click", () => {
+  const sb = document.getElementById("app-sidebar");
+  const btn = document.getElementById("btn-toggle-sidebar");
+  const hidden = !sb.hasAttribute("hidden");
+  if (hidden) sb.setAttribute("hidden", ""); else sb.removeAttribute("hidden");
+  btn.setAttribute("aria-pressed", hidden ? "true" : "false");
+  btn.textContent = hidden ? "Zobrazit panely" : "Skrýt panely";
+  announce(hidden ? "Postranní panely skryty" : "Postranní panely zobrazeny");
+});
 
 /* ---------- Export dialog ---------- */
 document.getElementById("btn-export").addEventListener("click", () => document.getElementById("dlg-export").showModal());
@@ -2450,7 +2461,7 @@ function buildHelp() {
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Uložit .mroutline</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>F</kbd></td><td>Najít</td></tr>
 </table>
-<p>Každý řádek má vlastní tlačítka: <strong>Upravit</strong> (otevře editor celého řádku — téma, poznámka i všechny sloupce) a rozbalovací nabídku <strong>Akce</strong> s volbami přidat sourozence/potomka, přesun nahoru/dolů, odsadit/předsadit, hoist (zaměřit jen na tuto větev) / zrušit hoist, sbalit/rozbalit a smazat. Sbalování má i vlastní trojúhelníček na začátku řádku. V horní liště je jen práce s dokumentem (nový, otevřít, uložit, hledání, export/import).</p>
+<p>Každý řádek má vlastní tlačítka: <strong>Upravit</strong> (otevře editor celého řádku — téma, poznámka i všechny sloupce) a rozbalovací nabídku <strong>Akce</strong> s volbami přidat sourozence/potomka, přesun nahoru/dolů, odsadit/předsadit, hoist (zaměřit jen na tuto větev) / zrušit hoist, sbalit/rozbalit a smazat. Sbalování má i vlastní trojúhelníček na začátku řádku. V horní liště je jen práce s dokumentem (nový, otevřít, uložit, hledání, export/import) a přepínač <strong>Skrýt panely</strong>, kterým schováš postranní panely a uvolníš celou šířku pro osnovu.</p>
 <p>Téma se ve stromu zobrazuje vyrenderované, a pokud je úrovni přiřazen nadpis (H1–H6), i jako odpovídající nadpis. Strom nic needituje přímo — všechny hodnoty se mění v editoru řádku.</p>
 <h3>Markdown</h3>
 <p><code>**tučné**</code>, <code>*kurzíva*</code>, <code>\`kód\`</code>, <code>~~přeškrtnuté~~</code>, <code>[text](https://odkaz)</code></p>
