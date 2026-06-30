@@ -180,6 +180,7 @@
   .trow.selected { background: var(--row-selected); }
   .trow.filtered-out { display: none; }
   .trow.ancestor-of-match { opacity: 0.92; }
+  li.outline-item.filter-match > .trow { background: var(--row-hover); }
   .topic-cell {
     display: flex; align-items: flex-start; gap: 4px;
     padding: 4px 6px;
@@ -220,6 +221,7 @@
   .topic-rendered { margin: 0; }
   /* Headings shown inline in the tree, scaled but not as huge as document H1 */
   .topic-rendered.as-heading { font-weight: 700; line-height: 1.25; }
+  .topic-prefix { color: var(--muted); font-weight: 600; margin-right: 2px; }
   .topic-rendered.as-heading.h1 { font-size: 1.35em; }
   .topic-rendered.as-heading.h2 { font-size: 1.22em; }
   .topic-rendered.as-heading.h3 { font-size: 1.12em; }
@@ -335,8 +337,8 @@
   <div class="toolbar" role="toolbar" aria-label="Hlavní nástroje">
     <div class="group">
       <button type="button" id="btn-new">Nový</button>
-      <button type="button" id="btn-open">Otevřít…</button>
-      <button type="button" id="btn-save">Uložit .mroutline</button>
+      <button type="button" id="btn-open" accesskey="o">Otevřít…</button>
+      <button type="button" id="btn-save" accesskey="s">Uložit .mroutline</button>
     </div>
     <div class="group">
       <button type="button" id="btn-add-root">Přidat řádek na konec</button>
@@ -345,10 +347,16 @@
     <div class="group">
       <label class="visually-hidden" for="quick-filter">Rychlý filtr</label>
       <input type="text" id="quick-filter" placeholder="Filtr textu…" style="width:140px">
+      <label class="visually-hidden" for="status-filter">Filtr podle stavu</label>
+      <select id="status-filter" title="Filtr podle stavu">
+        <option value="all">Vše</option>
+        <option value="done">Jen hotové</option>
+        <option value="undone">Jen nehotové</option>
+      </select>
       <button type="button" id="btn-find">Najít…</button>
     </div>
     <div class="group">
-      <button type="button" id="btn-export">Export…</button>
+      <button type="button" id="btn-export" accesskey="e">Export…</button>
       <button type="button" id="btn-import">Import…</button>
     </div>
     <div class="group">
@@ -572,7 +580,8 @@ function newDoc() {
   return {
     meta: { title: "", description: "", authors: [], keywords: [], language: "cs", version: "" },
     columns: [
-      { id: topicId, title: "Téma", type: "markdown", isTopic: true, summary: "none", width: null, hidden: false }
+      { id: topicId, title: "Téma", type: "markdown", isTopic: true, summary: "none", width: null, hidden: false },
+      { id: "status", title: "Stav (hotovo)", type: "checkbox", isStatus: true, summary: "state", width: null, hidden: true }
     ],
     rows: [],
     styles: {
@@ -619,6 +628,7 @@ let doc = newDoc();
 let selectedId = null;
 let focusRootId = null; // section focus
 let searchTerm = "";    // quick filter
+let statusFilter = "all"; // all | done | undone
 
 /* ---------- Inline parser: Markdown subset + CriticMarkup ---------- */
 function escapeHtml(s) {
@@ -895,7 +905,8 @@ function computeSummary(row, col) {
   const get = (r) => r.cells[col.id];
   if (col.type === "checkbox") {
     if (col.summary === "state") {
-      const all = []; (function rec(rs){for(const r of rs){if(!r.children.length)all.push(r.cells[col.id]?1:0); else rec(r.children);}})(row.children);
+      const valOf = (r) => col.isStatus ? (r.status ? 1 : 0) : (r.cells[col.id] ? 1 : 0);
+      const all = []; (function rec(rs){for(const r of rs){if(!r.children.length)all.push(valOf(r)); else rec(r.children);}})(row.children);
       if (!all.length) return null;
       const sum = all.reduce((a, b) => a + b, 0);
       if (sum === 0) return "checkbox:0";
@@ -932,9 +943,15 @@ let numberingMap = {};
 
 function visibleColumns() { return doc.columns.filter(c => !c.hidden); }
 
-function buildGridTemplate() {
+// Visible columns from the topic column rightward (these get their own grid cells).
+function displayColumns() {
   const cols = visibleColumns();
-  const parts = ["minmax(240px, 2fr)"];
+  const ti = cols.findIndex(c => c.isTopic);
+  return cols.slice(ti); // topic first, then right-of-topic columns
+}
+function buildGridTemplate() {
+  const cols = displayColumns();
+  const parts = ["minmax(240px, 2fr)"]; // topic
   for (let i = 1; i < cols.length; i++) parts.push("minmax(80px, 1fr)");
   parts.push("max-content"); // per-row actions column
   return parts.join(" ");
@@ -943,9 +960,15 @@ function buildGridTemplate() {
 function renderHead() {
   const head = document.getElementById("outline-head");
   head.innerHTML = "";
-  for (const c of visibleColumns()) {
+  const pcols = prefixColumns();
+  for (const c of displayColumns()) {
     const th = document.createElement("th");
-    th.textContent = c.title;
+    if (c.isTopic && pcols.length) {
+      // topic header notes which columns are folded into the heading
+      th.textContent = pcols.map(pc => pc.title).join(" + ") + " + " + c.title;
+    } else {
+      th.textContent = c.title;
+    }
     th.scope = "col";
     if (!c.isTopic) th.classList.add("col-data");
     head.appendChild(th);
@@ -960,6 +983,48 @@ function renderHead() {
 function tagForDepth(depth) { return doc.levelHeadingMap[Math.min(depth, 6)] || "p"; }
 
 // Read-only display of a cell value (no inputs in the tree).
+// Unified value accessor: the status column reads/writes row.status,
+// every other column uses row.cells.
+function cellValue(r, col) {
+  if (col.isStatus) return r.status ? 1 : 0;
+  return r.cells[col.id];
+}
+function setCellValue(r, col, val) {
+  if (col.isStatus) { r.status = val ? 1 : 0; return; }
+  r.cells[col.id] = val;
+}
+// Columns that sit to the LEFT of the topic column (their values become a
+// prefix of the heading/topic). In document order.
+function prefixColumns() {
+  const ti = doc.columns.findIndex(c => c.isTopic);
+  return doc.columns.slice(0, ti).filter(c => !c.hidden);
+}
+// Build the heading prefix string from left-of-topic columns.
+function topicPrefix(r) {
+  const cols = prefixColumns();
+  if (!cols.length) return "";
+  const parts = [];
+  for (const col of cols) {
+    const v = cellValue(r, col);
+    if (col.type === "checkbox") { parts.push(v ? "\u2611" : "\u2610"); continue; }
+    if (v == null || v === "") continue;
+    if (col.type === "number") parts.push(formatNumberValue(v, col.format));
+    else if (col.type === "date") parts.push(formatDate(v, col.format));
+    else if (col.type === "markdown") parts.push(nodesToPlain(parseInline(v), "accepted"));
+    else parts.push(String(v));
+  }
+  const joined = parts.filter(s => s !== "").join(" ");
+  return joined ? joined + " " : "";
+}
+
+// Visible columns to the RIGHT of topic (shown as data, not folded into heading).
+function rightDataColumns() {
+  const ti = doc.columns.findIndex(c => c.isTopic);
+  return doc.columns.slice(ti + 1).filter(c => !c.hidden);
+}
+// Heading prefix as plain text for exports (same logic as topicPrefix).
+function topicPrefixExport(r) { return topicPrefix(r); }
+
 function cellDisplay(r, col) {
   const summary = computeSummary(r, col);
   if (summary != null) {
@@ -971,7 +1036,7 @@ function cellDisplay(r, col) {
     span.className = "summary-val";
     return span;
   }
-  const v = r.cells[col.id];
+  const v = cellValue(r, col);
   if (col.type === "checkbox") {
     const span = document.createElement("span");
     span.textContent = v ? "\u2611" : "\u2610";
@@ -1070,13 +1135,16 @@ function buildRowContent(r, depth) {
   const contentEl = document.createElement(/^h[1-6]$/.test(tag) ? tag : "div");
   contentEl.className = "topic-rendered rendered";
   if (/^h[1-6]$/.test(tag)) contentEl.classList.add("as-heading", "h" + tag[1]);
-  contentEl.innerHTML = highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>";
+  const prefix = topicPrefix(r); // values of columns left of topic, folded into heading
+  const prefixHtml = prefix ? "<span class='topic-prefix'>" + escapeHtml(prefix) + "</span>" : "";
+  contentEl.innerHTML = prefixHtml + (highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>");
   topicWrap.appendChild(contentEl);
   topicCell.appendChild(topicWrap);
   trow.appendChild(topicCell);
 
-  // ----- data cells (read-only) -----
-  for (let ci = 1; ci < cols.length; ci++) {
+  // ----- data cells (read-only): only columns to the RIGHT of the topic -----
+  const topicIdx = cols.findIndex(c => c.isTopic);
+  for (let ci = topicIdx + 1; ci < cols.length; ci++) {
     const col = cols[ci];
     const cell = document.createElement("div");
     cell.className = "cell";
@@ -1206,6 +1274,7 @@ function render() {
   if (selectedId && !findRow(selectedId)) selectedId = null;
   refreshSections();
   refreshFocusButtons();
+  if (typeof filtersActive === "function" && filtersActive()) applyFilterVisibility();
 }
 
 function highlightSearch(html) {
@@ -1365,6 +1434,12 @@ function onRowKeydown(e, r) {
     case "t":
     case "T":
       e.preventDefault(); openRowMenu(r.id); break;
+    case "a":
+    case "A":
+      e.preventDefault(); moveRow(r.id, -1); break;
+    case "d":
+    case "D":
+      e.preventDefault(); moveRow(r.id, 1); break;
     case " ":
       e.preventDefault(); r.status = r.status ? 0 : 1; render(); selectRow(r.id, true);
       announce(r.status ? "Označeno jako hotovo" : "Označeno jako nehotovo");
@@ -1441,8 +1516,9 @@ function describeRowFull(id) {
   parts.push("Dokončeno: " + (r.status ? "ano" : "ne"));
   // column values
   const cols = visibleColumns();
-  for (let ci = 1; ci < cols.length; ci++) {
+  for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
+    if (col.isTopic || col.isStatus) continue;
     const disp = cellDisplay(r, col);
     let txt = (disp.textContent || "").trim();
     if (txt && txt !== "\u2014") {
@@ -1476,9 +1552,10 @@ function openRowEditor(id, focusColId) {
   const prev = document.createElement("div"); prev.id = "row-ed-preview"; prev.className = "rendered editor-preview";
   prevWrap.appendChild(prevLbl); prevWrap.appendChild(prev); body.appendChild(prevWrap);
 
-  // All non-topic columns, each with the right input for its type
+  // All non-topic, non-status columns, each with the right input for its type.
+  // (Status has its own dedicated checkbox below.)
   doc.columns.forEach(col => {
-    if (col.isTopic) return;
+    if (col.isTopic || col.isStatus) return;
     body.appendChild(buildColumnField(col, r.cells[col.id]));
   });
 
@@ -1559,7 +1636,7 @@ function saveRowEditor() {
   r.note = document.getElementById("row-ed-note").value;
   r.status = document.getElementById("row-ed-status").checked ? 1 : 0;
   doc.columns.forEach(col => {
-    if (col.isTopic) return;
+    if (col.isTopic || col.isStatus) return;
     const el = document.getElementById("row-ed-col-" + col.id);
     if (!el) return;
     if (col.type === "checkbox") { r.cells[col.id] = el.checked ? 1 : 0; }
@@ -1625,27 +1702,64 @@ const FORMAT_OPTIONS = {
   date: [["short", "Krátké (15.6.2026)"], ["long", "Dlouhé (15. června 2026)"], ["datetime", "Datum a čas"], ["iso", "ISO (2026-06-15)"]],
 };
 
+function moveColumn(idx, dir) {
+  const ni = idx + dir;
+  if (ni < 0 || ni >= doc.columns.length) return;
+  const tmp = doc.columns[ni]; doc.columns[ni] = doc.columns[idx]; doc.columns[idx] = tmp;
+  refreshColumns(); render();
+  const moved = doc.columns[ni];
+  const ti = doc.columns.findIndex(c => c.isTopic);
+  const side = ni < ti ? "nalevo od tématu (hodnota se vkládá do nadpisu)" : (moved.isTopic ? "téma" : "napravo od tématu");
+  announce("Sloupec " + moved.title + " přesunut, nyní " + side);
+}
+
 function refreshColumns() {
   const wrap = document.getElementById("column-list");
   wrap.innerHTML = "";
+  const ti = doc.columns.findIndex(c => c.isTopic);
   doc.columns.forEach((c, idx) => {
     const item = document.createElement("div");
     item.className = "col-list-item";
     const name = document.createElement("span");
     name.className = "grow";
-    name.textContent = c.title + (c.isTopic ? " (téma)" : "") + (c.hidden ? " — skryto" : "");
+    let role = "";
+    if (c.isTopic) role = " (téma)";
+    else if (idx < ti) role = " (v nadpisu)";
+    name.textContent = c.title + role + (c.hidden ? " — skryto" : "");
     item.appendChild(name);
+
+    // move left / right
+    const leftBtn = document.createElement("button");
+    leftBtn.type = "button"; leftBtn.textContent = "←";
+    leftBtn.setAttribute("aria-label", "Posunout sloupec " + c.title + " doleva");
+    leftBtn.disabled = idx === 0;
+    leftBtn.addEventListener("click", () => moveColumn(idx, -1));
+    item.appendChild(leftBtn);
+
+    const rightBtn = document.createElement("button");
+    rightBtn.type = "button"; rightBtn.textContent = "→";
+    rightBtn.setAttribute("aria-label", "Posunout sloupec " + c.title + " doprava");
+    rightBtn.disabled = idx === doc.columns.length - 1;
+    rightBtn.addEventListener("click", () => moveColumn(idx, 1));
+    item.appendChild(rightBtn);
+
+    // hide/show (topic cannot be hidden)
     if (!c.isTopic) {
       const hideBtn = document.createElement("button");
       hideBtn.type = "button"; hideBtn.textContent = c.hidden ? "Zobrazit" : "Skrýt";
+      hideBtn.setAttribute("aria-label", (c.hidden ? "Zobrazit" : "Skrýt") + " sloupec " + c.title);
       hideBtn.addEventListener("click", () => { c.hidden = !c.hidden; refreshColumns(); render(); });
       item.appendChild(hideBtn);
     }
+
+    // edit (status & topic: limited but allow rename/summary)
     const editBtn = document.createElement("button");
     editBtn.type = "button"; editBtn.textContent = "Upravit";
     editBtn.addEventListener("click", () => openColumnDialog(idx));
     item.appendChild(editBtn);
-    if (!c.isTopic) {
+
+    // delete (not topic, not status)
+    if (!c.isTopic && !c.isStatus) {
       const delBtn = document.createElement("button");
       delBtn.type = "button"; delBtn.textContent = "Smazat";
       delBtn.addEventListener("click", () => {
@@ -1659,6 +1773,10 @@ function refreshColumns() {
     }
     wrap.appendChild(item);
   });
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Sloupce nalevo od tématu se vkládají jako prefix do nadpisu (i v exportu). Pořadí mění šipky ← →.";
+  wrap.appendChild(hint);
 }
 
 let editingColumnIndex = null;
@@ -1670,7 +1788,7 @@ function openColumnDialog(idx) {
   const col = isNew ? { title: "", type: "markdown", summary: "none" } : doc.columns[idx];
   document.getElementById("col-title").value = col.title;
   document.getElementById("col-type").value = col.type;
-  document.getElementById("col-type").disabled = !isNew && col.isTopic;
+  document.getElementById("col-type").disabled = !isNew && (col.isTopic || col.isStatus);
   document.getElementById("col-popup-values").value = (col.popupValues || []).join("\n");
   updateColumnDialogFields(col);
   dlg.showModal();
@@ -1883,36 +2001,69 @@ function applyFilter(flt) {
   }
 }
 /* ---------- Quick filter ---------- */
-function applyQuickFilter() {
-  const term = searchTerm.toLowerCase();
-  document.querySelectorAll(".trow").forEach(el => {
-    el.classList.remove("filtered-out", "ancestor-of-match");
-  });
-  if (!term) { render(); return; }
-  // determine matches across all rows; show matches + their ancestors
-  const matchIds = new Set();
-  const ancestorIds = new Set();
-  function rec(rows, ancestors) {
+// A row matches the active filters if its own text/status match.
+function rowSelfMatches(r) {
+  // text
+  if (searchTerm) {
+    const text = (plainTopic(r) + " " + nodesToPlain(parseInline(r.note || ""), "accepted")).toLowerCase();
+    if (!text.includes(searchTerm.toLowerCase())) return false;
+  }
+  // status
+  if (statusFilter === "done" && !r.status) return false;
+  if (statusFilter === "undone" && r.status) return false;
+  return true;
+}
+// Recursive: a subtree is visible if the row matches or any descendant matches.
+function subtreeVisible(r) {
+  if (rowSelfMatches(r)) return true;
+  return r.children.some(subtreeVisible);
+}
+function filtersActive() { return !!searchTerm || statusFilter !== "all"; }
+
+// Apply current filters to the already-rendered DOM (no re-render).
+function applyFilterVisibility() {
+  if (!filtersActive()) {
+    document.querySelectorAll("li.outline-item").forEach(li => { li.style.display = ""; li.classList.remove("filter-match"); });
+    return { shown: 0, matched: 0 };
+  }
+  let shown = 0, matched = 0;
+  function mark(rows) {
     for (const r of rows) {
-      const text = (plainTopic(r) + " " + nodesToPlain(parseInline(r.note || ""), "accepted")).toLowerCase();
-      const hit = text.includes(term);
-      if (hit) { matchIds.add(r.id); ancestors.forEach(a => ancestorIds.add(a)); }
-      rec(r.children, ancestors.concat([r.id]));
+      const li = document.querySelector('li.outline-item[data-id="' + r.id + '"]');
+      const visible = subtreeVisible(r);
+      if (li) { li.style.display = visible ? "" : "none"; li.classList.remove("filter-match"); }
+      if (visible) {
+        shown++;
+        if (rowSelfMatches(r)) { matched++; if (li) li.classList.add("filter-match"); }
+      }
+      mark(r.children);
     }
   }
-  rec(doc.rows, []);
-  render();
-  document.querySelectorAll(".trow").forEach(el => {
-    const id = el.dataset.id;
-    if (matchIds.has(id)) { /* visible */ }
-    else if (ancestorIds.has(id)) el.classList.add("ancestor-of-match");
-    else el.classList.add("filtered-out");
-  });
-  status(matchIds.size + " shod.");
+  mark(focusRootId ? (findRow(focusRootId) ? findRow(focusRootId).row.children : doc.rows) : doc.rows);
+  return { shown, matched };
 }
+
+function applyFilters() {
+  render(); // render() will call applyFilterVisibility() at its end
+  if (!filtersActive()) { status("Zobrazeny všechny řádky."); return; }
+  const { shown, matched } = applyFilterVisibility();
+  const bits = [];
+  if (searchTerm) bits.push("text „" + searchTerm + "”");
+  if (statusFilter === "done") bits.push("jen hotové");
+  if (statusFilter === "undone") bits.push("jen nehotové");
+  status("Filtr (" + bits.join(", ") + "): " + matched + " shod, zobrazeno " + shown + " řádků.");
+  announce(matched + " shod");
+}
+// backward-compatible name used elsewhere
+function applyQuickFilter() { applyFilters(); }
+
 document.getElementById("quick-filter").addEventListener("input", (e) => {
   searchTerm = e.target.value.trim();
-  applyQuickFilter();
+  applyFilters();
+});
+document.getElementById("status-filter").addEventListener("change", (e) => {
+  statusFilter = e.target.value;
+  applyFilters();
 });
 
 /* ---------- Find dialog ---------- */
@@ -2061,6 +2212,13 @@ function normalizeDoc(d) {
   if (!d.levelHeadingMap) d.levelHeadingMap = newDoc().levelHeadingMap;
   if (!d.styles) d.styles = newDoc().styles;
   if (!d.filters) d.filters = [];
+  // ensure the built-in status column exists (older files won't have it)
+  if (d.columns && !d.columns.some(c => c.isStatus)) {
+    const ti = d.columns.findIndex(c => c.isTopic);
+    const statusCol = { id: "status", title: "Stav (hotovo)", type: "checkbox", isStatus: true, summary: "state", width: null, hidden: true };
+    if (ti >= 0) d.columns.splice(ti + 1, 0, statusCol);
+    else d.columns.push(statusCol);
+  }
   (function fix(rows) {
     for (const r of rows) {
       if (!r.id) r.id = uid("row");
@@ -2085,8 +2243,12 @@ function exportHTML(dynamic, accepted) {
     for (const r of rows) {
       const tag = doc.levelHeadingMap[Math.min(depth, 6)] || "p";
       const num = doc.numbering.enabled && nb[r.id] ? escapeHtml(nb[r.id]) + " " : "";
-      const inner = num + renderMarkdown(r.topic, mode);
+      const pfx = topicPrefixExport(r);
+      const pfxHtml = pfx ? escapeHtml(pfx) : "";
+      const inner = num + pfxHtml + renderMarkdown(r.topic, mode);
       const hasChildren = r.children.length;
+      const indentPx = depth > 1 ? 24 : 0; // incremental step; nesting compounds it
+      body += "<div class='lvl lvl-" + depth + "' style='margin-left:" + indentPx + "px'>\n";
       if (dynamic && hasChildren) {
         body += "<details open><summary>";
         if (/^h[1-6]$/.test(tag)) body += "<" + tag + " style='display:inline'>" + inner + "</" + tag + ">";
@@ -2098,8 +2260,8 @@ function exportHTML(dynamic, accepted) {
         else body += "<p>" + inner + "</p>\n";
       }
       if (r.note) body += "<div class='note'>" + renderMarkdown(r.note, mode) + "</div>\n";
-      // data columns as definition list
-      const dataCols = visibleColumns().filter(c => !c.isTopic);
+      // data columns (right of topic) as definition list
+      const dataCols = rightDataColumns();
       if (dataCols.length) {
         let dl = "";
         for (const c of dataCols) {
@@ -2110,6 +2272,7 @@ function exportHTML(dynamic, accepted) {
       }
       if (hasChildren) rec(r.children, depth + 1);
       if (dynamic && hasChildren) body += "</details>\n";
+      body += "</div>\n";
     }
   }
   rec(doc.rows, 1);
@@ -2124,6 +2287,8 @@ ins{background:#d6f0d6;text-decoration:none}del{background:#f7d6d6}
 .crit-sub-old{background:#f7d6d6;text-decoration:line-through}.crit-sub-new{background:#d6f0d6}
 .crit-hl{background:#ffe680}.crit-comment{background:#fff3c4;border-radius:3px;padding:0 2px}
 .note{color:#444;border-left:3px solid #ccc;padding-left:.6rem;margin:.3rem 0 .6rem}
+.lvl{margin-top:.15rem}
+.lvl .lvl{border-left:1px solid #e3e3e3;padding-left:.5rem}
 dl.cols{margin:.2rem 0 .6rem;font-size:.92em}dl.cols dt{font-weight:600;color:#555}dl.cols dd{margin:0 0 .3rem 1rem}
 code{font-family:Menlo,Consolas,monospace;background:#f0f0f0;padding:0 3px;border-radius:3px}
 summary{cursor:pointer}
@@ -2134,7 +2299,7 @@ ${doc.meta.description ? "<p><em>" + escapeHtml(doc.meta.description) + "</em></
 ${body}</body></html>`;
 }
 function formatCellForExport(r, col) {
-  const v = r.cells[col.id];
+  const v = cellValue(r, col);
   const summary = computeSummary(r, col);
   if (summary != null) {
     if (typeof summary === "string" && summary.startsWith("checkbox:")) return summary.split(":")[1] === "1" ? "vše hotovo" : (summary.split(":")[1] === "partial" ? "částečně" : "nic");
@@ -2159,15 +2324,21 @@ function exportMarkdown() {
     for (const r of rows) {
       const tag = doc.levelHeadingMap[Math.min(depth, 6)] || "p";
       const num = doc.numbering.enabled && nb[r.id] ? nb[r.id] + " " : "";
+      const pfx = topicPrefixExport(r);
       if (/^h([1-6])$/.test(tag)) {
         const lvl = parseInt(tag[1], 10);
-        out += "#".repeat(lvl) + " " + num + r.topic + "\n\n";
+        out += "#".repeat(lvl) + " " + num + pfx + r.topic + "\n\n";
       } else if (tag === "li") {
-        out += "  ".repeat(Math.max(0, depth - 1)) + "- " + num + r.topic + "\n";
+        out += "  ".repeat(Math.max(0, depth - 1)) + "- " + num + pfx + r.topic + "\n";
       } else {
-        out += num + r.topic + "\n\n";
+        out += num + pfx + r.topic + "\n\n";
       }
       if (r.note) out += "> " + r.note.replace(/\n/g, "\n> ") + "\n\n";
+      const dataCols = rightDataColumns();
+      for (const c of dataCols) {
+        const v = exportCellPlain(r, c);
+        if (v) out += "  - **" + c.title + ":** " + v + "\n";
+      }
       rec(r.children, depth + 1);
     }
   }
@@ -2204,7 +2375,7 @@ function exportCSV() {
   walk(doc.rows, (r, p, i, depth) => {
     const cells = cols.map(c => {
       if (c.isTopic) return q(plainTopic(r));
-      const v = r.cells[c.id];
+      const v = cellValue(r, c);
       if (c.type === "checkbox") return v ? "1" : "0";
       if (c.type === "date") return q(formatDate(v, "iso"));
       return q(v == null ? "" : v);
@@ -2329,10 +2500,16 @@ function _para(md, opts) {
   if (opts.heading) styleVal = "Heading" + opts.heading;
   if (styleVal) pPr += '<w:pStyle w:val="' + styleVal + '"/>';
   if (opts.listLevel != null) pPr += '<w:numPr><w:ilvl w:val="' + opts.listLevel + '"/><w:numId w:val="1"/></w:numPr>';
-  if (opts.quote) pPr += '<w:ind w:left="720"/>';
+  // explicit left indentation (twips). For list items the numbering handles
+  // indentation, so we skip manual indent there to avoid double offset.
+  if (opts.listLevel == null) {
+    let left = 0;
+    if (opts.indent) left += opts.indent;
+    if (opts.quote) left += 720;
+    if (left > 0) pPr += '<w:ind w:left="' + left + '"/>';
+  }
   pPr = pPr ? "<w:pPr>" + pPr + "</w:pPr>" : "";
   const prefix = opts.prefix ? _run(opts.prefix + "  ", {}) : "";
-  const quotePrefix = opts.quote ? _run("", { i: 1 }) : "";
   return "<w:p>" + pPr + prefix + _runsFromNodes(nodes, opts.quote ? { i: 1 } : {}, opts.accepted) + "</w:p>";
 }
 
@@ -2342,20 +2519,23 @@ function exportDOCX(accepted) {
   let body = "";
   if (doc.meta.title) body += _para(doc.meta.title, { heading: 1 });
   function rec(rows, depth) {
+    const indent = (depth - 1) * 360; // twips per level (~0.25")
     for (const r of rows) {
       const tag = doc.levelHeadingMap[Math.min(depth, 6)] || "p";
       const num = (doc.numbering.enabled && nb[r.id]) ? nb[r.id] : "";
-      const opts = { accepted, prefix: num };
+      const pfx = topicPrefixExport(r);
+      const fullPrefix = (num ? num + " " : "") + pfx;
+      const opts = { accepted, prefix: fullPrefix.trim() ? fullPrefix.replace(/\s+$/, "") : "", indent: indent };
       const hm = tag.match(/^h([1-6])$/);
       if (hm) opts.heading = parseInt(hm[1], 10);
-      else if (tag === "li") { opts.listLevel = Math.min(depth - 1, 8); opts.prefix = num; }
+      else if (tag === "li") { opts.listLevel = Math.min(depth - 1, 8); }
       body += _para(r.topic, opts);
-      if (r.note) body += _para(r.note, { accepted, quote: true });
-      // data columns as a simple labeled paragraph
-      const dataCols = visibleColumns().filter(c => !c.isTopic);
+      if (r.note) body += _para(r.note, { accepted, quote: true, indent: indent });
+      // data columns (right of topic) as a simple labeled paragraph
+      const dataCols = rightDataColumns();
       for (const c of dataCols) {
         const v = exportCellPlain(r, c);
-        if (v) body += _para("**" + c.title + ":** " + v, { accepted, quote: true });
+        if (v) body += _para("**" + c.title + ":** " + v, { accepted, quote: true, indent: indent });
       }
       rec(r.children, depth + 1);
     }
@@ -2431,7 +2611,7 @@ function exportCellPlain(r, col) {
     if (typeof summary === "string" && summary.startsWith("checkbox:")) { const s = summary.split(":")[1]; return s === "1" ? "vše hotovo" : s === "partial" ? "částečně" : "nic"; }
     return String(summary) + " (souhrn)";
   }
-  const v = r.cells[col.id];
+  const v = cellValue(r, col);
   if (v == null || v === "") return "";
   switch (col.type) {
     case "checkbox": return v ? "ano" : "ne";
@@ -2469,8 +2649,9 @@ function withSelected(fn, needRow) {
 }
 document.getElementById("btn-new").addEventListener("click", () => {
   if (doc.rows.length && !confirm("Vytvořit nový prázdný dokument? Neuložené změny budou ztraceny.")) return;
-  doc = newDoc(); selectedId = null; focusRootId = null; searchTerm = "";
+  doc = newDoc(); selectedId = null; focusRootId = null; searchTerm = ""; statusFilter = "all";
   document.getElementById("quick-filter").value = "";
+  document.getElementById("status-filter").value = "all";
   fullRefresh();
   announce("Nový dokument");
 });
@@ -2596,6 +2777,8 @@ function buildHelp() {
 <tr><td><kbd>m</kbd></td><td>Upravit poznámku řádku</td></tr>
 <tr><td><kbd>i</kbd></td><td>Přečíst kompletní informace o řádku (umístění, stav, sloupce, poznámka)</td></tr>
 <tr><td><kbd>t</kbd></td><td>Otevřít nabídku akcí řádku</td></tr>
+<tr><td><kbd>a</kbd> / <kbd>d</kbd></td><td>Posunout položku nahoru / dolů (přesun řádku, ne kurzoru)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>o</kbd> / <kbd>s</kbd> / <kbd>e</kbd></td><td>Otevřít / Uložit / Export (přístupová klávesa, podle prohlížeče může být i Alt+Shift)</td></tr>
 <tr><td><kbd>Mezerník</kbd></td><td>Přepnout stav „hotovo"</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>První / poslední viditelný řádek</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Uložit .mroutline</td></tr>
@@ -2618,9 +2801,12 @@ function buildHelp() {
 <h3>Číslování</h3>
 <p>V panelu „Číslování řádků" nastavíš formát pro každou úroveň (arabské, římské, písmena), předponu a příponu (např. „§ ", „odst. ", „písm. ", „)"), hierarchický režim (1.2.3) a oddělovač. U kterékoli úrovně lze zaškrtnout, že se <strong>nečísluje</strong> — taková úroveň se z čísla úplně vynechá (potomci pokračují, např. 1 → 1.1, ne 1.0.1). Předvolby pokrývají úřední styl, klasickou osnovu i desetinné číslování.</p>
 <h3>Sloupce a souhrny</h3>
-<p>Vícesloupcová tabulka s typy: text (Markdown), číslo, datum, trvání, zaškrtávátko, pop-up seznam. Na rodičovských řádcích se počítají souhrny (součet, min, max, průměr listů, stav).</p>
+<p>Vícesloupcová tabulka s typy: text (Markdown), číslo, datum, trvání, zaškrtávátko, pop-up seznam. Na rodičovských řádcích se počítají souhrny (součet, min, max, průměr listů, stav). Stav řádku (hotovo/nehotovo) je vestavěný sloupec „Stav (hotovo)", který lze v panelu Sloupce zobrazit nebo skrýt jako každý jiný.</p>
+<p>V panelu Sloupce mění pořadí šipky ← →. Pokud sloupec posuneš <strong>nalevo od tématu</strong>, jeho hodnota se stane prefixem nadpisu (např. kód „ABC" → nadpis „ABC Úvod") — a to i ve všech exportech (DOCX, HTML, Markdown). Takový sloupec se přestane zobrazovat jako samostatný a žije jen v nadpisu.</p>
+<h3>Filtrování</h3>
+<p>Pole „Filtr textu" hledá v tématu i poznámkách. Výběr stavu (Vše / Jen hotové / Jen nehotové) filtruje podle dokončení. Oba filtry pracují <strong>rekurzivně</strong> — rodič zůstane viditelný, pokud má vyhovujícího potomka.</p>
 <h3>Export úrovní na nadpisy</h3>
-<p>V panelu „Styly a úrovně" se každá úroveň osnovy mapuje na sémantickou značku (nadpis 1–6, odstavec, položka seznamu) pro správný HTML a DOCX výstup.</p>`;
+<p>V panelu „Styly a úrovně" se každá úroveň osnovy mapuje na sémantickou značku (nadpis 1–6, odstavec, položka seznamu) pro správný HTML a DOCX výstup. V HTML i DOCX exportu jsou hlubší úrovně navíc vizuálně odsazené doleva (každá úroveň o kousek víc), aby byla hierarchie na první pohled patrná.</p>`;
 }
 
 /* ---------- Sample document ---------- */
