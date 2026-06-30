@@ -159,7 +159,18 @@
     vertical-align: bottom;
   }
   table.outline th.col-control { width: 1%; white-space: nowrap; }
-  .outline-tree[role="tree"] { display: block; }
+  .outline-tree { display: block; }
+  ul.outline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  ul.outline-list ul.outline-list {
+    margin-left: 20px;
+    border-left: 1px solid var(--border);
+    padding-left: 4px;
+  }
+  li.outline-item { display: block; }
   .trow {
     display: grid;
     align-items: start;
@@ -398,7 +409,7 @@
     <table class="outline" id="outline-table">
       <thead><tr id="outline-head"></tr></thead>
     </table>
-    <div class="outline-tree" role="tree" id="outline-tree" aria-label="Osnova dokumentu" tabindex="0"></div>
+    <div class="outline-tree" id="outline-tree" aria-label="Osnova dokumentu"></div>
     <p class="hint" id="empty-hint" style="display:none">Dokument je prázdný. Stiskni <kbd>Enter</kbd> nebo „Přidat řádek".</p>
   </main>
 </div>
@@ -991,10 +1002,149 @@ function rowActionBtn(label, title, fn, opts) {
   b.textContent = label;
   b.setAttribute("aria-label", title);
   b.title = title;
-  b.tabIndex = -1;
+  b.tabIndex = (opts && opts.tabbable) ? 0 : -1;
   if (opts && opts.disabled) b.disabled = true;
   b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
   return b;
+}
+
+// Build the inner content (topic, cells, actions) for one row. Shared by the
+// nested-list renderer. Returns a .trow element (now a block inside an <li>).
+function buildRowContent(r, depth) {
+  const cols = visibleColumns();
+  const gridTemplate = buildGridTemplate();
+  const f = findRow(r.id);
+  const isFirst = f && f.index === 0;
+  const isLast = f && f.index === f.siblings.length - 1;
+  const hasParent = f && f.parent;
+  const hasPrevSibling = f && f.index > 0;
+
+  const trow = document.createElement("div");
+  trow.className = "trow";
+  trow.style.gridTemplateColumns = gridTemplate;
+  trow.setAttribute("data-id", r.id);
+  trow.id = "trow-" + r.id;
+  trow.setAttribute("tabindex", r.id === selectedId ? "0" : "-1");
+  if (r.id === selectedId) trow.classList.add("selected");
+
+  const tag = tagForDepth(depth);
+  const numTxt = (doc.numbering.enabled && numberingMap[r.id]) ? numberingMap[r.id] + " " : "";
+  const topicPlain = plainTopic(r) || "prázdný řádek";
+  const tagLabel = /^h[1-6]$/.test(tag) ? ("nadpis úrovně " + tag[1] + ", ") : "";
+  trow.setAttribute("aria-label",
+    tagLabel + numTxt + topicPlain +
+    (r.children.length ? (r.collapsed ? ", sbaleno" : ", rozbaleno") : "") +
+    (r.status ? ", hotovo" : "") +
+    (r.note ? ", má poznámku" : ""));
+
+  // ----- Topic cell -----
+  const topicCell = document.createElement("div");
+  topicCell.className = "topic-cell";
+
+  const disc = document.createElement("button");
+  disc.type = "button";
+  disc.className = "disclosure" + (r.children.length ? "" : " leaf");
+  disc.textContent = r.collapsed ? "\u25B6" : "\u25BC";
+  disc.setAttribute("aria-label", r.children.length ? (r.collapsed ? "Rozbalit větev" : "Sbalit větev") : "Bez potomků");
+  if (r.children.length) disc.setAttribute("aria-expanded", r.collapsed ? "false" : "true");
+  disc.tabIndex = -1;
+  if (r.children.length) disc.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(r.id); });
+  else disc.disabled = true;
+  topicCell.appendChild(disc);
+
+  const statusIcon = document.createElement("span");
+  statusIcon.className = "status-icon";
+  statusIcon.textContent = r.status ? "\u2611" : "\u2610";
+  statusIcon.setAttribute("aria-hidden", "true");
+  topicCell.appendChild(statusIcon);
+
+  if (numTxt) {
+    const numEl = document.createElement("span");
+    numEl.className = "rownum";
+    numEl.textContent = numberingMap[r.id];
+    topicCell.appendChild(numEl);
+  }
+
+  const topicWrap = document.createElement("div");
+  topicWrap.className = "topic-text";
+  const contentEl = document.createElement(/^h[1-6]$/.test(tag) ? tag : "div");
+  contentEl.className = "topic-rendered rendered";
+  if (/^h[1-6]$/.test(tag)) contentEl.classList.add("as-heading", "h" + tag[1]);
+  contentEl.innerHTML = highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>";
+  topicWrap.appendChild(contentEl);
+  topicCell.appendChild(topicWrap);
+  trow.appendChild(topicCell);
+
+  // ----- data cells (read-only) -----
+  for (let ci = 1; ci < cols.length; ci++) {
+    const col = cols[ci];
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const disp = cellDisplay(r, col);
+    if (disp.className === "summary-val") cell.classList.add("summary");
+    cell.appendChild(disp);
+    cell.setAttribute("aria-label", col.title + ": " + (disp.textContent || "prázdné"));
+    trow.appendChild(cell);
+  }
+
+  // ----- per-row actions -----
+  const actions = document.createElement("div");
+  actions.className = "cell actions-cell";
+  actions.setAttribute("role", "group");
+  actions.setAttribute("aria-label", "Akce řádku: " + topicPlain);
+
+  actions.appendChild(rowActionBtn("Upravit", "Upravit řádek", () => { selectRow(r.id, false); openRowEditor(r.id); }, { cls: "primary" }));
+
+  const menu = document.createElement("details");
+  menu.className = "rowmenu";
+  const sum = document.createElement("summary");
+  sum.textContent = "Akce";
+  sum.setAttribute("aria-label", "Další akce řádku: " + topicPlain);
+  menu.appendChild(sum);
+  const menuBody = document.createElement("div");
+  menuBody.className = "rowmenu-body";
+
+  menuBody.appendChild(rowActionBtn("➕ Sourozenec", "Přidat řádek za tento", () => addSibling(r.id), { tabbable: true }));
+  menuBody.appendChild(rowActionBtn("➕ Potomek", "Přidat potomka", () => addChild(r.id), { tabbable: true }));
+  menuBody.appendChild(rowActionBtn("↑ Nahoru", "Přesunout nahoru", () => moveRow(r.id, -1), { disabled: isFirst, tabbable: true }));
+  menuBody.appendChild(rowActionBtn("↓ Dolů", "Přesunout dolů", () => moveRow(r.id, 1), { disabled: isLast, tabbable: true }));
+  menuBody.appendChild(rowActionBtn("→ Odsadit", "Odsadit (zařadit pod předchozí)", () => indentRow(r.id), { disabled: !hasPrevSibling, tabbable: true }));
+  menuBody.appendChild(rowActionBtn("← Předsadit", "Předsadit (vyřadit o úroveň výš)", () => outdentRow(r.id), { disabled: !hasParent, tabbable: true }));
+  if (focusRootId === r.id) {
+    menuBody.appendChild(rowActionBtn("⤺ Zrušit hoist", "Zrušit zaměření na tuto větev", () => clearFocus(), { tabbable: true }));
+  } else {
+    menuBody.appendChild(rowActionBtn("⤢ Hoist", "Zaměřit jen na tuto větev (hoist)", () => focusSection(r.id), { disabled: !r.children.length, tabbable: true }));
+  }
+  if (r.children.length) {
+    menuBody.appendChild(rowActionBtn(r.collapsed ? "▸ Rozbalit" : "▾ Sbalit", r.collapsed ? "Rozbalit větev" : "Sbalit větev", () => toggleCollapse(r.id), { tabbable: true }));
+  }
+  menuBody.appendChild(rowActionBtn("🗑 Smazat", "Smazat řádek", () => { if (confirm("Smazat řádek \u201E" + topicPlain + "\u201C i s potomky?")) deleteRow(r.id); }, { cls: "danger", tabbable: true }));
+
+  menu.appendChild(menuBody);
+  menu.addEventListener("toggle", () => {
+    if (menu.open) document.querySelectorAll(".rowmenu[open]").forEach(m => { if (m !== menu) m.open = false; });
+  });
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation();
+      menu.open = false;
+      const rowEl = document.getElementById("trow-" + r.id);
+      if (rowEl) rowEl.focus();
+    }
+  });
+  actions.appendChild(menu);
+  trow.appendChild(actions);
+
+  trow.addEventListener("click", (e) => {
+    if (e.target.closest("button, a, summary, .rowmenu")) return;
+    selectRow(r.id, true);
+  });
+  trow.addEventListener("dblclick", (e) => {
+    if (e.target.closest("button, a, summary, .rowmenu")) return;
+    selectRow(r.id, false); openRowEditor(r.id);
+  });
+  trow.addEventListener("keydown", (e) => onRowKeydown(e, r));
+  return trow;
 }
 
 function render() {
@@ -1002,163 +1152,56 @@ function render() {
   renderHead();
   const tree = document.getElementById("outline-tree");
   tree.innerHTML = "";
-  const cols = visibleColumns();
-  const gridTemplate = buildGridTemplate();
-  const list = flatVisible();
   document.getElementById("empty-hint").style.display = doc.rows.length ? "none" : "block";
 
-  list.forEach((item) => {
-    const r = item.row;
-    const depth = item.depth;
-    const f = findRow(r.id);
-    const isFirst = f && f.index === 0;
-    const isLast = f && f.index === f.siblings.length - 1;
-    const hasParent = f && f.parent;
-    const hasPrevSibling = f && f.index > 0;
+  // Determine the root rows honoring hoist (focus)
+  let rootRows = doc.rows;
+  let startDepth = 1;
+  if (focusRootId) {
+    const ff = findRow(focusRootId);
+    if (ff) { rootRows = ff.row.children; startDepth = getDepth(focusRootId) + 1; }
+  }
 
-    const trow = document.createElement("div");
-    trow.className = "trow";
-    trow.style.gridTemplateColumns = gridTemplate;
-    trow.setAttribute("role", "treeitem");
-    trow.setAttribute("aria-level", String(depth));
-    trow.setAttribute("data-id", r.id);
-    trow.id = "trow-" + r.id;
-    trow.setAttribute("tabindex", r.id === selectedId ? "0" : "-1");
-    if (r.children.length) trow.setAttribute("aria-expanded", r.collapsed ? "false" : "true");
-    if (r.id === selectedId) trow.classList.add("selected");
+  // Recursive nested-list builder: accessible multi-level <ul>/<li>.
+  function buildList(rows, depth) {
+    const ul = document.createElement("ul");
+    ul.className = "outline-list";
+    ul.setAttribute("role", "list"); // explicit, survives list-style:none in some SRs
+    rows.forEach((r) => {
+      const li = document.createElement("li");
+      li.className = "outline-item";
+      li.setAttribute("data-id", r.id);
 
-    const tag = tagForDepth(depth);
-    const numTxt = (doc.numbering.enabled && numberingMap[r.id]) ? numberingMap[r.id] + " " : "";
-    const topicPlain = plainTopic(r) || "prázdný řádek";
-    const tagLabel = /^h[1-6]$/.test(tag) ? ("nadpis úrovně " + tag[1] + ", ") : "";
-    trow.setAttribute("aria-label",
-      tagLabel + numTxt + topicPlain +
-      (r.children.length ? (r.collapsed ? ", sbaleno" : ", rozbaleno") : "") +
-      (r.status ? ", hotovo" : "") +
-      (r.note ? ", má poznámku" : ""));
+      const content = buildRowContent(r, depth);
+      li.appendChild(content);
 
-    // ----- Topic cell -----
-    const topicCell = document.createElement("div");
-    topicCell.className = "topic-cell";
-    topicCell.style.paddingLeft = (4 + (depth - 1) * 20) + "px";
+      // note row (read-only display)
+      if (r.note) {
+        const noteRow = document.createElement("div");
+        noteRow.className = "note-row";
+        const lbl = document.createElement("span");
+        lbl.className = "note-label";
+        lbl.textContent = "Poznámka: ";
+        noteRow.appendChild(lbl);
+        const noteContent = document.createElement("span");
+        noteContent.className = "rendered note-rendered";
+        noteContent.innerHTML = renderMarkdown(r.note, "review");
+        noteRow.appendChild(noteContent);
+        li.appendChild(noteRow);
+      }
 
-    // disclosure (collapse/expand) — per row
-    const disc = document.createElement("button");
-    disc.type = "button";
-    disc.className = "disclosure" + (r.children.length ? "" : " leaf");
-    disc.textContent = r.collapsed ? "\u25B6" : "\u25BC";
-    disc.setAttribute("aria-label", r.children.length ? (r.collapsed ? "Rozbalit větev" : "Sbalit větev") : "Bez potomků");
-    disc.tabIndex = -1;
-    if (r.children.length) disc.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(r.id); });
-    else disc.disabled = true;
-    topicCell.appendChild(disc);
-
-    // status indicator (read-only display; editing is in the dialog)
-    const statusIcon = document.createElement("span");
-    statusIcon.className = "status-icon";
-    statusIcon.textContent = r.status ? "\u2611" : "\u2610";
-    statusIcon.setAttribute("aria-hidden", "true");
-    topicCell.appendChild(statusIcon);
-
-    if (numTxt) {
-      const numEl = document.createElement("span");
-      numEl.className = "rownum";
-      numEl.textContent = numberingMap[r.id];
-      topicCell.appendChild(numEl);
-    }
-
-    const topicWrap = document.createElement("div");
-    topicWrap.className = "topic-text";
-    const contentEl = document.createElement(/^h[1-6]$/.test(tag) ? tag : "div");
-    contentEl.className = "topic-rendered rendered";
-    if (/^h[1-6]$/.test(tag)) contentEl.classList.add("as-heading", "h" + tag[1]);
-    contentEl.innerHTML = highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>";
-    topicWrap.appendChild(contentEl);
-    topicCell.appendChild(topicWrap);
-    trow.appendChild(topicCell);
-
-    // ----- data cells (read-only) -----
-    for (let ci = 1; ci < cols.length; ci++) {
-      const col = cols[ci];
-      const cell = document.createElement("div");
-      cell.className = "cell";
-      const disp = cellDisplay(r, col);
-      if (disp.className === "summary-val") cell.classList.add("summary");
-      cell.appendChild(disp);
-      cell.setAttribute("aria-label", col.title + ": " + (disp.textContent || "prázdné"));
-      trow.appendChild(cell);
-    }
-
-    // ----- per-row actions -----
-    const actions = document.createElement("div");
-    actions.className = "cell actions-cell";
-    actions.setAttribute("role", "group");
-    actions.setAttribute("aria-label", "Akce řádku: " + topicPlain);
-
-    actions.appendChild(rowActionBtn("Upravit", "Upravit řádek", () => { selectRow(r.id, false); openRowEditor(r.id); }, { cls: "primary" }));
-
-    // structural actions menu (details) keeps the row compact but reachable
-    const menu = document.createElement("details");
-    menu.className = "rowmenu";
-    const sum = document.createElement("summary");
-    sum.textContent = "Akce";
-    sum.setAttribute("aria-label", "Další akce řádku: " + topicPlain);
-    sum.tabIndex = -1;
-    menu.appendChild(sum);
-    const menuBody = document.createElement("div");
-    menuBody.className = "rowmenu-body";
-
-    menuBody.appendChild(rowActionBtn("➕ Sourozenec", "Přidat řádek za tento", () => addSibling(r.id)));
-    menuBody.appendChild(rowActionBtn("➕ Potomek", "Přidat potomka", () => addChild(r.id)));
-    menuBody.appendChild(rowActionBtn("↑ Nahoru", "Přesunout nahoru", () => moveRow(r.id, -1), { disabled: isFirst }));
-    menuBody.appendChild(rowActionBtn("↓ Dolů", "Přesunout dolů", () => moveRow(r.id, 1), { disabled: isLast }));
-    menuBody.appendChild(rowActionBtn("→ Odsadit", "Odsadit (zařadit pod předchozí)", () => indentRow(r.id), { disabled: !hasPrevSibling }));
-    menuBody.appendChild(rowActionBtn("← Předsadit", "Předsadit (vyřadit o úroveň výš)", () => outdentRow(r.id), { disabled: !hasParent }));
-    if (focusRootId === r.id) {
-      menuBody.appendChild(rowActionBtn("⤺ Zrušit hoist", "Zrušit zaměření na tuto větev", () => clearFocus()));
-    } else {
-      menuBody.appendChild(rowActionBtn("⤢ Hoist", "Zaměřit jen na tuto větev (hoist)", () => focusSection(r.id), { disabled: !r.children.length }));
-    }
-    if (r.children.length) {
-      menuBody.appendChild(rowActionBtn(r.collapsed ? "▸ Rozbalit" : "▾ Sbalit", r.collapsed ? "Rozbalit větev" : "Sbalit větev", () => toggleCollapse(r.id)));
-    }
-    menuBody.appendChild(rowActionBtn("🗑 Smazat", "Smazat řádek", () => { if (confirm("Smazat řádek \u201E" + topicPlain + "\u201C i s potomky?")) deleteRow(r.id); }, { cls: "danger" }));
-
-    menu.appendChild(menuBody);
-    // close other open menus when this one opens
-    menu.addEventListener("toggle", () => {
-      if (menu.open) document.querySelectorAll(".rowmenu[open]").forEach(m => { if (m !== menu) m.open = false; });
+      // children as a nested list, unless collapsed
+      if (r.children.length && !r.collapsed) {
+        li.appendChild(buildList(r.children, depth + 1));
+      }
+      ul.appendChild(li);
     });
-    actions.appendChild(menu);
-    trow.appendChild(actions);
+    return ul;
+  }
 
-    trow.addEventListener("click", (e) => {
-      if (e.target.closest("button, a, summary, .rowmenu")) return;
-      selectRow(r.id, true);
-    });
-    trow.addEventListener("dblclick", (e) => {
-      if (e.target.closest("button, a, summary, .rowmenu")) return;
-      selectRow(r.id, false); openRowEditor(r.id);
-    });
-    trow.addEventListener("keydown", (e) => onRowKeydown(e, r));
-    tree.appendChild(trow);
-
-    // ----- note row (read-only display) -----
-    if (r.note) {
-      const noteRow = document.createElement("div");
-      noteRow.className = "note-row";
-      noteRow.style.paddingLeft = (40 + (depth - 1) * 20) + "px";
-      const lbl = document.createElement("span");
-      lbl.className = "note-label";
-      lbl.textContent = "Poznámka: ";
-      noteRow.appendChild(lbl);
-      const noteContent = document.createElement("span");
-      noteContent.className = "rendered note-rendered";
-      noteContent.innerHTML = renderMarkdown(r.note, "review");
-      noteRow.appendChild(noteContent);
-      tree.appendChild(noteRow);
-    }
-  });
+  if (rootRows.length) {
+    tree.appendChild(buildList(rootRows, startDepth));
+  }
 
   if (selectedId && !findRow(selectedId)) selectedId = null;
   refreshSections();
@@ -1303,10 +1346,25 @@ function onRowKeydown(e, r) {
     case "ArrowLeft":
       e.preventDefault();
       if (r.children.length && !r.collapsed) collapseRow(r.id);
-      else { const f = findRow(r.id); if (f && f.parent) selectRow(f.parent.id, true); }
+      else { const f = findRow(r.id); if (f && f.parent) { selectRow(f.parent.id, true); announce(describeRowBrief(f.parent.id)); } }
       break;
     case "Enter":
       e.preventDefault(); openRowEditor(r.id); break;
+    case ".":
+    case ">":
+      e.preventDefault(); indentRow(r.id); break;
+    case ",":
+    case "<":
+      e.preventDefault(); outdentRow(r.id); break;
+    case "m":
+    case "M":
+      e.preventDefault(); openRowEditor(r.id, "note"); break;
+    case "i":
+    case "I":
+      e.preventDefault(); announce(describeRowFull(r.id)); break;
+    case "t":
+    case "T":
+      e.preventDefault(); openRowMenu(r.id); break;
     case " ":
       e.preventDefault(); r.status = r.status ? 0 : 1; render(); selectRow(r.id, true);
       announce(r.status ? "Označeno jako hotovo" : "Označeno jako nehotovo");
@@ -1321,7 +1379,81 @@ function navigateRel(id, dir) {
   const list = flatVisible();
   const idx = list.findIndex(x => x.row.id === id);
   const next = list[idx + dir];
-  if (next) selectRow(next.row.id, true);
+  if (next) { selectRow(next.row.id, true); announce(describeRowBrief(next.row.id)); }
+}
+
+// Open a row's action menu (the per-row "Akce" details) and focus first item.
+function openRowMenu(id) {
+  const trow = document.getElementById("trow-" + id);
+  if (!trow) return;
+  const menu = trow.querySelector(".rowmenu");
+  if (!menu) return;
+  // close any other open menus
+  document.querySelectorAll(".rowmenu[open]").forEach(m => { if (m !== menu) m.open = false; });
+  menu.open = true;
+  const firstBtn = menu.querySelector(".rowmenu-body .rowbtn:not(:disabled)");
+  if (firstBtn) setTimeout(() => firstBtn.focus(), 0);
+  announce("Nabídka akcí otevřena");
+}
+
+/* ---------- Accessible descriptions ---------- */
+function rowPositionInfo(id) {
+  const f = findRow(id);
+  if (!f) return null;
+  return {
+    depth: getDepth(id),
+    index: f.index + 1,
+    total: f.siblings.length,
+    hasChildren: f.row.children.length > 0,
+    childCount: f.row.children.length,
+    collapsed: !!f.row.collapsed,
+  };
+}
+// Brief announcement on arrow movement: level, N of M, has sublevels.
+function describeRowBrief(id) {
+  const r = (findRow(id) || {}).row;
+  if (!r) return "";
+  const p = rowPositionInfo(id);
+  let s = "Úroveň " + p.depth + ", položka " + p.index + " z " + p.total;
+  if (p.hasChildren) s += ", " + p.childCount + " " + (p.childCount === 1 ? "podúroveň" : (p.childCount < 5 ? "podúrovně" : "podúrovní")) + (p.collapsed ? ", sbaleno" : ", rozbaleno");
+  else s += ", bez podúrovní";
+  return s;
+}
+// Comprehensive read-out: topic, position, collapse, status, columns, note.
+function describeRowFull(id) {
+  const f = findRow(id);
+  if (!f) return "";
+  const r = f.row;
+  const p = rowPositionInfo(id);
+  const parts = [];
+  // numbering + topic (strip trailing separators/spaces from the number)
+  if (doc.numbering.enabled && numberingMap[id]) {
+    const cleanNum = numberingMap[id].replace(/[.\s)\]]+$/, "");
+    if (cleanNum) parts.push("Číslo " + cleanNum);
+  }
+  parts.push("Téma: " + (plainTopic(r) || "prázdné"));
+  // position
+  parts.push("Úroveň " + p.depth + ", položka " + p.index + " z " + p.total + " na této úrovni");
+  // children
+  if (p.hasChildren) parts.push(p.childCount + " " + (p.childCount === 1 ? "podúroveň" : (p.childCount < 5 ? "podúrovně" : "podúrovní")) + ", " + (p.collapsed ? "sbaleno" : "rozbaleno"));
+  else parts.push("bez podúrovní");
+  // row status (label distinct from any column titled 'Stav')
+  parts.push("Dokončeno: " + (r.status ? "ano" : "ne"));
+  // column values
+  const cols = visibleColumns();
+  for (let ci = 1; ci < cols.length; ci++) {
+    const col = cols[ci];
+    const disp = cellDisplay(r, col);
+    let txt = (disp.textContent || "").trim();
+    if (txt && txt !== "\u2014") {
+      txt = txt.replace(/\u2611/g, "ano").replace(/\u2610/g, "ne");
+      parts.push(col.title + ": " + txt);
+    }
+  }
+  // note
+  if (r.note) parts.push("Poznámka: " + nodesToPlain(parseInline(r.note), "accepted").trim());
+  // join, collapsing any doubled sentence punctuation
+  return parts.map(s => s.replace(/[.\s]+$/, "")).join(". ") + ".";
 }
 
 /* ---------- Row editor dialog ---------- */
@@ -1367,7 +1499,10 @@ function openRowEditor(id, focusColId) {
   updatePreview();
 
   dlg.showModal();
-  const focusEl = focusColId ? document.getElementById("row-ed-col-" + focusColId) : document.getElementById("row-ed-topic");
+  let focusEl;
+  if (focusColId === "note") focusEl = document.getElementById("row-ed-note");
+  else if (focusColId) focusEl = document.getElementById("row-ed-col-" + focusColId);
+  else focusEl = document.getElementById("row-ed-topic");
   if (focusEl) { focusEl.focus(); if (focusEl.select) try { focusEl.select(); } catch (e) {} }
 }
 function buildEditorField(labelText, id, value, kind, rows) {
@@ -2449,20 +2584,25 @@ function buildHelp() {
   const el = document.getElementById("help-body");
   el.innerHTML = `
 <h3>Klávesové zkratky</h3>
-<p class="hint">Strom je jen ke čtení, jako náhled exportu. Úpravy a strukturu řešíš tlačítky a dialogem — nic se needituje přímo v textu.</p>
+<p class="hint">Osnova je víceúrovňový seznam jen ke čtení, jako náhled exportu. Úpravy a strukturu řešíš tlačítky a dialogem — nic se needituje přímo v textu.</p>
 <table class="help">
 <tr><th>Zkratka</th><th>Akce</th></tr>
-<tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Pohyb mezi řádky</td></tr>
+<tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Pohyb mezi řádky (oznámí úroveň, pozici a podúrovně)</td></tr>
 <tr><td><kbd>→</kbd></td><td>Rozbalit větev (nebo přejít na potomka)</td></tr>
 <tr><td><kbd>←</kbd></td><td>Sbalit větev (nebo přejít na rodiče)</td></tr>
 <tr><td><kbd>Enter</kbd></td><td>Otevřít editor řádku (téma, poznámka, textové sloupce)</td></tr>
+<tr><td><kbd>.</kbd></td><td>Odsadit řádek (zařadit pod předchozí)</td></tr>
+<tr><td><kbd>,</kbd></td><td>Předsadit řádek (vyřadit o úroveň výš)</td></tr>
+<tr><td><kbd>m</kbd></td><td>Upravit poznámku řádku</td></tr>
+<tr><td><kbd>i</kbd></td><td>Přečíst kompletní informace o řádku (umístění, stav, sloupce, poznámka)</td></tr>
+<tr><td><kbd>t</kbd></td><td>Otevřít nabídku akcí řádku</td></tr>
 <tr><td><kbd>Mezerník</kbd></td><td>Přepnout stav „hotovo"</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>První / poslední viditelný řádek</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Uložit .mroutline</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>F</kbd></td><td>Najít</td></tr>
 </table>
 <p>Každý řádek má vlastní tlačítka: <strong>Upravit</strong> (otevře editor celého řádku — téma, poznámka i všechny sloupce) a rozbalovací nabídku <strong>Akce</strong> s volbami přidat sourozence/potomka, přesun nahoru/dolů, odsadit/předsadit, hoist (zaměřit jen na tuto větev) / zrušit hoist, sbalit/rozbalit a smazat. Sbalování má i vlastní trojúhelníček na začátku řádku. V horní liště je jen práce s dokumentem (nový, otevřít, uložit, hledání, export/import) a přepínač <strong>Skrýt panely</strong>, kterým schováš postranní panely a uvolníš celou šířku pro osnovu.</p>
-<p>Téma se ve stromu zobrazuje vyrenderované, a pokud je úrovni přiřazen nadpis (H1–H6), i jako odpovídající nadpis. Strom nic needituje přímo — všechny hodnoty se mění v editoru řádku.</p>
+<p>Téma se v seznamu zobrazuje vyrenderované, a pokud je úrovni přiřazen nadpis (H1–H6), i jako odpovídající nadpis. Hierarchie je tvořena vnořenými seznamy (přístupné pro čtečky). Seznam nic needituje přímo — všechny hodnoty se mění v editoru řádku.</p>
 <h3>Markdown</h3>
 <p><code>**tučné**</code>, <code>*kurzíva*</code>, <code>\`kód\`</code>, <code>~~přeškrtnuté~~</code>, <code>[text](https://odkaz)</code></p>
 <h3>CriticMarkup (sledované změny)</h3>
