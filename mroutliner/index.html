@@ -229,6 +229,18 @@
     overflow-wrap: anywhere;
   }
   .topic-rendered { margin: 0; }
+  /* full-markdown blocks rendered inside cells/topics/notes: keep compact */
+  .rendered > p:first-child, .topic-rendered > p:first-child { margin-top: 0; }
+  .rendered > p:last-child, .topic-rendered > p:last-child { margin-bottom: 0; }
+  .rendered p, .topic-rendered p { margin: 0.2em 0; }
+  .rendered ul, .rendered ol, .topic-rendered ul, .topic-rendered ol { margin: 0.2em 0; padding-left: 1.4em; }
+  .rendered h1, .rendered h2, .rendered h3, .rendered h4, .rendered h5, .rendered h6,
+  .topic-rendered h1, .topic-rendered h2, .topic-rendered h3 { margin: 0.25em 0; font-size: 1.05em; }
+  .rendered blockquote, .topic-rendered blockquote { margin: 0.2em 0; padding-left: 0.7em; border-left: 3px solid var(--border-strong); }
+  .md-code { background: var(--note-bg); padding: 0.4em 0.6em; border-radius: 4px; overflow-x: auto; margin: 0.3em 0; }
+  .md-table { border-collapse: collapse; margin: 0.3em 0; }
+  .md-table th, .md-table td { border: 1px solid var(--border); padding: 2px 6px; text-align: left; }
+  .rendered hr, .topic-rendered hr { border: none; border-top: 1px solid var(--border); margin: 0.4em 0; }
   /* Headings shown inline in the tree, scaled but not as huge as document H1 */
   .topic-rendered.as-heading { font-weight: 700; line-height: 1.25; }
   .topic-prefix { color: var(--muted); font-weight: 600; margin-right: 2px; }
@@ -359,7 +371,7 @@
 <a class="skip-link" href="#outline-main">Přeskočit na osnovu</a>
 
 <header class="app-bar">
-  <h1 class="app-title">MRoutliner <span class="badge" id="build-badge">build 1</span></h1>
+  <h1 class="app-title" id="app-title">MRoutliner</h1>
   <div class="toolbar" role="toolbar" aria-label="Hlavní nástroje">
     <div class="group">
       <button type="button" id="btn-new">Nový</button>
@@ -581,7 +593,7 @@
   <div id="row-editor-body" style="max-height:60vh; overflow:auto"></div>
   <div class="dialog-actions">
     <button type="button" data-close>Zrušit</button>
-    <button type="button" id="btn-save-row">Uložit řádek</button>
+    <button type="button" id="btn-save-row" accesskey="u">Uložit řádek</button>
   </div>
 </dialog>
 
@@ -617,7 +629,6 @@
 "use strict";
 
 const BUILD = 1;
-document.getElementById("build-badge").textContent = "build " + BUILD;
 
 /* ---------- Debug (on-page only, never console) ---------- */
 const dbgEl = document.getElementById("debug-out");
@@ -767,8 +778,146 @@ function nodesToHtml(nodes, mode) {
   }
   return out;
 }
-function renderMarkdown(src, mode) {
+function renderMarkdownInline(src, mode) {
   return nodesToHtml(parseInline(src || ""), mode || "review");
+}
+// Full block-level Markdown: headings, lists, blockquotes, fenced code,
+// tables, horizontal rules, paragraphs. Inline spans (incl. CriticMarkup)
+// still go through parseInline/nodesToHtml.
+function renderMarkdown(src, mode) {
+  mode = mode || "review";
+  const text = String(src == null ? "" : src);
+  if (!text.trim()) return "";
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let html = "";
+  let i = 0;
+  const inl = (s) => renderMarkdownInline(s, mode);
+
+  function parseTableRow(line) {
+    let s = line.trim();
+    if (s.startsWith("|")) s = s.slice(1);
+    if (s.endsWith("|")) s = s.slice(0, -1);
+    return s.split("|").map(c => c.trim());
+  }
+  function isTableSep(line) {
+    return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line) && line.includes("-");
+  }
+
+  while (i < lines.length) {
+    let line = lines[i];
+
+    // blank line
+    if (!line.trim()) { i++; continue; }
+
+    // fenced code block
+    const fence = line.match(/^(```+|~~~+)(.*)$/);
+    if (fence) {
+      const marker = fence[1][0];
+      const buf = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(marker.repeat(3).slice(0, 3)) && !new RegExp("^(```+|~~~+)\\s*$").test(lines[i])) {
+        buf.push(lines[i]); i++;
+      }
+      if (i < lines.length) i++; // consume closing fence
+      html += "<pre class='md-code'><code>" + escapeHtml(buf.join("\n")) + "</code></pre>\n";
+      continue;
+    }
+
+    // heading
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { const lv = h[1].length; html += "<h" + lv + ">" + inl(h[2].trim()) + "</h" + lv + ">\n"; i++; continue; }
+
+    // horizontal rule
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { html += "<hr>\n"; i++; continue; }
+
+    // table (header row followed by separator row)
+    if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const headers = parseTableRow(line);
+      i += 2;
+      let t = "<table class='md-table'><thead><tr>";
+      headers.forEach(hd => { t += "<th>" + inl(hd) + "</th>"; });
+      t += "</tr></thead><tbody>";
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        const cells = parseTableRow(lines[i]);
+        t += "<tr>";
+        for (let c = 0; c < headers.length; c++) t += "<td>" + inl(cells[c] || "") + "</td>";
+        t += "</tr>";
+        i++;
+      }
+      t += "</tbody></table>\n";
+      html += t;
+      continue;
+    }
+
+    // blockquote (collect consecutive > lines)
+    if (/^\s*>/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+      html += "<blockquote>" + renderMarkdown(buf.join("\n"), mode) + "</blockquote>\n";
+      continue;
+    }
+
+    // lists (unordered - * +, ordered 1.) with nesting by indentation
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      const parsed = parseList(lines, i);
+      html += parsed.html;
+      i = parsed.next;
+      continue;
+    }
+
+    // paragraph: gather until blank line or a block starter
+    const para = [];
+    while (i < lines.length && lines[i].trim() &&
+           !/^(#{1,6})\s+/.test(lines[i]) &&
+           !/^\s*>/.test(lines[i]) &&
+           !/^(```+|~~~+)/.test(lines[i]) &&
+           !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i]) &&
+           !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i])) {
+      para.push(lines[i]); i++;
+    }
+    html += "<p>" + inl(para.join(" ").trim()) + "</p>\n";
+  }
+  return html;
+
+  // Nested list parser. Returns { html, next }.
+  function parseList(lines, start) {
+    const indentOf = (s) => (s.match(/^(\s*)/)[1] || "").replace(/\t/g, "    ").length;
+    const baseIndent = indentOf(lines[start]);
+    const ordered = /^\s*\d+[.)]\s+/.test(lines[start]);
+    let out = ordered ? "<ol>" : "<ul>";
+    let j = start;
+    while (j < lines.length) {
+      const ln = lines[j];
+      if (!ln.trim()) { // blank: peek if list continues
+        let k = j + 1;
+        if (k < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[k]) && indentOf(lines[k]) >= baseIndent) { j++; continue; }
+        break;
+      }
+      const ind = indentOf(ln);
+      const m = ln.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
+      if (!m || ind < baseIndent) break;
+      if (ind > baseIndent) { // shouldn't happen at top; handled in recursion
+        const sub = parseList(lines, j);
+        // attach to previous li
+        out = out.replace(/<\/li>$/, sub.html + "</li>");
+        j = sub.next;
+        continue;
+      }
+      // same-level item; gather its content + any deeper nested list
+      let content = m[2];
+      j++;
+      // nested list directly under this item
+      if (j < lines.length && lines[j].trim() && /^\s*([-*+]|\d+[.)])\s+/.test(lines[j]) && indentOf(lines[j]) > baseIndent) {
+        const sub = parseList(lines, j);
+        out += "<li>" + inl(content) + sub.html + "</li>";
+        j = sub.next;
+      } else {
+        out += "<li>" + inl(content) + "</li>";
+      }
+    }
+    out += ordered ? "</ol>" : "</ul>";
+    return { html: out, next: j };
+  }
 }
 // plain text extraction (accepted form) for search/section list
 function nodesToPlain(nodes, mode) {
@@ -786,7 +935,25 @@ function nodesToPlain(nodes, mode) {
   }
   return out;
 }
-function plainTopic(row) { return nodesToPlain(parseInline(row.topic || ""), "accepted"); }
+// Strip block-markdown markers to plain text (for aria labels, search, sections).
+function markdownToPlain(src) {
+  const text = String(src == null ? "" : src);
+  if (!text.trim()) return "";
+  const out = [];
+  for (let raw of text.replace(/\r\n?/g, "\n").split("\n")) {
+    let l = raw;
+    if (/^(```+|~~~+)/.test(l)) continue;          // code fence markers
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) continue; // hr
+    l = l.replace(/^\s*#{1,6}\s+/, "");            // heading marks
+    l = l.replace(/^\s*>\s?/, "");                 // blockquote
+    l = l.replace(/^\s*([-*+]|\d+[.)])\s+/, "");   // list bullets
+    if (/^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(raw)) continue; // table sep
+    l = l.replace(/\|/g, " ");                     // table pipes
+    out.push(nodesToPlain(parseInline(l), "accepted"));
+  }
+  return out.join(" ").replace(/\s+/g, " ").trim();
+}
+function plainTopic(row) { return markdownToPlain(row.topic || ""); }
 
 /* ---------- Tree helpers ---------- */
 function walk(rows, cb, parent, depth) {
@@ -1116,6 +1283,24 @@ function topicPrefix(r) {
   return joined ? joined + " " : "";
 }
 
+// Accessible read-out of the left-of-topic columns as "Title: value" strings.
+function prefixColumnsRead(r) {
+  const cols = prefixColumns();
+  const out = [];
+  for (const col of cols) {
+    const v = cellValue(r, col);
+    let txt;
+    if (col.type === "checkbox") txt = v ? "ano" : "ne";
+    else if (v == null || v === "") continue;
+    else if (col.type === "number") txt = formatNumberValue(v, col.format);
+    else if (col.type === "date") txt = formatDate(v, col.format);
+    else if (col.type === "markdown") txt = nodesToPlain(parseInline(v), "accepted");
+    else txt = String(v);
+    if (txt !== "") out.push(col.title + ": " + txt);
+  }
+  return out;
+}
+
 // Visible columns to the RIGHT of topic (shown as data, not folded into heading).
 function rightDataColumns() {
   const ti = doc.columns.findIndex(c => c.isTopic);
@@ -1197,8 +1382,10 @@ function buildRowContent(r, depth) {
   const tagLabel = /^h[1-6]$/.test(tag) ? ("nadpis úrovně " + tag[1] + ", ") : "";
   const rtMeta = rowTypeMeta(r.rowType);
   const rtLabel = (rtMeta.id !== "normal") ? (", typ " + rtMeta.label.replace(/\s*\(.*\)\s*/, "")) : "";
+  const preCols = prefixColumnsRead(r);
+  const preColsLabel = preCols.length ? (preCols.join(", ") + ", ") : "";
   trow.setAttribute("aria-label",
-    tagLabel + numTxt + topicPlain +
+    tagLabel + numTxt + preColsLabel + topicPlain +
     (r.children.length ? (r.collapsed ? ", sbaleno" : ", rozbaleno") : "") +
     (r.status ? ", hotovo" : "") +
     (r.note ? ", má poznámku" : "") +
@@ -1234,9 +1421,14 @@ function buildRowContent(r, depth) {
 
   const topicWrap = document.createElement("div");
   topicWrap.className = "topic-text";
-  const contentEl = document.createElement(/^h[1-6]$/.test(tag) ? tag : "div");
+  const isHeading = /^h[1-6]$/.test(tag);
+  const contentEl = document.createElement("div");
   contentEl.className = "topic-rendered rendered";
-  if (/^h[1-6]$/.test(tag)) contentEl.classList.add("as-heading", "h" + tag[1]);
+  if (isHeading) {
+    contentEl.classList.add("as-heading", "h" + tag[1]);
+    contentEl.setAttribute("role", "heading");
+    contentEl.setAttribute("aria-level", tag[1]);
+  }
   const prefix = topicPrefix(r); // values of columns left of topic, folded into heading
   const prefixHtml = prefix ? "<span class='topic-prefix'>" + escapeHtml(prefix) + "</span>" : "";
   const topicInner = highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>";
@@ -1610,6 +1802,8 @@ function describeRowBrief(id) {
   let s = "Úroveň " + p.depth + ", položka " + p.index + " z " + p.total;
   if (p.hasChildren) s += ", " + p.childCount + " " + (p.childCount === 1 ? "podúroveň" : (p.childCount < 5 ? "podúrovně" : "podúrovní")) + (p.collapsed ? ", sbaleno" : ", rozbaleno");
   else s += ", bez podúrovní";
+  const preCols = prefixColumnsRead(r);
+  if (preCols.length) s += ", " + preCols.join(", ");
   const rt = rowTypeMeta(r.rowType);
   if (rt.id !== "normal") s += ", typ " + rt.label.replace(/\s*\(.*\)\s*/, "");
   return s;
@@ -1621,27 +1815,32 @@ function describeRowFull(id) {
   const r = f.row;
   const p = rowPositionInfo(id);
   const parts = [];
-  // numbering + topic (strip trailing separators/spaces from the number)
+  // status FIRST (most important for this workflow)
+  parts.push("Dokončeno: " + (r.status ? "ano" : "ne"));
+  // numbering
   if (doc.numbering.enabled && numberingMap[id]) {
     const cleanNum = numberingMap[id].replace(/[.\s)\]]+$/, "");
     if (cleanNum) parts.push("Číslo " + cleanNum);
   }
+  // left-of-topic columns (folded into heading) read explicitly
+  const preCols = prefixColumnsRead(r);
+  for (const pc of preCols) parts.push(pc);
+  // topic
   parts.push("Téma: " + (plainTopic(r) || "prázdné"));
   // position
   parts.push("Úroveň " + p.depth + ", položka " + p.index + " z " + p.total + " na této úrovni");
   // children
   if (p.hasChildren) parts.push(p.childCount + " " + (p.childCount === 1 ? "podúroveň" : (p.childCount < 5 ? "podúrovně" : "podúrovní")) + ", " + (p.collapsed ? "sbaleno" : "rozbaleno"));
   else parts.push("bez podúrovní");
-  // row status (label distinct from any column titled 'Stav')
-  parts.push("Dokončeno: " + (r.status ? "ano" : "ne"));
   // row type
   const rtFull = rowTypeMeta(r.rowType);
   if (rtFull.id !== "normal") parts.push("Typ: " + rtFull.label.replace(/\s*\(.*\)\s*/, ""));
-  // column values
+  // remaining (right-of-topic) column values; left cols already read above
+  const leftIds = new Set(prefixColumns().map(c => c.id));
   const cols = visibleColumns();
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
-    if (col.isTopic || col.isStatus) continue;
+    if (col.isTopic || col.isStatus || leftIds.has(col.id)) continue;
     const disp = cellDisplay(r, col);
     let txt = (disp.textContent || "").trim();
     if (txt && txt !== "\u2014") {
@@ -2116,7 +2315,7 @@ function refreshMeta() {
     const f = document.createElement("div"); f.className = "field";
     const l = document.createElement("label"); l.textContent = label; l.setAttribute("for", "meta-" + k);
     const inp = document.createElement("input"); inp.type = "text"; inp.id = "meta-" + k; inp.value = doc.meta[k] || "";
-    inp.addEventListener("change", () => { doc.meta[k] = inp.value; });
+    inp.addEventListener("change", () => { doc.meta[k] = inp.value; if (k === "title") refreshDocTitle(); });
     f.appendChild(l); f.appendChild(inp); body.appendChild(f);
   });
   [["authors", "Autoři (čárkou)"], ["keywords", "Klíčová slova (čárkou)"]].forEach(([k, label]) => {
@@ -2682,6 +2881,30 @@ function normalizeDoc(d) {
    ============================================================ */
 
 /* ---------- HTML export ---------- */
+// Render a topic for export. If the level maps to a heading, the first line
+// becomes the heading (inline) and any remaining lines render as full block
+// markdown after it. Otherwise the whole topic renders as block markdown.
+function renderTopicExport(topic, tag, mode, leadHtml) {
+  const text = String(topic == null ? "" : topic);
+  const lead = leadHtml || "";
+  if (/^h[1-6]$/.test(tag)) {
+    const nl = text.indexOf("\n");
+    const firstLine = nl === -1 ? text : text.slice(0, nl);
+    const rest = nl === -1 ? "" : text.slice(nl + 1);
+    let out = "<" + tag + ">" + lead + renderMarkdownInline(firstLine, mode) + "</" + tag + ">\n";
+    if (rest.trim()) out += renderMarkdown(rest, mode);
+    return out;
+  }
+  if (tag === "li") {
+    // list item: first line inline in <li>, rest as blocks inside
+    const nl = text.indexOf("\n");
+    const firstLine = nl === -1 ? text : text.slice(0, nl);
+    const rest = nl === -1 ? "" : text.slice(nl + 1);
+    return "<ul><li>" + lead + renderMarkdownInline(firstLine, mode) + (rest.trim() ? renderMarkdown(rest, mode) : "") + "</li></ul>\n";
+  }
+  // paragraph level: lead prefix then full block markdown
+  return (lead ? "<p>" + lead + "</p>\n" : "") + renderMarkdown(text, mode);
+}
 function exportHTML(dynamic, accepted) {
   const mode = accepted ? "accepted" : "review";
   const nb = computeNumbering();
@@ -2692,7 +2915,7 @@ function exportHTML(dynamic, accepted) {
       const num = doc.numbering.enabled && nb[r.id] ? escapeHtml(nb[r.id]) + " " : "";
       const pfx = topicPrefixExport(r);
       const pfxHtml = pfx ? escapeHtml(pfx) : "";
-      const inner = num + pfxHtml + renderMarkdown(r.topic, mode);
+      const lead = num + pfxHtml;
       const hasChildren = r.children.length;
       const indentPx = depth > 1 ? 24 : 0; // incremental step; nesting compounds it
       const rt = rowTypeMeta(r.rowType);
@@ -2700,13 +2923,16 @@ function exportHTML(dynamic, accepted) {
       if (rt.tag) body += "<" + rt.tag + " class='rowtype rowtype-" + rt.id + "'>\n";
       if (dynamic && hasChildren) {
         body += "<details open><summary>";
-        if (/^h[1-6]$/.test(tag)) body += "<" + tag + " style='display:inline'>" + inner + "</" + tag + ">";
-        else body += inner;
+        // in summary keep it compact: first line only as heading/inline
+        const firstLine = String(r.topic || "").split("\n")[0];
+        if (/^h[1-6]$/.test(tag)) body += "<" + tag + " style='display:inline'>" + lead + renderMarkdownInline(firstLine, mode) + "</" + tag + ">";
+        else body += lead + renderMarkdownInline(firstLine, mode);
         body += "</summary>\n";
+        // remaining block markdown (after first line) shown below summary
+        const restNl = String(r.topic || "").indexOf("\n");
+        if (restNl !== -1) { const rest = String(r.topic).slice(restNl + 1); if (rest.trim()) body += renderMarkdown(rest, mode); }
       } else {
-        if (/^h[1-6]$/.test(tag)) body += "<" + tag + ">" + inner + "</" + tag + ">\n";
-        else if (tag === "li") body += "<ul><li>" + inner + "</li></ul>\n";
-        else body += "<p>" + inner + "</p>\n";
+        body += renderTopicExport(r.topic, tag, mode, lead);
       }
       if (r.note) body += "<div class='note'>" + renderMarkdown(r.note, mode) + "</div>\n";
       // data columns (right of topic) as definition list
@@ -2740,6 +2966,10 @@ ins{background:#d6f0d6;text-decoration:none}del{background:#f7d6d6}
 .lvl{margin-top:.15rem}
 .lvl .lvl{border-left:1px solid #e3e3e3;padding-left:.5rem}
 blockquote.rowtype{border-left:4px solid #b0b0b0;margin:.4rem 0;padding:.2rem .8rem;color:#333;font-style:italic}
+.md-code{background:#f4f4f4;padding:.4rem .6rem;border-radius:4px;overflow-x:auto}
+.md-table{border-collapse:collapse;margin:.3rem 0}
+.md-table th,.md-table td{border:1px solid #ccc;padding:2px 6px;text-align:left}
+blockquote{border-left:3px solid #ccc;margin:.3rem 0;padding-left:.7rem}
 article.rowtype{border:1px solid #ddd;border-radius:6px;padding:.4rem .8rem;margin:.4rem 0}
 aside.rowtype{background:#f6f6f2;border-left:4px solid #c9a83a;padding:.3rem .8rem;margin:.4rem 0}
 mark.rowtype{background:#ffe680}
@@ -2981,6 +3211,103 @@ function _para(md, opts) {
   return "<w:p>" + pPr + prefix + _runsFromNodes(nodes, baseFmt, opts.accepted) + "</w:p>";
 }
 
+// Convert block markdown into a series of DOCX paragraphs (and simple tables).
+// Handles: headings, unordered/ordered lists, blockquotes, fenced code, tables,
+// horizontal rules, paragraphs. baseOpts carries accepted + indent context.
+function _blocksToDocx(md, baseOpts) {
+  baseOpts = baseOpts || {};
+  const text = String(md == null ? "" : md);
+  if (!text.trim()) return "";
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let out = "";
+  let i = 0;
+  const baseIndent = baseOpts.indent || 0;
+  const acc = baseOpts.accepted;
+
+  function tableSep(line) { return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line) && line.includes("-"); }
+  function tableCells(line) { let s = line.trim(); if (s.startsWith("|")) s = s.slice(1); if (s.endsWith("|")) s = s.slice(0, -1); return s.split("|").map(c => c.trim()); }
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+
+    // fenced code
+    const fence = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      const buf = []; i++;
+      while (i < lines.length && !/^(```+|~~~+)\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      buf.forEach(l => { out += _para(l || "\u00A0", { accepted: acc, indent: baseIndent + 360, runFmt: { mono: 1 } }); });
+      continue;
+    }
+    // heading
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { out += _para(h[2].trim(), { accepted: acc, heading: Math.min(h[1].length, 6) }); i++; continue; }
+    // hr
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out += _para("________", { accepted: acc, indent: baseIndent }); i++; continue; }
+    // table
+    if (line.includes("|") && i + 1 < lines.length && tableSep(lines[i + 1])) {
+      const headers = tableCells(line); i += 2;
+      const rows = [headers];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { rows.push(tableCells(lines[i])); i++; }
+      out += _docxTable(rows, acc);
+      continue;
+    }
+    // blockquote
+    if (/^\s*>/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+      out += _blocksToDocx(buf.join("\n"), { accepted: acc, indent: baseIndent + 360 });
+      continue;
+    }
+    // list
+    const lm = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (lm) {
+      const ordered = /\d/.test(lm[2]);
+      while (i < lines.length) {
+        const m2 = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if (!m2) break;
+        const lvl = Math.min(Math.floor((m2[1].replace(/\t/g, "    ").length) / 2), 8);
+        out += _para(m2[3], { accepted: acc, listLevel: lvl });
+        i++;
+      }
+      continue;
+    }
+    // paragraph
+    const para = [];
+    while (i < lines.length && lines[i].trim() &&
+           !/^(#{1,6})\s+/.test(lines[i]) && !/^\s*>/.test(lines[i]) &&
+           !/^(```+|~~~+)/.test(lines[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i]) &&
+           !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i])) { para.push(lines[i]); i++; }
+    out += _para(para.join(" ").trim(), { accepted: acc, indent: baseIndent });
+  }
+  return out;
+}
+function _docxTable(rows, accepted) {
+  if (!rows.length) return "";
+  const cols = Math.max.apply(null, rows.map(r => r.length));
+  let t = '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/>' +
+    '<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr>';
+  // tblGrid defines the columns (required, must precede rows)
+  t += "<w:tblGrid>";
+  for (let c = 0; c < cols; c++) t += '<w:gridCol w:w="' + Math.floor(9000 / cols) + '"/>';
+  t += "</w:tblGrid>";
+  rows.forEach((row, ri) => {
+    t += "<w:tr>";
+    for (let c = 0; c < cols; c++) {
+      const cell = row[c] || "";
+      const fmt = ri === 0 ? { b: 1 } : {};
+      t += '<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr>' +
+        "<w:p>" + _runsFromNodes(parseInline(cell), fmt, accepted) + "</w:p></w:tc>";
+    }
+    t += "</w:tr>";
+  });
+  t += "</w:tbl>";
+  // a table must be followed by a paragraph in DOCX
+  t += "<w:p/>";
+  return t;
+}
+
 function exportDOCX(accepted) {
   _trackId = 1; _relId = 100; _docxRels = []; _comments = []; _commentId = 0;
   const nb = computeNumbering();
@@ -3006,8 +3333,17 @@ function exportDOCX(accepted) {
       if (rt.id === "mark") rtFmt.hl = 1;
       if (Object.keys(rtFmt).length) opts.runFmt = rtFmt;
       if (rt.kind === "block" && opts.listLevel == null) opts.indent = indent + 360; // blockquote/article/aside extra indent
-      body += _para(r.topic, opts);
-      if (r.note) body += _para(r.note, { accepted, quote: true, indent: indent });
+      // topic: first line keeps the level's heading/list semantics; the rest
+      // (if any) renders as full block markdown after it.
+      const topicStr = String(r.topic || "");
+      const nlIdx = topicStr.indexOf("\n");
+      const firstLine = nlIdx === -1 ? topicStr : topicStr.slice(0, nlIdx);
+      body += _para(firstLine, opts);
+      if (nlIdx !== -1) {
+        const rest = topicStr.slice(nlIdx + 1);
+        if (rest.trim()) body += _blocksToDocx(rest, { accepted, indent: indent });
+      }
+      if (r.note) body += _blocksToDocx(r.note, { accepted, indent: indent + 360 });
       // data columns (right of topic) as a simple labeled paragraph
       const dataCols = rightDataColumns();
       for (const c of dataCols) {
@@ -3315,6 +3651,19 @@ document.addEventListener("keydown", (e) => {
   else if (mod && e.shiftKey && k === "s") { e.preventDefault(); clipboardSaveProject(); }
   else if (mod && !e.shiftKey && k === "s") { e.preventDefault(); saveDoc(); }
   else if (mod && !e.shiftKey && k === "f") { e.preventDefault(); document.getElementById("dlg-find").showModal(); document.getElementById("find-text").focus(); }
+  else if (!mod && !e.altKey && e.key === "/") {
+    // jump into the outline (skip when typing in a field or a dialog is open)
+    const t = e.target;
+    const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+    const dlgOpen = document.querySelector("dialog[open]");
+    if (typing || dlgOpen) return;
+    e.preventDefault();
+    const list = flatVisible();
+    if (!list.length) { announce("Osnova je prázdná"); return; }
+    const targetId = (selectedId && findRow(selectedId)) ? selectedId : list[0].row.id;
+    selectRow(targetId, true);
+    announce("Osnova, " + describeRowBrief(targetId));
+  }
 });
 
 /* Tree container: pressing Enter/arrow when nothing selected */
@@ -3354,14 +3703,18 @@ function buildHelp() {
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td><td>Načíst projekt ze schránky</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Vložit projekt do schránky</td></tr>
 <tr><td><kbd>Mezerník</kbd></td><td>Přepnout stav „hotovo"</td></tr>
+<tr><td><kbd>/</kbd></td><td>Skočit do osnovy (na vybraný nebo první řádek)</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>První / poslední viditelný řádek</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Uložit .mroutline</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>F</kbd></td><td>Najít</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>u</kbd></td><td>V editoru řádku: uložit řádek (přístupová klávesa)</td></tr>
 </table>
 <p>Každý řádek má vlastní tlačítka: <strong>Upravit</strong> (otevře editor celého řádku — téma, poznámka i všechny sloupce) a rozbalovací nabídku <strong>Akce</strong> s volbami přidat sourozence/potomka, přesun nahoru/dolů, odsadit/předsadit, hoist (zaměřit jen na tuto větev) / zrušit hoist, sbalit/rozbalit a smazat. Sbalování má i vlastní trojúhelníček na začátku řádku. V horní liště je jen práce s dokumentem (nový, otevřít, uložit, hledání, export/import) a přepínač <strong>Skrýt panely</strong>, kterým schováš postranní panely a uvolníš celou šířku pro osnovu.</p>
 <p>Téma se v seznamu zobrazuje vyrenderované, a pokud je úrovni přiřazen nadpis (H1–H6), i jako odpovídající nadpis. Hierarchie je tvořena vnořenými seznamy (přístupné pro čtečky). Seznam nic needituje přímo — všechny hodnoty se mění v editoru řádku.</p>
 <h3>Markdown</h3>
-<p><code>**tučné**</code>, <code>*kurzíva*</code>, <code>\`kód\`</code>, <code>~~přeškrtnuté~~</code>, <code>[text](https://odkaz)</code></p>
+<p>V tématu, textových sloupcích i poznámkách se vykresluje <strong>plný Markdown</strong> — nejen inline, ale i blokové prvky:</p>
+<p>Inline: <code>**tučné**</code>, <code>*kurzíva*</code>, <code>\`kód\`</code>, <code>~~přeškrtnuté~~</code>, <code>[text](https://odkaz)</code>. Blokové: nadpisy <code>#</code> až <code>######</code>, odrážkové i číslované seznamy (včetně vnořených přes odsazení), citace <code>&gt;</code>, blok kódu ohraničený <code>\`\`\`</code>, vodorovná čára <code>---</code> a tabulky <code>| A | B |</code> s oddělovačem <code>|---|---|</code>.</p>
+<p>Plný Markdown se promítá i do HTML a DOCX exportu (včetně tabulek). Pozn.: u nadpisové úrovně se první řádek tématu bere jako samotný nadpis a případný další blokový obsah se vykreslí pod ním.</p>
 <h3>CriticMarkup (sledované změny)</h3>
 <table class="help">
 <tr><th>Zápis</th><th>Význam</th><th>V DOCX</th></tr>
@@ -3425,6 +3778,14 @@ function loadSample() {
 }
 
 /* ---------- Full refresh ---------- */
+// Keep the visible heading and the window title in sync with the document title.
+function refreshDocTitle() {
+  const t = (doc.meta && doc.meta.title || "").trim();
+  const shown = t || "Bez názvu";
+  const el = document.getElementById("app-title");
+  if (el) el.textContent = shown;
+  document.title = t ? (t + " — MRoutliner") : "MRoutliner";
+}
 function fullRefresh() {
   render();
   refreshColumns();
@@ -3432,6 +3793,7 @@ function fullRefresh() {
   refreshStyles();
   refreshMeta();
   refreshFilters();
+  refreshDocTitle();
 }
 
 /* ---------- Init ---------- */
