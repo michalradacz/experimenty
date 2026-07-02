@@ -211,10 +211,10 @@
   .note-row {
     background: var(--note-bg);
     border-bottom: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
     font-size: 14px;
     padding-top: 2px; padding-bottom: 6px; padding-right: 8px;
   }
-  .note-row .note-label { font-size: 11px; color: var(--muted); font-weight: 600; }
   .rownum {
     flex: 0 0 auto;
     color: var(--muted);
@@ -907,14 +907,30 @@ function parseDate(str) {
   const parsed = new Date(str);
   return isNaN(parsed.getTime()) ? null : parsed;
 }
+// Parse a stored date value into a local Date. Bare "YYYY-MM-DD" is treated as
+// a local calendar date (not UTC midnight) to avoid off-by-one-day shifts.
+function dateValueToLocal(v) {
+  if (!v) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+  if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+// Convert a stored date value to the YYYY-MM-DD a native <input type=date> wants.
+function isoToDateInput(v) {
+  const d = dateValueToLocal(v);
+  if (!d) return "";
+  const y = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, "0"), da = String(d.getDate()).padStart(2, "0");
+  return y + "-" + mo + "-" + da;
+}
 function formatDate(iso, fmt) {
   if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
+  const d = dateValueToLocal(iso);
+  if (!d) return iso;
   switch (fmt) {
     case "datetime": return d.toLocaleString("cs-CZ");
     case "long": return d.toLocaleDateString("cs-CZ", { day: "numeric", month: "long", year: "numeric" });
-    case "iso": return d.toISOString().slice(0, 10);
+    case "iso": return isoToDateInput(iso);
     default: return d.toLocaleDateString("cs-CZ");
   }
 }
@@ -1278,10 +1294,8 @@ function render() {
       if (r.note) {
         const noteRow = document.createElement("div");
         noteRow.className = "note-row";
-        const lbl = document.createElement("span");
-        lbl.className = "note-label";
-        lbl.textContent = "Poznámka: ";
-        noteRow.appendChild(lbl);
+        noteRow.setAttribute("role", "note");
+        noteRow.setAttribute("aria-label", "Poznámka");
         const noteContent = document.createElement("span");
         noteContent.className = "rendered note-rendered";
         noteContent.innerHTML = renderMarkdown(r.note, "review");
@@ -1449,7 +1463,11 @@ function onRowKeydown(e, r) {
       else { const f = findRow(r.id); if (f && f.parent) { selectRow(f.parent.id, true); announce(describeRowBrief(f.parent.id)); } }
       break;
     case "Enter":
-      e.preventDefault(); openRowEditor(r.id); break;
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) addChild(r.id);
+      else if (e.shiftKey) addSibling(r.id);
+      else openRowEditor(r.id);
+      break;
     case ".":
     case ">":
       e.preventDefault(); indentRow(r.id); break;
@@ -1465,6 +1483,13 @@ function onRowKeydown(e, r) {
     case "t":
     case "T":
       e.preventDefault(); openRowMenu(r.id); break;
+    case "h":
+    case "H":
+      e.preventDefault();
+      if (focusRootId === r.id) clearFocus();
+      else if (r.children.length) focusSection(r.id);
+      else announce("Řádek nemá podúrovně, nelze hoistovat");
+      break;
     case "a":
     case "A":
       e.preventDefault(); moveRow(r.id, -1); break;
@@ -1637,7 +1662,7 @@ function buildColumnField(col, value) {
   }
   const l = document.createElement("label"); l.setAttribute("for", id);
   if (col.type === "markdown") l.textContent = col.title + " (Markdown + CriticMarkup)";
-  else if (col.type === "date") l.textContent = col.title + " (datum, např. dnes, +2d, 15.6.2026)";
+  else if (col.type === "date") l.textContent = col.title + " (datum)";
   else if (col.type === "duration") l.textContent = col.title + " (trvání, např. 1d 4h)";
   else l.textContent = col.title;
   f.appendChild(l);
@@ -1645,7 +1670,7 @@ function buildColumnField(col, value) {
   let inp;
   if (col.type === "markdown") { inp = document.createElement("textarea"); inp.rows = 2; inp.value = value || ""; }
   else if (col.type === "number") { inp = document.createElement("input"); inp.type = "number"; inp.value = (value == null ? "" : value); }
-  else if (col.type === "date") { inp = document.createElement("input"); inp.type = "text"; inp.value = value ? formatDate(value, col.format) : ""; }
+  else if (col.type === "date") { inp = document.createElement("input"); inp.type = "date"; inp.value = isoToDateInput(value); }
   else if (col.type === "duration") { inp = document.createElement("input"); inp.type = "text"; inp.value = value || ""; }
   else if (col.type === "popup") {
     inp = document.createElement("select");
@@ -1671,11 +1696,7 @@ function saveRowEditor() {
     const el = document.getElementById("row-ed-col-" + col.id);
     if (!el) return;
     if (col.type === "checkbox") { r.cells[col.id] = el.checked ? 1 : 0; }
-    else if (col.type === "date") {
-      const d = parseDate(el.value);
-      if (d) r.cells[col.id] = d.toISOString();
-      else r.cells[col.id] = "";
-    } else { r.cells[col.id] = el.value; }
+    else if (col.type === "date") { r.cells[col.id] = el.value || ""; } else { r.cells[col.id] = el.value; }
   });
   document.getElementById("dlg-row").close();
   render();
@@ -2241,9 +2262,12 @@ function evalCondition(r, cond) {
     return false;
   }
   if (type === "date") {
-    const rd = raw ? new Date(raw).getTime() : NaN;
-    const cd = parseDate(cond.value || "");
-    const cdt = cd ? cd.getTime() : NaN;
+    const rdDate = dateValueToLocal(raw);
+    const rd = rdDate ? rdDate.getTime() : NaN;
+    // filter value may be a plain date or a relative term like "dnes"/"+7d"
+    let cdDate = dateValueToLocal(cond.value);
+    if (!cdDate) cdDate = parseDate(cond.value || "");
+    const cdt = cdDate ? cdDate.getTime() : NaN;
     if (isNaN(rd) || isNaN(cdt)) return false;
     if (cond.op === "before") return rd < cdt;
     if (cond.op === "after") return rd > cdt;
@@ -2690,7 +2714,7 @@ function exportTXT() {
   let out = "";
   walk(doc.rows, (r, p, i, depth) => {
     out += "\t".repeat(depth - 1) + plainTopic(r) + "\n";
-    if (r.note) out += "\t".repeat(depth) + "[poznámka] " + nodesToPlain(parseInline(r.note), "accepted") + "\n";
+    if (r.note) out += "\t".repeat(depth) + nodesToPlain(parseInline(r.note), "accepted") + "\n";
   });
   return out;
 }
@@ -3072,11 +3096,14 @@ function buildHelp() {
 <tr><td><kbd>→</kbd></td><td>Rozbalit větev (nebo přejít na potomka)</td></tr>
 <tr><td><kbd>←</kbd></td><td>Sbalit větev (nebo přejít na rodiče)</td></tr>
 <tr><td><kbd>Enter</kbd></td><td>Otevřít editor řádku (téma, poznámka, textové sloupce)</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Přidat řádek za aktuální (a otevřít editor)</td></tr>
+<tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd></td><td>Přidat potomka (a otevřít editor)</td></tr>
 <tr><td><kbd>.</kbd></td><td>Odsadit řádek (zařadit pod předchozí)</td></tr>
 <tr><td><kbd>,</kbd></td><td>Předsadit řádek (vyřadit o úroveň výš)</td></tr>
 <tr><td><kbd>m</kbd></td><td>Upravit poznámku řádku</td></tr>
 <tr><td><kbd>i</kbd></td><td>Přečíst kompletní informace o řádku (umístění, stav, sloupce, poznámka)</td></tr>
 <tr><td><kbd>t</kbd></td><td>Otevřít nabídku akcí řádku</td></tr>
+<tr><td><kbd>h</kbd></td><td>Hoist / zrušit hoist (zaměřit jen na tuto větev)</td></tr>
 <tr><td><kbd>a</kbd> / <kbd>d</kbd></td><td>Posunout položku nahoru / dolů (přesun řádku, ne kurzoru)</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>o</kbd> / <kbd>s</kbd> / <kbd>e</kbd></td><td>Otevřít / Uložit / Export (přístupová klávesa, podle prohlížeče může být i Alt+Shift)</td></tr>
 <tr><td><kbd>Mezerník</kbd></td><td>Přepnout stav „hotovo"</td></tr>
