@@ -3019,6 +3019,17 @@ function renderToolbar() {
   }, 'Stáhnout MRAI'));
   bar.appendChild(g1);
 
+  const gClip = el('div', { class: 'group' });
+  gClip.appendChild(el('button', {
+    class: 'btn', title: 'Načíst projekt ze schránky (Ctrl+Shift+O)',
+    onclick: function () { loadFromClipboard(); }
+  }, 'Načíst ze schránky'));
+  gClip.appendChild(el('button', {
+    class: 'btn', title: 'Vložit projekt do schránky (Ctrl+Shift+S)',
+    onclick: function () { saveToClipboard(); }
+  }, 'Vložit do schránky'));
+  bar.appendChild(gClip);
+
   const g2 = el('div', { class: 'group' });
   g2.appendChild(el('button', {
     class: 'btn primary', title: 'Přehrát (F5)',
@@ -5005,7 +5016,9 @@ function openHelpDialog() {
     [
       ['F1 nebo ?', 'Tato nápověda'],
       ['F5 nebo Ctrl+P', 'Přehrát příběh'],
-      ['Ctrl+S', 'Stáhnout JSON'],
+      ['Ctrl+S', 'Stáhnout MRAI'],
+      ['Ctrl+Shift+O', 'Načíst projekt ze schránky'],
+      ['Ctrl+Shift+S', 'Vložit projekt do schránky'],
       ['Ctrl+F', 'Hledat v příběhu'],
       ['Ctrl+K', 'Snímek aktuálního stavu'],
       ['Esc', 'Zavřít dialog']
@@ -5274,6 +5287,185 @@ function createPlayerTimer() {
 /* ----------------------------------------------------------------------
    14) STAHOVÁNÍ JSON
    ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+   PRÁCE SE SCHRÁNKOU (Načíst / Vložit celý projekt)
+   ---------------------------------------------------------------------- */
+function loadFromClipboard() {
+  // 1. Zkus moderní Clipboard API
+  if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+    navigator.clipboard.readText().then(function (text) {
+      if (!text || !text.trim()) {
+        toast('Schránka je prázdná', 'error');
+        openClipboardFallbackLoad('');
+        return;
+      }
+      const parsed = tryParseProject(text);
+      if (parsed.ok) {
+        applyLoadedProject(parsed.doc);
+      } else {
+        toast('Ve schránce není platný projekt: ' + parsed.error, 'error');
+        openClipboardFallbackLoad(text);
+      }
+    }).catch(function (err) {
+      // Prohlížeč nedovolil čtení bez fokusu na dokument nebo bez zabezpečeného kontextu
+      openClipboardFallbackLoad('');
+    });
+  } else {
+    // Starý prohlížeč – přímo fallback
+    openClipboardFallbackLoad('');
+  }
+}
+
+function saveToClipboard() {
+  State.doc.modifiedAt = new Date().toISOString();
+  const json = JSON.stringify(State.doc, null, 2);
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(json).then(function () {
+      toast('Projekt zkopírován do schránky', 'success');
+      announce('Projekt zkopírován do schránky');
+    }).catch(function (err) {
+      openClipboardFallbackSave(json);
+    });
+  } else {
+    openClipboardFallbackSave(json);
+  }
+}
+
+function tryParseProject(text) {
+  try {
+    const doc = JSON.parse(text);
+    if (!doc || !Array.isArray(doc.chapters)) {
+      return { ok: false, error: 'Neplatný formát (chybí struktura kapitol)' };
+    }
+    return { ok: true, doc: doc };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function applyLoadedProject(doc) {
+  State.doc = doc;
+  State.ui.focusedCardId = null;
+  saveAutosave();
+  renderEditor();
+  toast('Projekt načten', 'success');
+  announce('Projekt načten ze schránky');
+}
+
+function openClipboardFallbackLoad(prefill) {
+  openModal('Vložit projekt ze schránky', function () {
+    const wrap = el('div');
+    wrap.appendChild(el('p', null, 'Přímý přístup ke schránce se nezdařil (často to prohlížeč blokuje z bezpečnostních důvodů). Vložte JSON projektu do pole níže a stiskněte Načíst.'));
+
+    const label = el('label', { for: 'clip-load-ta' }, 'JSON projektu');
+    label.style.display = 'block';
+    label.style.fontWeight = '600';
+    label.style.fontSize = '0.85rem';
+    label.style.marginBottom = '0.3rem';
+    wrap.appendChild(label);
+
+    const ta = el('textarea', {
+      id: 'clip-load-ta', rows: '12',
+      placeholder: '{ "version": "1.0", "title": "…", "chapters": […] }'
+    });
+    ta.style.width = '100%';
+    ta.style.fontFamily = "'JetBrains Mono', monospace";
+    ta.style.fontSize = '0.8rem';
+    ta.value = prefill || '';
+    wrap.appendChild(ta);
+
+    const status = el('p', {
+      class: 'field-hint',
+      role: 'status',
+      'aria-live': 'polite',
+      style: { marginTop: '0.5rem' }
+    }, 'Vložte JSON a stiskněte Načíst.');
+    wrap.appendChild(status);
+
+    const actions = el('div', { style: { display: 'flex', gap: '0.5rem', marginTop: '1rem' } });
+    actions.appendChild(el('button', {
+      class: 'btn primary',
+      onclick: function () {
+        const parsed = tryParseProject(ta.value);
+        if (parsed.ok) {
+          applyLoadedProject(parsed.doc);
+          closeModal();
+        } else {
+          status.textContent = 'Chyba: ' + parsed.error;
+          toast('Chyba: ' + parsed.error, 'error');
+        }
+      }
+    }, 'Načíst'));
+    actions.appendChild(el('button', {
+      class: 'btn',
+      onclick: closeModal
+    }, 'Zrušit'));
+    wrap.appendChild(actions);
+
+    setTimeout(function () { ta.focus(); }, 100);
+    return wrap;
+  }, { large: true });
+}
+
+function openClipboardFallbackSave(json) {
+  openModal('Zkopírovat projekt do schránky', function () {
+    const wrap = el('div');
+    wrap.appendChild(el('p', null, 'Přímý přístup ke schránce se nezdařil. Text projektu je v poli níže – buď stiskněte tlačítko Vybrat a kopírovat, nebo označte text a použijte Ctrl+C.'));
+
+    const label = el('label', { for: 'clip-save-ta' }, 'JSON projektu');
+    label.style.display = 'block';
+    label.style.fontWeight = '600';
+    label.style.fontSize = '0.85rem';
+    label.style.marginBottom = '0.3rem';
+    wrap.appendChild(label);
+
+    const ta = el('textarea', {
+      id: 'clip-save-ta', rows: '12', readonly: true
+    });
+    ta.style.width = '100%';
+    ta.style.fontFamily = "'JetBrains Mono', monospace";
+    ta.style.fontSize = '0.8rem';
+    ta.value = json;
+    wrap.appendChild(ta);
+
+    const status = el('p', {
+      class: 'field-hint',
+      role: 'status',
+      'aria-live': 'polite',
+      style: { marginTop: '0.5rem' }
+    }, 'Připraveno ' + json.length + ' znaků.');
+    wrap.appendChild(status);
+
+    const actions = el('div', { style: { display: 'flex', gap: '0.5rem', marginTop: '1rem' } });
+    actions.appendChild(el('button', {
+      class: 'btn primary',
+      onclick: function () {
+        ta.focus();
+        ta.select();
+        let copied = false;
+        try {
+          copied = document.execCommand('copy');
+        } catch (e) { copied = false; }
+        if (copied) {
+          status.textContent = 'Zkopírováno do schránky.';
+          toast('Zkopírováno do schránky', 'success');
+        } else {
+          status.textContent = 'Automatické kopírování nefunguje – stiskněte Ctrl+C ručně.';
+          toast('Stiskněte Ctrl+C ručně', 'error');
+        }
+      }
+    }, 'Vybrat a kopírovat'));
+    actions.appendChild(el('button', {
+      class: 'btn',
+      onclick: closeModal
+    }, 'Zavřít'));
+    wrap.appendChild(actions);
+
+    setTimeout(function () { ta.focus(); ta.select(); }, 100);
+    return wrap;
+  }, { large: true });
+}
+
 function downloadJson() {
   State.doc.modifiedAt = new Date().toISOString();
   const json = JSON.stringify(State.doc, null, 2);
@@ -5928,6 +6120,17 @@ function setupKeyboard() {
       return;
     }
     if (e.ctrlKey || e.metaKey) {
+      // Nejdřív Shift-kombinace pro schránku
+      if (e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+        e.preventDefault();
+        loadFromClipboard();
+        return;
+      }
+      if (e.shiftKey && (e.key === 'S' || e.key === 's')) {
+        e.preventDefault();
+        saveToClipboard();
+        return;
+      }
       if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         downloadJson();

@@ -232,6 +232,12 @@
   /* Headings shown inline in the tree, scaled but not as huge as document H1 */
   .topic-rendered.as-heading { font-weight: 700; line-height: 1.25; }
   .topic-prefix { color: var(--muted); font-weight: 600; margin-right: 2px; }
+  .topic-rendered blockquote.rowtype { border-left: 3px solid var(--border-strong); margin: 0; padding: 0 0 0 8px; font-style: italic; }
+  .topic-rendered article.rowtype { border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; display: inline-block; }
+  .topic-rendered aside.rowtype { background: var(--note-bg); border-left: 3px solid var(--hl-bg); padding: 0 6px; }
+  .topic-rendered mark.rowtype { background: var(--hl-bg); }
+  .topic-rendered ins.rowtype { background: var(--ins-bg); text-decoration: none; }
+  .topic-rendered del.rowtype { background: var(--del-bg); }
   .topic-rendered.as-heading.h1 { font-size: 1.35em; }
   .topic-rendered.as-heading.h2 { font-size: 1.22em; }
   .topic-rendered.as-heading.h3 { font-size: 1.12em; }
@@ -304,15 +310,25 @@
   }
   ul.flat { list-style: none; margin: 0; padding: 0; }
   ul.flat li { margin: 2px 0; }
-  .section-link {
-    display: block; width: 100%; text-align: left;
-    border: 1px solid transparent; background: transparent;
-    padding: 3px 6px; border-radius: 4px;
+  ul.section-tree, ul.section-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
-  .section-link:hover { background: var(--row-hover); border-color: var(--border); }
-  .section-link.depth-1 { padding-left: 18px; }
-  .section-link.depth-2 { padding-left: 34px; }
-  .section-link.depth-3 { padding-left: 50px; }
+  ul.section-tree ul {
+    margin-left: 12px;
+    border-left: 1px solid var(--border);
+    padding-left: 8px;
+  }
+  ul.section-tree li { margin: 1px 0; }
+  .section-link {
+    display: block;
+    text-align: left;
+    padding: 2px 4px; border-radius: 4px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .section-link:hover { background: var(--row-hover); text-decoration: underline; }
   .badge {
     display: inline-block; font-size: 11px; padding: 1px 6px;
     border-radius: 10px; background: var(--accent); color: var(--accent-fg);
@@ -349,6 +365,10 @@
       <button type="button" id="btn-new">Nový</button>
       <button type="button" id="btn-open" accesskey="o">Otevřít…</button>
       <button type="button" id="btn-save" accesskey="s">Uložit .mroutline</button>
+    </div>
+    <div class="group">
+      <button type="button" id="btn-clip-load" title="Načíst projekt ze schránky (Ctrl+Shift+O)">Načíst ze schránky</button>
+      <button type="button" id="btn-clip-save" title="Vložit projekt do schránky (Ctrl+Shift+S)">Vložit do schránky</button>
     </div>
     <div class="group">
       <button type="button" id="btn-add-root">Přidat řádek na konec</button>
@@ -480,6 +500,19 @@
   <div class="dialog-actions">
     <button type="button" data-close>Zavřít</button>
     <button type="button" id="btn-pick-import">Vybrat soubor…</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-clip" aria-label="Načíst projekt ze schránky">
+  <h2 style="margin-top:0">Načíst projekt ze schránky</h2>
+  <p class="hint">Vlož sem JSON projektu (Ctrl+V / Cmd+V) a stiskni Načíst.</p>
+  <div class="field">
+    <label for="clip-text">JSON projektu</label>
+    <textarea id="clip-text" rows="10" style="width:100%" aria-label="JSON projektu ze schránky"></textarea>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" data-close>Zrušit</button>
+    <button type="button" id="btn-clip-load-text">Načíst</button>
   </div>
 </dialog>
 
@@ -623,11 +656,13 @@ function newDoc() {
     numbering: {
       enabled: false,
       levels: [
-        // per-level scheme; index 0 = level 1
+        // per-level scheme; index 0 = level 1 (up to 6 levels)
         defaultNumLevel("decimal"),
         defaultNumLevel("decimal"),
         defaultNumLevel("lower-alpha"),
         defaultNumLevel("lower-roman"),
+        defaultNumLevel("decimal"),
+        defaultNumLevel("lower-alpha"),
       ],
       hierarchical: true,
       separator: ".",
@@ -651,9 +686,26 @@ function newRow(topic) {
     status: 0, // 0 none, 1 checked
     collapsed: false,
     namedStyles: [],
+    rowType: "normal",
     children: [],
   };
 }
+
+// Row semantic types. Each maps to an HTML tag used to wrap the whole element
+// on display and in exports. "kind" = inline (wraps just the topic text) or
+// block (wraps the whole row block). label = Czech UI name.
+const ROW_TYPES = [
+  { id: "normal", label: "Normální", tag: null, kind: "none" },
+  { id: "strong", label: "Zvýrazněné (strong)", tag: "strong", kind: "inline" },
+  { id: "em", label: "Důležité (emphasis)", tag: "em", kind: "inline" },
+  { id: "ins", label: "Vloženo (ins)", tag: "ins", kind: "inline" },
+  { id: "del", label: "Odstraněno (del)", tag: "del", kind: "inline" },
+  { id: "mark", label: "Zvýrazněno (mark)", tag: "mark", kind: "inline" },
+  { id: "blockquote", label: "Citace (blockquote)", tag: "blockquote", kind: "block" },
+  { id: "article", label: "Článek (article)", tag: "article", kind: "block" },
+  { id: "aside", label: "Poznámka (aside)", tag: "aside", kind: "block" },
+];
+function rowTypeMeta(id) { return ROW_TYPES.find(t => t.id === id) || ROW_TYPES[0]; }
 
 let doc = newDoc();
 let selectedId = null;
@@ -1143,11 +1195,14 @@ function buildRowContent(r, depth) {
   const numTxt = (doc.numbering.enabled && numberingMap[r.id]) ? numberingMap[r.id] + " " : "";
   const topicPlain = plainTopic(r) || "prázdný řádek";
   const tagLabel = /^h[1-6]$/.test(tag) ? ("nadpis úrovně " + tag[1] + ", ") : "";
+  const rtMeta = rowTypeMeta(r.rowType);
+  const rtLabel = (rtMeta.id !== "normal") ? (", typ " + rtMeta.label.replace(/\s*\(.*\)\s*/, "")) : "";
   trow.setAttribute("aria-label",
     tagLabel + numTxt + topicPlain +
     (r.children.length ? (r.collapsed ? ", sbaleno" : ", rozbaleno") : "") +
     (r.status ? ", hotovo" : "") +
-    (r.note ? ", má poznámku" : ""));
+    (r.note ? ", má poznámku" : "") +
+    rtLabel);
 
   // ----- Topic cell -----
   const topicCell = document.createElement("div");
@@ -1184,7 +1239,14 @@ function buildRowContent(r, depth) {
   if (/^h[1-6]$/.test(tag)) contentEl.classList.add("as-heading", "h" + tag[1]);
   const prefix = topicPrefix(r); // values of columns left of topic, folded into heading
   const prefixHtml = prefix ? "<span class='topic-prefix'>" + escapeHtml(prefix) + "</span>" : "";
-  contentEl.innerHTML = prefixHtml + (highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>");
+  const topicInner = highlightSearch(renderMarkdown(r.topic, "review")) || "<span class='hint'>(prázdné téma)</span>";
+  // wrap in the semantic row-type tag (both visually and semantically)
+  const rt = rowTypeMeta(r.rowType);
+  if (rt.tag) {
+    contentEl.innerHTML = prefixHtml + "<" + rt.tag + " class='rowtype rowtype-" + rt.id + "'>" + topicInner + "</" + rt.tag + ">";
+  } else {
+    contentEl.innerHTML = prefixHtml + topicInner;
+  }
   topicWrap.appendChild(contentEl);
   topicCell.appendChild(topicWrap);
   trow.appendChild(topicCell);
@@ -1548,6 +1610,8 @@ function describeRowBrief(id) {
   let s = "Úroveň " + p.depth + ", položka " + p.index + " z " + p.total;
   if (p.hasChildren) s += ", " + p.childCount + " " + (p.childCount === 1 ? "podúroveň" : (p.childCount < 5 ? "podúrovně" : "podúrovní")) + (p.collapsed ? ", sbaleno" : ", rozbaleno");
   else s += ", bez podúrovní";
+  const rt = rowTypeMeta(r.rowType);
+  if (rt.id !== "normal") s += ", typ " + rt.label.replace(/\s*\(.*\)\s*/, "");
   return s;
 }
 // Comprehensive read-out: topic, position, collapse, status, columns, note.
@@ -1570,6 +1634,9 @@ function describeRowFull(id) {
   else parts.push("bez podúrovní");
   // row status (label distinct from any column titled 'Stav')
   parts.push("Dokončeno: " + (r.status ? "ano" : "ne"));
+  // row type
+  const rtFull = rowTypeMeta(r.rowType);
+  if (rtFull.id !== "normal") parts.push("Typ: " + rtFull.label.replace(/\s*\(.*\)\s*/, ""));
   // column values
   const cols = visibleColumns();
   for (let ci = 0; ci < cols.length; ci++) {
@@ -1607,6 +1674,13 @@ function openRowEditor(id, focusColId) {
   const prevLbl = document.createElement("div"); prevLbl.className = "hint"; prevLbl.textContent = "Náhled tématu:";
   const prev = document.createElement("div"); prev.id = "row-ed-preview"; prev.className = "rendered editor-preview";
   prevWrap.appendChild(prevLbl); prevWrap.appendChild(prev); body.appendChild(prevWrap);
+
+  // Row type (semantic wrapping tag)
+  const typeWrap = document.createElement("div"); typeWrap.className = "field";
+  const typeLbl = document.createElement("label"); typeLbl.textContent = "Typ řádku (sémantika)"; typeLbl.setAttribute("for", "row-ed-type");
+  const typeSel = document.createElement("select"); typeSel.id = "row-ed-type";
+  ROW_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t.id; o.textContent = t.label; if ((r.rowType || "normal") === t.id) o.selected = true; typeSel.appendChild(o); });
+  typeWrap.appendChild(typeLbl); typeWrap.appendChild(typeSel); body.appendChild(typeWrap);
 
   // All non-topic, non-status columns, each with the right input for its type.
   // (Status has its own dedicated checkbox below.)
@@ -1691,6 +1765,8 @@ function saveRowEditor() {
   r.topic = document.getElementById("row-ed-topic").value;
   r.note = document.getElementById("row-ed-note").value;
   r.status = document.getElementById("row-ed-status").checked ? 1 : 0;
+  const typeEl = document.getElementById("row-ed-type");
+  if (typeEl) r.rowType = typeEl.value;
   doc.columns.forEach(col => {
     if (col.isTopic || col.isStatus) return;
     const el = document.getElementById("row-ed-col-" + col.id);
@@ -1705,25 +1781,53 @@ function saveRowEditor() {
 }
 
 /* ---------- Sections sidebar ---------- */
+// Is a given depth mapped to an HTML heading (h1..h6)?
+function depthIsHeading(depth) {
+  const tag = doc.levelHeadingMap[Math.min(depth, 6)] || "p";
+  return /^h[1-6]$/.test(tag);
+}
 function refreshSections() {
-  const ul = document.getElementById("section-list");
-  if (!ul) return;
-  ul.innerHTML = "";
+  const container = document.getElementById("section-list");
+  if (!container) return;
+  container.innerHTML = "";
+
+  // Collect rows that are headings, preserving hierarchy. We build a nested
+  // <ul>/<li> that mirrors only the heading rows (skipping non-heading levels
+  // but keeping their heading descendants at the correct visual nesting).
   let count = 0;
-  walk(doc.rows, (r, p, i, depth) => {
-    if (depth > 3) return;
-    count++;
-    const li = document.createElement("li");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "section-link depth-" + (depth - 1);
-    const num = doc.numbering.enabled && numberingMap[r.id] ? numberingMap[r.id] + " " : "";
-    btn.textContent = num + (plainTopic(r) || "(prázdné)");
-    btn.addEventListener("click", () => { expandTo(r.id); render(); selectRow(r.id, true); });
-    li.appendChild(btn);
-    ul.appendChild(li);
-  });
-  if (!count) ul.innerHTML = "<li class='hint'>Žádné sekce.</li>";
+  function buildInto(parentUl, rows, depth) {
+    for (const r of rows) {
+      const isHeading = depthIsHeading(depth);
+      if (isHeading) {
+        count++;
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.className = "section-link";
+        a.href = "#trow-" + r.id;
+        const num = doc.numbering.enabled && numberingMap[r.id] ? numberingMap[r.id] + " " : "";
+        const tag = doc.levelHeadingMap[Math.min(depth, 6)];
+        a.textContent = num + (plainTopic(r) || "(prázdné)");
+        a.setAttribute("aria-label", "Nadpis úrovně " + tag[1] + ": " + (plainTopic(r) || "prázdné"));
+        a.addEventListener("click", (e) => { e.preventDefault(); expandTo(r.id); render(); selectRow(r.id, true); });
+        li.appendChild(a);
+        // children go into a nested UL under this heading
+        if (r.children.length) {
+          const childUl = document.createElement("ul");
+          buildInto(childUl, r.children, depth + 1);
+          if (childUl.children.length) li.appendChild(childUl);
+        }
+        parentUl.appendChild(li);
+      } else {
+        // non-heading level: its heading descendants attach to the current UL
+        if (r.children.length) buildInto(parentUl, r.children, depth + 1);
+      }
+    }
+  }
+  const rootUl = document.createElement("ul");
+  rootUl.className = "section-tree";
+  buildInto(rootUl, doc.rows, 1);
+  if (count) container.appendChild(rootUl);
+  else container.innerHTML = "<p class='hint'>Žádné sekce s nadpisem. Přiřaď úrovni nadpis v panelu Styly a úrovně.</p>";
 }
 
 function refreshFocusButtons() {
@@ -1963,6 +2067,8 @@ function setNumPreset(name) {
       { format: "decimal", prefix: "odst. ", suffix: "", numbered: true },
       { format: "lower-alpha", prefix: "písm. ", suffix: ")", numbered: true },
       { format: "decimal", prefix: "bod ", suffix: ".", numbered: true },
+      { format: "lower-roman", prefix: "", suffix: ".", numbered: true },
+      { format: "lower-alpha", prefix: "", suffix: ")", numbered: true },
     ];
     doc.numbering.hierarchical = false;
   } else if (name === "osnova") {
@@ -1971,10 +2077,12 @@ function setNumPreset(name) {
       { format: "upper-alpha", prefix: "", suffix: ".", numbered: true },
       { format: "decimal", prefix: "", suffix: ".", numbered: true },
       { format: "lower-alpha", prefix: "", suffix: ")", numbered: true },
+      { format: "lower-roman", prefix: "", suffix: ".", numbered: true },
+      { format: "decimal", prefix: "", suffix: ")", numbered: true },
     ];
     doc.numbering.hierarchical = false;
   } else {
-    doc.numbering.levels = [defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal")];
+    doc.numbering.levels = [defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal"), defaultNumLevel("decimal")];
     doc.numbering.hierarchical = true; doc.numbering.separator = ".";
   }
   doc.numbering.enabled = true;
@@ -2146,7 +2254,11 @@ function renderFilterConditions() {
     const noVal = ["filled", "empty", "true", "false"].includes(cond.op);
     if (!noVal) {
       let valEl;
-      if (col && col.type === "popup") {
+      if (col && col.type === "rowtype") {
+        valEl = document.createElement("select");
+        ROW_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t.id; o.textContent = t.label; if (t.id === cond.value) o.selected = true; valEl.appendChild(o); });
+        if (!cond.value) { cond.value = ROW_TYPES[0].id; valEl.value = cond.value; }
+      } else if (col && col.type === "popup") {
         valEl = document.createElement("select");
         const empty = document.createElement("option"); empty.value = ""; empty.textContent = "—"; valEl.appendChild(empty);
         (col.popupValues || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; if (v === cond.value) o.selected = true; valEl.appendChild(o); });
@@ -2222,20 +2334,26 @@ function opsForType(type) {
     case "date": return [["before", "před"], ["after", "po"], ["eq", "přesně"], ["filled", "má hodnotu"], ["empty", "je prázdné"]];
     case "checkbox": return [["true", "ano (zaškrtnuto)"], ["false", "ne (nezaškrtnuto)"]];
     case "popup": return [["eq", "= je"], ["ne", "≠ není"], ["filled", "má hodnotu"], ["empty", "je prázdné"]];
+    case "rowtype": return [["eq", "= je"], ["ne", "≠ není"]];
     default: return [["contains", "obsahuje"], ["ncontains", "neobsahuje"], ["eq", "přesně"], ["filled", "má hodnotu"], ["empty", "je prázdné"]]; // markdown/topic
   }
 }
 function conditionColumns() {
-  // topic pseudo-column + all real columns (incl. status)
-  return [{ id: "__topic__", title: "Téma (text)", type: "markdown" }].concat(doc.columns.map(c => ({ id: c.id, title: c.title, type: c.type, isStatus: c.isStatus })));
+  // topic pseudo-column + row type + all real columns (incl. status)
+  return [
+    { id: "__topic__", title: "Téma (text)", type: "markdown" },
+    { id: "__rowtype__", title: "Typ řádku", type: "rowtype" }
+  ].concat(doc.columns.map(c => ({ id: c.id, title: c.title, type: c.type, isStatus: c.isStatus })));
 }
 function condColMeta(colId) {
   if (colId === "__topic__") return { id: "__topic__", title: "Téma", type: "markdown" };
+  if (colId === "__rowtype__") return { id: "__rowtype__", title: "Typ řádku", type: "rowtype" };
   return doc.columns.find(c => c.id === colId) || null;
 }
 // Raw comparable value of a row for a condition column.
 function condRawValue(r, col) {
   if (col.id === "__topic__") return plainTopic(r);
+  if (col.id === "__rowtype__") return r.rowType || "normal";
   if (col.isStatus) return r.status ? 1 : 0;
   return r.cells[col.id];
 }
@@ -2536,6 +2654,10 @@ function normalizeDoc(d) {
   if (!d.levelHeadingMap) d.levelHeadingMap = newDoc().levelHeadingMap;
   if (!d.styles) d.styles = newDoc().styles;
   if (!d.filters) d.filters = [];
+  // pad numbering to 6 levels for older documents
+  if (d.numbering && Array.isArray(d.numbering.levels)) {
+    while (d.numbering.levels.length < 6) d.numbering.levels.push(defaultNumLevel("decimal"));
+  }
   // ensure the built-in status column exists (older files won't have it)
   if (d.columns && !d.columns.some(c => c.isStatus)) {
     const ti = d.columns.findIndex(c => c.isTopic);
@@ -2550,6 +2672,7 @@ function normalizeDoc(d) {
       if (!r.children) r.children = [];
       if (r.status == null) r.status = 0;
       if (!r.namedStyles) r.namedStyles = [];
+      if (!r.rowType) r.rowType = "normal";
       fix(r.children);
     }
   })(d.rows || []);
@@ -2572,7 +2695,9 @@ function exportHTML(dynamic, accepted) {
       const inner = num + pfxHtml + renderMarkdown(r.topic, mode);
       const hasChildren = r.children.length;
       const indentPx = depth > 1 ? 24 : 0; // incremental step; nesting compounds it
+      const rt = rowTypeMeta(r.rowType);
       body += "<div class='lvl lvl-" + depth + "' style='margin-left:" + indentPx + "px'>\n";
+      if (rt.tag) body += "<" + rt.tag + " class='rowtype rowtype-" + rt.id + "'>\n";
       if (dynamic && hasChildren) {
         body += "<details open><summary>";
         if (/^h[1-6]$/.test(tag)) body += "<" + tag + " style='display:inline'>" + inner + "</" + tag + ">";
@@ -2596,6 +2721,7 @@ function exportHTML(dynamic, accepted) {
       }
       if (hasChildren) rec(r.children, depth + 1);
       if (dynamic && hasChildren) body += "</details>\n";
+      if (rt.tag) body += "</" + rt.tag + ">\n";
       body += "</div>\n";
     }
   }
@@ -2613,6 +2739,12 @@ ins{background:#d6f0d6;text-decoration:none}del{background:#f7d6d6}
 .note{color:#444;border-left:3px solid #ccc;padding-left:.6rem;margin:.3rem 0 .6rem}
 .lvl{margin-top:.15rem}
 .lvl .lvl{border-left:1px solid #e3e3e3;padding-left:.5rem}
+blockquote.rowtype{border-left:4px solid #b0b0b0;margin:.4rem 0;padding:.2rem .8rem;color:#333;font-style:italic}
+article.rowtype{border:1px solid #ddd;border-radius:6px;padding:.4rem .8rem;margin:.4rem 0}
+aside.rowtype{background:#f6f6f2;border-left:4px solid #c9a83a;padding:.3rem .8rem;margin:.4rem 0}
+mark.rowtype{background:#ffe680}
+ins.rowtype{background:#d6f0d6;text-decoration:none}
+del.rowtype{background:#f7d6d6}
 dl.cols{margin:.2rem 0 .6rem;font-size:.92em}dl.cols dt{font-weight:600;color:#555}dl.cols dd{margin:0 0 .3rem 1rem}
 code{font-family:Menlo,Consolas,monospace;background:#f0f0f0;padding:0 3px;border-radius:3px}
 summary{cursor:pointer}
@@ -2649,13 +2781,23 @@ function exportMarkdown() {
       const tag = doc.levelHeadingMap[Math.min(depth, 6)] || "p";
       const num = doc.numbering.enabled && nb[r.id] ? nb[r.id] + " " : "";
       const pfx = topicPrefixExport(r);
+      const rt = rowTypeMeta(r.rowType);
+      // apply inline emphasis directly in Markdown; block types get a raw HTML wrap
+      let topicText = r.topic;
+      if (rt.id === "strong") topicText = "**" + topicText + "**";
+      else if (rt.id === "em") topicText = "*" + topicText + "*";
+      else if (rt.id === "del") topicText = "~~" + topicText + "~~";
+      else if (rt.id === "ins") topicText = "<ins>" + topicText + "</ins>";
+      else if (rt.id === "mark") topicText = "<mark>" + topicText + "</mark>";
+      const blockTag = (rt.kind === "block") ? rt.tag : null;
+      if (blockTag) out += "<" + blockTag + ">\n\n";
       if (/^h([1-6])$/.test(tag)) {
         const lvl = parseInt(tag[1], 10);
-        out += "#".repeat(lvl) + " " + num + pfx + r.topic + "\n\n";
+        out += "#".repeat(lvl) + " " + num + pfx + topicText + "\n\n";
       } else if (tag === "li") {
-        out += "  ".repeat(Math.max(0, depth - 1)) + "- " + num + pfx + r.topic + "\n";
+        out += "  ".repeat(Math.max(0, depth - 1)) + "- " + num + pfx + topicText + "\n";
       } else {
-        out += num + pfx + r.topic + "\n\n";
+        out += num + pfx + topicText + "\n\n";
       }
       if (r.note) out += "> " + r.note.replace(/\n/g, "\n> ") + "\n\n";
       const dataCols = rightDataColumns();
@@ -2664,6 +2806,7 @@ function exportMarkdown() {
         if (v) out += "  - **" + c.title + ":** " + v + "\n";
       }
       rec(r.children, depth + 1);
+      if (blockTag) out += "</" + blockTag + ">\n\n";
     }
   }
   rec(doc.rows, 1);
@@ -2834,7 +2977,8 @@ function _para(md, opts) {
   }
   pPr = pPr ? "<w:pPr>" + pPr + "</w:pPr>" : "";
   const prefix = opts.prefix ? _run(opts.prefix + "  ", {}) : "";
-  return "<w:p>" + pPr + prefix + _runsFromNodes(nodes, opts.quote ? { i: 1 } : {}, opts.accepted) + "</w:p>";
+  const baseFmt = Object.assign({}, opts.runFmt || {}, opts.quote ? { i: 1 } : {});
+  return "<w:p>" + pPr + prefix + _runsFromNodes(nodes, baseFmt, opts.accepted) + "</w:p>";
 }
 
 function exportDOCX(accepted) {
@@ -2853,6 +2997,15 @@ function exportDOCX(accepted) {
       const hm = tag.match(/^h([1-6])$/);
       if (hm) opts.heading = parseInt(hm[1], 10);
       else if (tag === "li") { opts.listLevel = Math.min(depth - 1, 8); }
+      // row type -> run formatting (inline) or extra indent (block)
+      const rt = rowTypeMeta(r.rowType);
+      const rtFmt = {};
+      if (rt.id === "strong" || rt.id === "ins") rtFmt.b = 1;
+      if (rt.id === "em") rtFmt.i = 1;
+      if (rt.id === "del") rtFmt.strike = 1;
+      if (rt.id === "mark") rtFmt.hl = 1;
+      if (Object.keys(rtFmt).length) opts.runFmt = rtFmt;
+      if (rt.kind === "block" && opts.listLevel == null) opts.indent = indent + 360; // blockquote/article/aside extra indent
       body += _para(r.topic, opts);
       if (r.note) body += _para(r.note, { accepted, quote: true, indent: indent });
       // data columns (right of topic) as a simple labeled paragraph
@@ -2966,6 +3119,83 @@ function saveDoc() {
   debug("Uloženo .mroutline (" + json.length + " B)");
 }
 
+/* ---------- Clipboard project I/O ---------- */
+// Apply a JSON project string as the whole document (mirrors the file-open path).
+function applyLoadedProject(text) {
+  const parsed = JSON.parse(text);
+  normalizeDoc(parsed);
+  doc = parsed; selectedId = null; focusRootId = null;
+  searchTerm = ""; statusFilter = "all"; activeConditions = []; activeRecursive = true;
+  const qf = document.getElementById("quick-filter"); if (qf) qf.value = "";
+  const sf = document.getElementById("status-filter"); if (sf) sf.value = "all";
+  fullRefresh();
+  announce("Projekt načten ze schránky");
+  debug("Načteno ze schránky: " + countRows(doc.rows) + " řádků");
+}
+// Copy the whole project JSON to the clipboard, with a manual fallback.
+async function clipboardSaveProject() {
+  const json = JSON.stringify(doc, null, 2);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(json);
+      announce("Projekt vložen do schránky");
+      debug("Do schránky vloženo " + json.length + " B");
+      return;
+    }
+    throw new Error("Clipboard API není dostupné");
+  } catch (err) {
+    // silent fallback: copy via a temporary off-screen textarea, no dialog
+    let ok = false;
+    try {
+      const t = document.createElement("textarea");
+      t.value = json;
+      t.setAttribute("aria-hidden", "true");
+      t.style.position = "absolute"; t.style.left = "-9999px"; t.style.top = "0";
+      document.body.appendChild(t);
+      t.select();
+      ok = document.execCommand("copy");
+      document.body.removeChild(t);
+    } catch (e2) { ok = false; }
+    announce(ok ? "Projekt vložen do schránky" : "Kopírování do schránky se nezdařilo");
+    debug("Fallback kopírování " + (ok ? "OK" : "selhalo") + ": " + (err && err.message));
+  }
+}
+// Load a project from the clipboard, with a manual paste fallback.
+async function clipboardLoadProject() {
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        try { applyLoadedProject(text); return; }
+        catch (parseErr) {
+          // clipboard had text but it wasn't a valid project — open dialog with it
+          const dlg = document.getElementById("dlg-clip");
+          dlg.querySelector("h2").textContent = "Načíst projekt ze schránky";
+          const ta = document.getElementById("clip-text");
+          ta.value = text;
+          document.getElementById("btn-clip-load-text").style.display = "";
+          dlg.showModal(); ta.focus();
+          announce("Obsah schránky není platný projekt, uprav a načti ručně");
+          debug("Neplatný JSON ze schránky: " + parseErr.message);
+          return;
+        }
+      }
+      throw new Error("Schránka je prázdná");
+    }
+    throw new Error("Clipboard API není dostupné");
+  } catch (err) {
+    // fallback: open the paste dialog for manual paste + Load
+    const dlg = document.getElementById("dlg-clip");
+    dlg.querySelector("h2").textContent = "Načíst projekt ze schránky";
+    const ta = document.getElementById("clip-text");
+    ta.value = "";
+    document.getElementById("btn-clip-load-text").style.display = "";
+    dlg.showModal();
+    ta.focus();
+    debug("Fallback vkládání: " + (err && err.message));
+  }
+}
+
 /* ---------- Toolbar wiring ---------- */
 function withSelected(fn, needRow) {
   if (needRow && !selectedId) { announce("Nejdřív vyber řádek"); return; }
@@ -2981,6 +3211,18 @@ document.getElementById("btn-new").addEventListener("click", () => {
 });
 document.getElementById("btn-save").addEventListener("click", saveDoc);
 document.getElementById("btn-open").addEventListener("click", () => { importMode = "open"; pickFile(); });
+document.getElementById("btn-clip-save").addEventListener("click", clipboardSaveProject);
+document.getElementById("btn-clip-load").addEventListener("click", clipboardLoadProject);
+document.getElementById("btn-clip-load-text").addEventListener("click", () => {
+  const ta = document.getElementById("clip-text");
+  try {
+    applyLoadedProject(ta.value);
+    document.getElementById("dlg-clip").close();
+  } catch (err) {
+    debug("CHYBA načtení ze schránky: " + err.message);
+    alert("Načtení selhalo: neplatný JSON projektu. " + err.message);
+  }
+});
 document.getElementById("btn-add-root").addEventListener("click", () => addSibling(doc.rows.length ? doc.rows[doc.rows.length - 1].id : null));
 document.getElementById("btn-save-row").addEventListener("click", saveRowEditor);
 document.getElementById("btn-clear-focus").addEventListener("click", clearFocus);
@@ -3068,8 +3310,11 @@ document.querySelectorAll("dialog [data-close]").forEach(btn => {
 /* ---------- Global keyboard: Ctrl/Cmd S etc ---------- */
 document.addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveDoc(); }
-  else if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); document.getElementById("dlg-find").showModal(); document.getElementById("find-text").focus(); }
+  const k = e.key.toLowerCase();
+  if (mod && e.shiftKey && k === "o") { e.preventDefault(); clipboardLoadProject(); }
+  else if (mod && e.shiftKey && k === "s") { e.preventDefault(); clipboardSaveProject(); }
+  else if (mod && !e.shiftKey && k === "s") { e.preventDefault(); saveDoc(); }
+  else if (mod && !e.shiftKey && k === "f") { e.preventDefault(); document.getElementById("dlg-find").showModal(); document.getElementById("find-text").focus(); }
 });
 
 /* Tree container: pressing Enter/arrow when nothing selected */
@@ -3106,6 +3351,8 @@ function buildHelp() {
 <tr><td><kbd>h</kbd></td><td>Hoist / zrušit hoist (zaměřit jen na tuto větev)</td></tr>
 <tr><td><kbd>a</kbd> / <kbd>d</kbd></td><td>Posunout položku nahoru / dolů (přesun řádku, ne kurzoru)</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>o</kbd> / <kbd>s</kbd> / <kbd>e</kbd></td><td>Otevřít / Uložit / Export (přístupová klávesa, podle prohlížeče může být i Alt+Shift)</td></tr>
+<tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td><td>Načíst projekt ze schránky</td></tr>
+<tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Vložit projekt do schránky</td></tr>
 <tr><td><kbd>Mezerník</kbd></td><td>Přepnout stav „hotovo"</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>První / poslední viditelný řádek</td></tr>
 <tr><td><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd></td><td>Uložit .mroutline</td></tr>
@@ -3126,13 +3373,17 @@ function buildHelp() {
 </table>
 <p class="hint">Při exportu lze zvolit, zda sledované změny zůstanou jako návrhy, nebo se rovnou přijmou. Funguje v Markdown buňkách i v poznámkách.</p>
 <h3>Číslování</h3>
-<p>V panelu „Číslování řádků" nastavíš formát pro každou úroveň (arabské, římské, písmena), předponu a příponu (např. „§ ", „odst. ", „písm. ", „)"), hierarchický režim (1.2.3) a oddělovač. U kterékoli úrovně lze zaškrtnout, že se <strong>nečísluje</strong> — taková úroveň se z čísla úplně vynechá (potomci pokračují, např. 1 → 1.1, ne 1.0.1). Předvolby pokrývají úřední styl, klasickou osnovu i desetinné číslování.</p>
+<p>V panelu „Číslování řádků" nastavíš formát pro <strong>každou z šesti úrovní</strong> (arabské, římské, písmena), předponu a příponu (např. „§ ", „odst. ", „písm. ", „)"), hierarchický režim (1.2.3) a oddělovač. U kterékoli úrovně lze zaškrtnout, že se <strong>nečísluje</strong> — taková úroveň se z čísla úplně vynechá (potomci pokračují, např. 1 → 1.1, ne 1.0.1). Předvolby pokrývají úřední styl, klasickou osnovu i desetinné číslování.</p>
+<h3>Sekce (postranní panel)</h3>
+<p>Panel Sekce ukazuje obsah dokumentu jako <strong>vnořený seznam odkazů</strong> — kliknutím skočíš na daný řádek. Zobrazují se jen řádky, jejichž úroveň je namapovaná na HTML nadpis (h1–h6) v panelu „Styly a úrovně"; úrovně mapované na odstavec či položku seznamu se v sekcích nevypisují (ale jejich nadpisové potomky se zařadí na správné místo hierarchie).</p>
+<h3>Typ řádku (sémantika)</h3>
+<p>V editoru řádku je select <strong>Typ řádku</strong>. Kromě „Normální" lze zvolit Zvýrazněné (strong), Důležité (emphasis), Vloženo (ins), Odstraněno (del), Zvýrazněno (mark), Citace (blockquote), Článek (article) a Poznámka (aside). Celý řádek (a ve výstupu celý prvek se vším všudy) se obalí příslušnou HTML značkou — přidáš tím dodatečnou sémantiku. Typ se promítá do HTML i DOCX exportu, dá se podle něj <strong>filtrovat</strong> (podmínka „Typ řádku") a odečítač ho <strong>ohlašuje</strong> při pohybu po osnově.</p>
 <h3>Sloupce a souhrny</h3>
 <p>Vícesloupcová tabulka s typy: text (Markdown), číslo, datum, trvání, zaškrtávátko, pop-up seznam. Na rodičovských řádcích se počítají souhrny (součet, min, max, průměr listů, stav). Stav řádku (hotovo/nehotovo) je vestavěný sloupec „Stav (hotovo)", který lze v panelu Sloupce zobrazit nebo skrýt jako každý jiný.</p>
 <p>V panelu Sloupce mění pořadí šipky ← →. Pokud sloupec posuneš <strong>nalevo od tématu</strong>, jeho hodnota se stane prefixem nadpisu (např. kód „ABC" → nadpis „ABC Úvod") — a to i ve všech exportech (DOCX, HTML, Markdown). Takový sloupec se přestane zobrazovat jako samostatný a žije jen v nadpisu.</p>
 <h3>Filtrování</h3>
 <p>Rychlé filtry v liště: pole „Filtr textu" hledá v tématu i poznámkách a výběr stavu (Vše / Jen hotové / Jen nehotové) filtruje podle dokončení.</p>
-<p>Pokročilé filtry najdeš v panelu „Uložené filtry" → <strong>Upravit filtr…</strong>. V dialogu skládáš podmínky nad sloupci — každý sloupec podle svého typu: text (obsahuje / přesně / neobsahuje), číslo a trvání (‹ › = ≠), datum (před / po / přesně), zaškrtávátko (ano / ne) a pop-up (= / ≠). Podmínky se kombinují logickým <strong>A</strong> (musí platit všechny). Přepínač <strong>Rekurzivně</strong> určuje, zda se u vyhovujícího řádku zobrazí i jeho rodiče (jako kontext, zešednutí), nebo jen samotné vyhovující řádky. Filtr lze <strong>Použít</strong> hned, nebo <strong>Uložit</strong> pod jménem a kdykoli později spustit tlačítkem Použít u uloženého filtru. Uložené filtry se ukládají do souboru .mroutline.</p>
+<p>Pokročilé filtry najdeš v panelu „Uložené filtry" → <strong>Upravit filtr…</strong>. V dialogu skládáš podmínky nad sloupci — každý podle svého typu: text (obsahuje / přesně / neobsahuje), číslo a trvání (‹ › = ≠), datum (před / po / přesně), zaškrtávátko (ano / ne), pop-up (= / ≠) a typ řádku (= / ≠). Podmínky se kombinují logickým <strong>A</strong> (musí platit všechny). Přepínač <strong>Rekurzivně</strong> určuje, zda se u vyhovujícího řádku zobrazí i jeho rodiče (jako kontext, zešednutí), nebo jen samotné vyhovující řádky. Filtr lze <strong>Použít</strong> hned, nebo <strong>Uložit</strong> pod jménem a kdykoli později spustit. Uložené filtry se ukládají do souboru .mroutline.</p>
 <h3>Export úrovní na nadpisy</h3>
 <p>V panelu „Styly a úrovně" se každá úroveň osnovy mapuje na sémantickou značku (nadpis 1–6, odstavec, položka seznamu) pro správný HTML a DOCX výstup. V HTML i DOCX exportu jsou hlubší úrovně navíc vizuálně odsazené doleva (každá úroveň o kousek víc), aby byla hierarchie na první pohled patrná.</p>`;
 }
@@ -3158,6 +3409,7 @@ function loadSample() {
   r1a.note = "Viz [protokol](https://example.com). {++Doplnit záložní čerpadlo++}. {>>ověřit s posádkou<<}";
   const r1b = newRow("Filtrace {--staré--} vzduchu");
   r1b.cells[hoursCol.id] = "6h"; r1b.cells[statusCol.id] = "probíhá";
+  r1b.rowType = "mark";
   r1.children.push(r1a, r1b);
 
   const r2 = newRow("Vědecké přístroje");
@@ -3165,6 +3417,7 @@ function loadSample() {
   r2a.cells[hoursCol.id] = "2d"; r2a.cells[statusCol.id] = "plán";
   const r2b = newRow("Kalibrace {==prioritní==}");
   r2b.cells[hoursCol.id] = "4h"; r2b.cells[doneCol.id] = 1;
+  r2b.rowType = "aside";
   r2.children.push(r2a, r2b);
 
   doc.rows.push(r1, r2);
