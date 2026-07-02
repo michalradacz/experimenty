@@ -6,3 +6,4 @@
 - [MRoutliner](https://michalrada.cz/experimenty/mroutliner) je alternativa k OmniOutlineru, taky přístupná a plně webová
 - [Datum](https://michalrada.cz/datum) je html jednoduchý formátovač datumu
 - [DOCX2critic](https://michalrada.cz/experimenty/docxcritic) je utilita pro převod DOCX s revizemi do Markdown s critic revizemi aby se s tím dalo pracovat
+
