@@ -181,6 +181,16 @@
   .trow.filtered-out { display: none; }
   .trow.ancestor-of-match { opacity: 0.92; }
   li.outline-item.filter-match > .trow { background: var(--row-hover); }
+  li.outline-item.filter-context > .trow { opacity: 0.6; }
+  .filter-cond-row {
+    display: flex; gap: 6px; align-items: center;
+    margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .filter-cond-row select, .filter-cond-row input { flex: 1 1 auto; min-width: 90px; }
+  .filter-cond-row .cond-remove {
+    flex: 0 0 auto; padding: 2px 8px; border-radius: 5px;
+    border: 1px solid #b03030; color: #b03030; background: transparent;
+  }
   .topic-cell {
     display: flex; align-items: flex-start; gap: 4px;
     padding: 4px 6px;
@@ -539,6 +549,27 @@
   <div class="dialog-actions">
     <button type="button" data-close>Zrušit</button>
     <button type="button" id="btn-save-row">Uložit řádek</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-filter" aria-label="Filtr">
+  <h2 style="margin-top:0">Filtr osnovy</h2>
+  <p class="hint">Zobrazí se řádky, které splňují <strong>všechny</strong> podmínky.</p>
+  <div id="filter-conditions"></div>
+  <div class="row-inline" style="margin-top:6px">
+    <button type="button" id="btn-filter-add-cond">Přidat podmínku</button>
+  </div>
+  <div class="field" style="margin-top:10px">
+    <label class="row-inline"><input type="checkbox" id="filter-recursive" checked> Rekurzivně (zobrazit i rodiče vyhovujících řádků)</label>
+  </div>
+  <div class="field">
+    <label for="filter-save-name">Uložit jako (nepovinné)</label>
+    <input type="text" id="filter-save-name" placeholder="Název filtru">
+  </div>
+  <div class="dialog-actions">
+    <button type="button" data-close>Zavřít</button>
+    <button type="button" id="btn-filter-save">Uložit filtr</button>
+    <button type="button" id="btn-filter-apply">Použít filtr</button>
   </div>
 </dialog>
 
@@ -1969,72 +2000,340 @@ function refreshMeta() {
 }
 
 /* ---------- Filters panel ---------- */
+function describeConditions(conds) {
+  if (!conds || !conds.length) return "žádné podmínky";
+  return conds.map(c => {
+    const col = condColMeta(c.colId);
+    const opLabel = (opsForType(col ? col.type : "markdown").find(o => o[0] === c.op) || [c.op, c.op])[1];
+    const val = (c.op === "filled" || c.op === "empty" || c.op === "true" || c.op === "false") ? "" : (" " + (c.value || ""));
+    return (col ? col.title : "?") + " " + opLabel + val;
+  }).join(" A ");
+}
+
 function refreshFilters() {
   const body = document.getElementById("filters-body");
   body.innerHTML = "";
-  const p = document.createElement("p"); p.className = "hint";
-  p.textContent = "Uložené filtry kombinují podmínky. Rychlý filtr textu je nahoře v liště.";
-  body.appendChild(p);
+
+  // Active filter summary + edit button
+  const active = document.createElement("div"); active.className = "field";
+  const activeLbl = document.createElement("div"); activeLbl.className = "hint";
+  activeLbl.textContent = activeConditions.length
+    ? ("Aktivní podmínky (" + (activeRecursive ? "rekurzivně" : "jen vyhovující") + "): " + describeConditions(activeConditions))
+    : "Žádné aktivní podmínky sloupců.";
+  active.appendChild(activeLbl);
+  body.appendChild(active);
+
+  const editBtn = document.createElement("button"); editBtn.type = "button"; editBtn.textContent = "Upravit filtr…";
+  editBtn.addEventListener("click", () => openFilterDialog());
+  body.appendChild(editBtn);
+  if (activeConditions.length) {
+    const clearBtn = document.createElement("button"); clearBtn.type = "button"; clearBtn.textContent = "Zrušit podmínky";
+    clearBtn.style.marginLeft = "6px";
+    clearBtn.addEventListener("click", () => { activeConditions = []; refreshFilters(); applyFilters(); });
+    body.appendChild(clearBtn);
+  }
+
+  // Saved filters
+  const hr = document.createElement("p"); hr.className = "hint"; hr.style.marginTop = "10px";
+  hr.textContent = "Uložené filtry:";
+  body.appendChild(hr);
   if (!doc.filters.length) { const e = document.createElement("p"); e.className = "hint"; e.textContent = "Žádné uložené filtry."; body.appendChild(e); }
   doc.filters.forEach((flt, i) => {
     const item = document.createElement("div"); item.className = "col-list-item";
-    const name = document.createElement("span"); name.className = "grow"; name.textContent = flt.name; item.appendChild(name);
+    const name = document.createElement("span"); name.className = "grow";
+    name.textContent = flt.name;
+    name.title = describeConditions(flt.conditions);
+    item.appendChild(name);
     const apply = document.createElement("button"); apply.type = "button"; apply.textContent = "Použít";
+    apply.setAttribute("aria-label", "Použít filtr " + flt.name);
     apply.addEventListener("click", () => applyFilter(flt)); item.appendChild(apply);
     const del = document.createElement("button"); del.type = "button"; del.textContent = "Smazat";
+    del.setAttribute("aria-label", "Smazat filtr " + flt.name);
     del.addEventListener("click", () => { doc.filters.splice(i, 1); refreshFilters(); }); item.appendChild(del);
     body.appendChild(item);
   });
-  const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.textContent = "Uložit aktuální textový filtr";
-  addBtn.addEventListener("click", () => {
-    const term = document.getElementById("quick-filter").value.trim();
-    if (!term) { announce("Není co uložit"); return; }
-    const name = prompt("Název filtru:", "Filtr: " + term);
-    if (name) { doc.filters.push({ name, type: "text", term }); refreshFilters(); }
-  });
-  body.appendChild(addBtn);
 }
 function applyFilter(flt) {
-  if (flt.type === "text") {
-    document.getElementById("quick-filter").value = flt.term;
-    searchTerm = flt.term; applyQuickFilter();
+  // load a saved filter into the active state
+  activeConditions = (flt.conditions || []).map(c => Object.assign({}, c));
+  activeRecursive = flt.recursive !== false;
+  // back-compat: older saved filters stored only { type:"text", term }
+  if (typeof flt.term === "string" && flt.text == null) { flt.text = flt.term; }
+  if (typeof flt.text === "string") { searchTerm = flt.text; document.getElementById("quick-filter").value = flt.text; }
+  if (typeof flt.status === "string") { statusFilter = flt.status; document.getElementById("status-filter").value = flt.status; }
+  refreshFilters();
+  applyFilters();
+  announce("Filtr " + flt.name + " použit");
+}
+
+/* ---------- Filter dialog ---------- */
+let filterDraft = []; // working copy of conditions while editing
+
+function openFilterDialog() {
+  filterDraft = activeConditions.map(c => Object.assign({}, c));
+  if (!filterDraft.length) filterDraft.push(defaultCondition());
+  document.getElementById("filter-recursive").checked = activeRecursive;
+  document.getElementById("filter-save-name").value = "";
+  renderFilterConditions();
+  document.getElementById("dlg-filter").showModal();
+  const first = document.querySelector("#filter-conditions select");
+  if (first) first.focus();
+}
+function defaultCondition() {
+  const cols = conditionColumns();
+  const col = cols[0];
+  const ops = opsForType(col.type);
+  return { colId: col.id, op: ops[0][0], value: "" };
+}
+function renderFilterConditions() {
+  const wrap = document.getElementById("filter-conditions");
+  wrap.innerHTML = "";
+  filterDraft.forEach((cond, idx) => {
+    const row = document.createElement("div");
+    row.className = "filter-cond-row";
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", "Podmínka " + (idx + 1));
+
+    // column select
+    const colSel = document.createElement("select");
+    colSel.setAttribute("aria-label", "Sloupec podmínky " + (idx + 1));
+    conditionColumns().forEach(c => {
+      const o = document.createElement("option"); o.value = c.id; o.textContent = c.title;
+      if (c.id === cond.colId) o.selected = true; colSel.appendChild(o);
+    });
+    colSel.addEventListener("change", () => {
+      cond.colId = colSel.value;
+      const col = condColMeta(cond.colId);
+      cond.op = opsForType(col ? col.type : "markdown")[0][0];
+      cond.value = "";
+      renderFilterConditions();
+    });
+    row.appendChild(colSel);
+
+    // operator select
+    const col = condColMeta(cond.colId);
+    const opSel = document.createElement("select");
+    opSel.setAttribute("aria-label", "Operátor podmínky " + (idx + 1));
+    opsForType(col ? col.type : "markdown").forEach(([v, l]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = l;
+      if (v === cond.op) o.selected = true; opSel.appendChild(o);
+    });
+    opSel.addEventListener("change", () => { cond.op = opSel.value; renderFilterConditions(); });
+    row.appendChild(opSel);
+
+    // value input (adaptive; hidden for ops that need no value)
+    const noVal = ["filled", "empty", "true", "false"].includes(cond.op);
+    if (!noVal) {
+      let valEl;
+      if (col && col.type === "popup") {
+        valEl = document.createElement("select");
+        const empty = document.createElement("option"); empty.value = ""; empty.textContent = "—"; valEl.appendChild(empty);
+        (col.popupValues || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; if (v === cond.value) o.selected = true; valEl.appendChild(o); });
+        valEl.value = cond.value || "";
+      } else {
+        valEl = document.createElement("input");
+        valEl.type = (col && col.type === "number") ? "number" : "text";
+        valEl.value = cond.value || "";
+        if (col && col.type === "date") valEl.placeholder = "např. dnes, +7d, 15.6.2026";
+        if (col && col.type === "duration") valEl.placeholder = "např. 1d 4h";
+      }
+      valEl.setAttribute("aria-label", "Hodnota podmínky " + (idx + 1));
+      valEl.addEventListener("input", () => { cond.value = valEl.value; });
+      valEl.addEventListener("change", () => { cond.value = valEl.value; });
+      row.appendChild(valEl);
+    }
+
+    // remove button
+    const rm = document.createElement("button");
+    rm.type = "button"; rm.textContent = "✕";
+    rm.className = "cond-remove";
+    rm.setAttribute("aria-label", "Odebrat podmínku " + (idx + 1));
+    rm.addEventListener("click", () => { filterDraft.splice(idx, 1); if (!filterDraft.length) filterDraft.push(defaultCondition()); renderFilterConditions(); });
+    row.appendChild(rm);
+
+    wrap.appendChild(row);
+  });
+}
+function collectFilterDraft() {
+  // drop empty-value conditions that require a value
+  return filterDraft.filter(c => {
+    if (["filled", "empty", "true", "false"].includes(c.op)) return true;
+    return c.value != null && c.value !== "";
+  }).map(c => Object.assign({}, c));
+}
+document.getElementById("btn-filter-add-cond").addEventListener("click", () => {
+  filterDraft.push(defaultCondition()); renderFilterConditions();
+  const rows = document.querySelectorAll("#filter-conditions .filter-cond-row select");
+  if (rows.length) rows[rows.length - 1].focus();
+});
+document.getElementById("btn-filter-apply").addEventListener("click", () => {
+  activeConditions = collectFilterDraft();
+  activeRecursive = document.getElementById("filter-recursive").checked;
+  document.getElementById("dlg-filter").close();
+  refreshFilters();
+  applyFilters();
+});
+document.getElementById("btn-filter-save").addEventListener("click", () => {
+  const conds = collectFilterDraft();
+  const recursive = document.getElementById("filter-recursive").checked;
+  let name = document.getElementById("filter-save-name").value.trim();
+  if (!name) name = "Filtr " + (doc.filters.length + 1);
+  doc.filters.push({ name, conditions: conds, recursive, text: "", status: "all" });
+  // also make it active
+  activeConditions = conds.map(c => Object.assign({}, c));
+  activeRecursive = recursive;
+  document.getElementById("dlg-filter").close();
+  refreshFilters();
+  applyFilters();
+  announce("Filtr uložen a použit");
+});
+/* ---------- Quick filter + advanced conditions ---------- */
+// Advanced filter state: a list of AND-combined conditions plus a recursive flag.
+// Each condition: { colId, op, value }. colId "__topic__" targets the topic text.
+let activeConditions = [];
+let activeRecursive = true;
+
+// Operators available per column type.
+function opsForType(type) {
+  switch (type) {
+    case "number":
+    case "duration": return [["eq", "= rovná se"], ["lt", "‹ menší než"], ["gt", "› větší než"], ["ne", "≠ nerovná se"], ["filled", "má hodnotu"], ["empty", "je prázdné"]];
+    case "date": return [["before", "před"], ["after", "po"], ["eq", "přesně"], ["filled", "má hodnotu"], ["empty", "je prázdné"]];
+    case "checkbox": return [["true", "ano (zaškrtnuto)"], ["false", "ne (nezaškrtnuto)"]];
+    case "popup": return [["eq", "= je"], ["ne", "≠ není"], ["filled", "má hodnotu"], ["empty", "je prázdné"]];
+    default: return [["contains", "obsahuje"], ["ncontains", "neobsahuje"], ["eq", "přesně"], ["filled", "má hodnotu"], ["empty", "je prázdné"]]; // markdown/topic
   }
 }
-/* ---------- Quick filter ---------- */
-// A row matches the active filters if its own text/status match.
+function conditionColumns() {
+  // topic pseudo-column + all real columns (incl. status)
+  return [{ id: "__topic__", title: "Téma (text)", type: "markdown" }].concat(doc.columns.map(c => ({ id: c.id, title: c.title, type: c.type, isStatus: c.isStatus })));
+}
+function condColMeta(colId) {
+  if (colId === "__topic__") return { id: "__topic__", title: "Téma", type: "markdown" };
+  return doc.columns.find(c => c.id === colId) || null;
+}
+// Raw comparable value of a row for a condition column.
+function condRawValue(r, col) {
+  if (col.id === "__topic__") return plainTopic(r);
+  if (col.isStatus) return r.status ? 1 : 0;
+  return r.cells[col.id];
+}
+function evalCondition(r, cond) {
+  const col = condColMeta(cond.colId);
+  if (!col) return true;
+  const type = col.type;
+  const raw = condRawValue(r, col);
+  const has = !(raw == null || raw === "");
+  switch (cond.op) {
+    case "filled": return has;
+    case "empty": return !has;
+    case "true": return !!raw;
+    case "false": return !raw;
+  }
+  if (type === "number" || type === "duration") {
+    const rv = type === "duration" ? parseDuration(raw || "") : parseFloat(raw);
+    const cv = type === "duration" ? parseDuration(cond.value || "") : parseFloat(cond.value);
+    if (isNaN(rv) || isNaN(cv)) return false;
+    if (cond.op === "eq") return rv === cv;
+    if (cond.op === "ne") return rv !== cv;
+    if (cond.op === "lt") return rv < cv;
+    if (cond.op === "gt") return rv > cv;
+    return false;
+  }
+  if (type === "date") {
+    const rd = raw ? new Date(raw).getTime() : NaN;
+    const cd = parseDate(cond.value || "");
+    const cdt = cd ? cd.getTime() : NaN;
+    if (isNaN(rd) || isNaN(cdt)) return false;
+    if (cond.op === "before") return rd < cdt;
+    if (cond.op === "after") return rd > cdt;
+    if (cond.op === "eq") return new Date(rd).toDateString() === new Date(cdt).toDateString();
+    return false;
+  }
+  // text / popup / markdown
+  const rs = String(raw == null ? "" : raw).toLowerCase();
+  const cs = String(cond.value == null ? "" : cond.value).toLowerCase();
+  if (cond.op === "contains") return rs.includes(cs);
+  if (cond.op === "ncontains") return !rs.includes(cs);
+  if (cond.op === "eq") return rs === cs;
+  if (cond.op === "ne") return rs !== cs;
+  return true;
+}
+function rowMatchesConditions(r) {
+  if (!activeConditions.length) return true;
+  return activeConditions.every(c => evalCondition(r, c));
+}
+
+// A row matches the active filters if its own text/status/conditions match.
 function rowSelfMatches(r) {
-  // text
+  // quick text (toolbar)
   if (searchTerm) {
     const text = (plainTopic(r) + " " + nodesToPlain(parseInline(r.note || ""), "accepted")).toLowerCase();
     if (!text.includes(searchTerm.toLowerCase())) return false;
   }
-  // status
+  // status (toolbar select)
   if (statusFilter === "done" && !r.status) return false;
   if (statusFilter === "undone" && r.status) return false;
+  // advanced conditions (AND)
+  if (!rowMatchesConditions(r)) return false;
   return true;
 }
-// Recursive: a subtree is visible if the row matches or any descendant matches.
+// Recursive mode: subtree visible if the row or any descendant matches.
+// Non-recursive: only rows that themselves match are visible (their ancestors
+// are still shown as context so the tree stays navigable, but greyed).
 function subtreeVisible(r) {
   if (rowSelfMatches(r)) return true;
+  if (!activeRecursive) {
+    // still show ancestors that lead to a matching descendant, as context
+    return r.children.some(subtreeVisible);
+  }
   return r.children.some(subtreeVisible);
 }
-function filtersActive() { return !!searchTerm || statusFilter !== "all"; }
+function filtersActive() { return !!searchTerm || statusFilter !== "all" || activeConditions.length > 0; }
 
 // Apply current filters to the already-rendered DOM (no re-render).
 function applyFilterVisibility() {
   if (!filtersActive()) {
-    document.querySelectorAll("li.outline-item").forEach(li => { li.style.display = ""; li.classList.remove("filter-match"); });
+    document.querySelectorAll("li.outline-item").forEach(li => {
+      li.style.display = ""; li.classList.remove("filter-match", "filter-context");
+      const t = li.querySelector(":scope > .trow"); if (t) t.style.display = "";
+      const n = li.querySelector(":scope > .note-row"); if (n) n.style.display = "";
+    });
     return { shown: 0, matched: 0 };
   }
   let shown = 0, matched = 0;
   function mark(rows) {
     for (const r of rows) {
       const li = document.querySelector('li.outline-item[data-id="' + r.id + '"]');
-      const visible = subtreeVisible(r);
-      if (li) { li.style.display = visible ? "" : "none"; li.classList.remove("filter-match"); }
-      if (visible) {
-        shown++;
-        if (rowSelfMatches(r)) { matched++; if (li) li.classList.add("filter-match"); }
+      const selfMatch = rowSelfMatches(r);
+      const visible = subtreeVisible(r); // subtree contains a match somewhere
+      if (li) {
+        li.style.display = visible ? "" : "none";
+        li.classList.remove("filter-match", "filter-context");
+        const rowContent = li.querySelector(":scope > .trow");
+        const noteRow = li.querySelector(":scope > .note-row");
+        if (visible) {
+          shown++;
+          if (selfMatch) {
+            matched++;
+            li.classList.add("filter-match");
+            if (rowContent) rowContent.style.display = "";
+            if (noteRow) noteRow.style.display = "";
+          } else {
+            // this row is only an ancestor of a match
+            li.classList.add("filter-context");
+            if (activeRecursive) {
+              // recursive: show the ancestor row as context
+              if (rowContent) rowContent.style.display = "";
+              if (noteRow) noteRow.style.display = "";
+            } else {
+              // non-recursive: hide the non-matching row's own content,
+              // but keep the <li> so matching descendants still render
+              if (rowContent) rowContent.style.display = "none";
+              if (noteRow) noteRow.style.display = "none";
+            }
+          }
+        }
       }
       mark(r.children);
     }
@@ -2051,6 +2350,7 @@ function applyFilters() {
   if (searchTerm) bits.push("text „" + searchTerm + "”");
   if (statusFilter === "done") bits.push("jen hotové");
   if (statusFilter === "undone") bits.push("jen nehotové");
+  if (activeConditions.length) bits.push(activeConditions.length + (activeConditions.length === 1 ? " podmínka" : (activeConditions.length < 5 ? " podmínky" : " podmínek")) + " (" + (activeRecursive ? "rekurzivně" : "jen vyhovující") + ")");
   status("Filtr (" + bits.join(", ") + "): " + matched + " shod, zobrazeno " + shown + " řádků.");
   announce(matched + " shod");
 }
@@ -2649,7 +2949,7 @@ function withSelected(fn, needRow) {
 }
 document.getElementById("btn-new").addEventListener("click", () => {
   if (doc.rows.length && !confirm("Vytvořit nový prázdný dokument? Neuložené změny budou ztraceny.")) return;
-  doc = newDoc(); selectedId = null; focusRootId = null; searchTerm = ""; statusFilter = "all";
+  doc = newDoc(); selectedId = null; focusRootId = null; searchTerm = ""; statusFilter = "all"; activeConditions = []; activeRecursive = true;
   document.getElementById("quick-filter").value = "";
   document.getElementById("status-filter").value = "all";
   fullRefresh();
@@ -2804,7 +3104,8 @@ function buildHelp() {
 <p>Vícesloupcová tabulka s typy: text (Markdown), číslo, datum, trvání, zaškrtávátko, pop-up seznam. Na rodičovských řádcích se počítají souhrny (součet, min, max, průměr listů, stav). Stav řádku (hotovo/nehotovo) je vestavěný sloupec „Stav (hotovo)", který lze v panelu Sloupce zobrazit nebo skrýt jako každý jiný.</p>
 <p>V panelu Sloupce mění pořadí šipky ← →. Pokud sloupec posuneš <strong>nalevo od tématu</strong>, jeho hodnota se stane prefixem nadpisu (např. kód „ABC" → nadpis „ABC Úvod") — a to i ve všech exportech (DOCX, HTML, Markdown). Takový sloupec se přestane zobrazovat jako samostatný a žije jen v nadpisu.</p>
 <h3>Filtrování</h3>
-<p>Pole „Filtr textu" hledá v tématu i poznámkách. Výběr stavu (Vše / Jen hotové / Jen nehotové) filtruje podle dokončení. Oba filtry pracují <strong>rekurzivně</strong> — rodič zůstane viditelný, pokud má vyhovujícího potomka.</p>
+<p>Rychlé filtry v liště: pole „Filtr textu" hledá v tématu i poznámkách a výběr stavu (Vše / Jen hotové / Jen nehotové) filtruje podle dokončení.</p>
+<p>Pokročilé filtry najdeš v panelu „Uložené filtry" → <strong>Upravit filtr…</strong>. V dialogu skládáš podmínky nad sloupci — každý sloupec podle svého typu: text (obsahuje / přesně / neobsahuje), číslo a trvání (‹ › = ≠), datum (před / po / přesně), zaškrtávátko (ano / ne) a pop-up (= / ≠). Podmínky se kombinují logickým <strong>A</strong> (musí platit všechny). Přepínač <strong>Rekurzivně</strong> určuje, zda se u vyhovujícího řádku zobrazí i jeho rodiče (jako kontext, zešednutí), nebo jen samotné vyhovující řádky. Filtr lze <strong>Použít</strong> hned, nebo <strong>Uložit</strong> pod jménem a kdykoli později spustit tlačítkem Použít u uloženého filtru. Uložené filtry se ukládají do souboru .mroutline.</p>
 <h3>Export úrovní na nadpisy</h3>
 <p>V panelu „Styly a úrovně" se každá úroveň osnovy mapuje na sémantickou značku (nadpis 1–6, odstavec, položka seznamu) pro správný HTML a DOCX výstup. V HTML i DOCX exportu jsou hlubší úrovně navíc vizuálně odsazené doleva (každá úroveň o kousek víc), aby byla hierarchie na první pohled patrná.</p>`;
 }
