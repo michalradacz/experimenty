@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Korektor — Kontrola pravopisu</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: #f7f5f0;
+    font-family: 'Crimson Pro', Georgia, serif;
+    color: #2c2416;
+    line-height: 1.5;
+  }
+
+  .container { max-width: 780px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  .header {
+    margin-bottom: 32px;
+    border-bottom: 3px solid #2c2416;
+    padding-bottom: 16px;
+  }
+  .header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
+  .header h1 .accent { color: #cf222e; font-size: 28px; margin-right: 10px; }
+  .header p { margin-top: 6px; font-size: 15px; color: #6b5e4f; font-style: italic; }
+
+  .section-label {
+    font-size: 13px; font-weight: 600; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 1px; color: #6b5e4f;
+  }
+
+  textarea {
+    width: 100%; padding: 14px 16px;
+    border: 1px solid #c4bfb3; border-radius: 6px;
+    font-size: 17px; line-height: 1.6;
+    font-family: 'Crimson Pro', Georgia, serif;
+    background: #fffef9; resize: vertical; outline: none; min-height: 140px;
+  }
+  textarea:focus { border-color: #2c2416; }
+
+  .btn {
+    padding: 8px 20px; border: none; border-radius: 4px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: 'Crimson Pro', Georgia, serif; transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-dark { background: #2c2416; color: #f7f5f0; }
+  .btn-red {
+    background: #cf222e; color: #fff; font-size: 16px;
+    padding: 12px 32px; border-radius: 6px; letter-spacing: 0.3px;
+  }
+  .btn-ghost { background: transparent; color: #6b5e4f; border: 1px solid #c4bfb3; }
+
+  .dict-bar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .dict-status {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .dict-status.ok { color: #228B22; }
+  .dict-status.loading { color: #6b5e4f; }
+  .dict-status.error { color: #cf222e; }
+
+  .stats-bar {
+    display: flex; gap: 12px; margin-bottom: 12px;
+    font-size: 13px; font-family: 'JetBrains Mono', monospace;
+    color: #6b5e4f; flex-wrap: wrap; align-items: center;
+  }
+  .stat-badge { padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+  .stat-errors { background: rgba(207,34,46,0.1); color: #cf222e; }
+  .stat-ok { background: rgba(34,139,34,0.1); color: #228B22; }
+  .stat-corrected { background: rgba(34,139,34,0.1); color: #228B22; }
+  .stat-ignored { background: rgba(107,94,79,0.1); color: #6b5e4f; }
+
+  .result-area {
+    padding: 20px 24px; background: #fffef9;
+    border: 1px solid #c4bfb3; border-radius: 6px;
+    font-size: 17px; line-height: 1.8;
+    font-family: 'Crimson Pro', Georgia, serif;
+    min-height: 60px; white-space: pre-wrap; word-break: break-word;
+  }
+
+  a.word-error {
+    color: #cf222e; background: rgba(207,34,46,0.08);
+    text-decoration: underline wavy #cf222e;
+    text-underline-offset: 3px; padding: 0 1px;
+    border-radius: 2px; transition: background 0.15s;
+  }
+  a.word-error:hover { background: rgba(207,34,46,0.18); }
+
+  .errors-list { margin-top: 28px; }
+
+  .error-block {
+    margin-bottom: 18px; padding: 14px 18px;
+    background: #fffef9; border: 1px solid #d4cfc3; border-radius: 6px;
+    scroll-margin-top: 20px;
+  }
+
+  .error-block h6 {
+    font-size: 16px; font-weight: 700; margin: 0 0 10px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .error-block h6 .err-word { color: #cf222e; }
+  .error-block h6 .back-link {
+    font-size: 12px; font-weight: 400; color: #6b5e4f;
+    text-decoration: none; margin-left: auto;
+  }
+  .error-block h6 .back-link:hover { text-decoration: underline; }
+
+  .suggestions-row {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 8px;
+  }
+  .suggestions-row .label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: #6b5e4f; margin-right: 4px; font-weight: 600;
+  }
+  a.suggestion-link {
+    display: inline-block; padding: 4px 12px;
+    background: #eae6dc; border: 1px solid #d4cfc3; border-radius: 4px;
+    color: #2c2416; text-decoration: none; font-size: 15px;
+    transition: background 0.15s, border-color 0.15s; cursor: pointer;
+  }
+  a.suggestion-link:hover { background: #ddd8cc; border-color: #b5b0a3; }
+  a.suggestion-link.best { font-weight: 600; border-color: #cf222e; background: rgba(207,34,46,0.06); }
+
+  .manual-row {
+    display: flex; gap: 8px; align-items: center; margin-top: 6px;
+  }
+  .manual-row .label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: #6b5e4f; font-weight: 600; white-space: nowrap;
+  }
+  .manual-input {
+    padding: 5px 10px; border: 1px solid #c4bfb3; border-radius: 4px;
+    font-size: 15px; font-family: 'Crimson Pro', Georgia, serif;
+    background: #fff; outline: none; width: 200px;
+  }
+  .manual-input:focus { border-color: #2c2416; }
+
+  .action-links {
+    margin-top: 10px; display: flex; gap: 16px; font-size: 13px;
+  }
+  .action-links a {
+    color: #6b5e4f; text-decoration: none; cursor: pointer;
+  }
+  .action-links a:hover { text-decoration: underline; color: #2c2416; }
+
+  .error-box {
+    padding: 12px 16px; background: #fef2f2;
+    border: 1px solid #fca5a5; border-radius: 6px;
+    color: #991b1b; font-size: 14px; margin-bottom: 20px;
+  }
+
+  .actions-row { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .filter-info {
+    margin-top: 12px; padding: 10px 14px;
+    background: #eae6dc; border-radius: 6px;
+    font-size: 12px; color: #6b5e4f;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.6;
+  }
+
+  .footer {
+    margin-top: 32px; font-size: 12px; color: #a8a196;
+    border-top: 1px solid #d4cfc3; padding-top: 14px;
+    font-family: 'JetBrains Mono', monospace; line-height: 1.6;
+  }
+  .footer a { color: #6b5e4f; }
+
+  .mb20 { margin-bottom: 20px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1><span class="accent">✦</span>Korektor — Kontrola pravopisu</h1>
+    <p>Český spell checker s podporou vlastního slovníku • ÚFAL REST API</p>
+  </div>
+
+  <div class="dict-bar">
+    <span id="dictStatus" class="dict-status loading">⏳ Načítám slovník…</span>
+    <button class="btn btn-ghost" style="padding:5px 14px;font-size:12px" onclick="reloadDictAndRecheck()">🔄 Znovu načíst slovník a zkontrolovat</button>
+  </div>
+
+  <div class="mb20">
+    <div class="section-label">Vstupní text</div>
+    <textarea id="inputText">Přílyš žluťoučky kůň ůpěl ďábelské ódi. Toto je ukázkový text s několika překlepy.
+Jan šel na https://example.com/nejakastranka a pak do [[wiki:stranka]] a použil {{obrazek.png}} šablonu.
+Praha je hlavní město České republiky. Michal pracuje v GEM System.
+Prezentace obsahuje důležité informace. Složka Dokumenty je prázdná.</textarea>
+  </div>
+
+  <button class="btn btn-red" id="btnCheck" onclick="checkSpelling()">Zkontrolovat pravopis</button>
+
+  <div id="errorBox" class="error-box hidden"></div>
+
+  <div id="resultsSection" class="hidden" style="margin-top:24px;">
+    <div id="statsBar" class="stats-bar"></div>
+    <div id="resultArea" class="result-area"></div>
+    <div class="actions-row">
+      <button class="btn btn-dark" onclick="copyResult()">📋 Kopírovat opravený text</button>
+      <button class="btn btn-ghost" id="btnClearIgnored" onclick="clearIgnored()" style="display:none;">Zrušit ignorování</button>
+    </div>
+    <div id="filterStats" class="filter-info hidden"></div>
+    <div id="errorsList" class="errors-list"></div>
+  </div>
+
+  <div class="footer">
+    API: lindat.mff.cuni.cz/services/korektor • Model: czech-spellchecker-130202<br>
+    ÚFAL, MFF UK • Licence: CC BY-NC-SA (modely) •
+    Slovník: <a href="https://raw.githubusercontent.com/michalradacz/public/main/cs.txt">michalradacz/public/cs.txt</a>
+  </div>
+</div>
+
+<script>
+var KOREKTOR_API = "https://lindat.mff.cuni.cz/services/korektor/api/suggestions";
+var DICT_URL = "https://raw.githubusercontent.com/michalradacz/public/main/cs.txt";
+
+var apiResults = null;
+var corrections = {};
+var ignoredWords = new Set();
+var customDict = new Set();
+var protectedWords = new Set();  // words extracted from URLs, [[]], {{}}, etc.
+var filteredCount = 0;
+
+window.addEventListener("DOMContentLoaded", loadDict);
+
+// =====================================================
+// PRE-SCAN: extract protected words from input text
+// =====================================================
+// Korektor tokenizes the text, so [[wiki:stranka]] becomes
+// separate tokens "wiki", "stranka" etc. We must find these
+// patterns in the ORIGINAL text and protect their word fragments.
+
+function buildProtectedWords(text) {
+  protectedWords = new Set();
+
+  // 1) URLs: https://example.com/path?query=x&foo=bar#hash
+  var urlRe = /(?:https?|ftp):\/\/[^\s\]})>]+/gi;
+  var m;
+  while ((m = urlRe.exec(text)) !== null) {
+    extractWords(m[0]);
+  }
+
+  // 2) Wiki links: [[anything:here|display]]
+  var wikiLinkRe = /\[\[([^\]]*)\]\]/g;
+  while ((m = wikiLinkRe.exec(text)) !== null) {
+    extractWords(m[1]);
+  }
+
+  // 3) Wiki templates/images: {{anything.here|params}}
+  var wikiTplRe = /\{\{([^}]*)\}\}/g;
+  while ((m = wikiTplRe.exec(text)) !== null) {
+    extractWords(m[1]);
+  }
+
+  // 4) CriticMarkup: {++text++} {--text--} {~~text~>text~~} {==text==} {>>text<<}
+  var criticRe = /\{(?:\+\+|--|~~|==|>>)([^}]*?)(?:\+\+|--|~~|==|<<)\}/g;
+  while ((m = criticRe.exec(text)) !== null) {
+    // Don't protect the inner text — that's actual content to check
+    // But protect the markers themselves (++, --, ~~, etc.)
+    // Actually, Korektor will tokenize markers separately, and they
+    // contain syntax chars so they'll be caught by syntax filter below
+  }
+}
+
+function extractWords(str) {
+  // Split on non-word chars, add each fragment to protected set
+  var parts = str.split(/[^a-zA-ZáčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ0-9]+/);
+  for (var i = 0; i < parts.length; i++) {
+    var w = parts[i].trim();
+    if (w.length > 0) {
+      protectedWords.add(w.toLowerCase());
+    }
+  }
+}
+
+// =====================================================
+// FILTERING
+// =====================================================
+
+// Syntax chars at start/end of token (CriticMarkup, Markdown, wiki)
+var SYNTAX_CHARS = /[\+\[\]\{\}\~\>\#\*\_\/\:\|\=\^]/;
+
+function shouldSkipToken(original, suggestions) {
+  var w = original.trim();
+  if (!w) return true;
+  var wLower = w.toLowerCase();
+
+  // 1) Custom dictionary or manually ignored
+  if (customDict.has(wLower) || ignoredWords.has(wLower)) return true;
+
+  // 2) Protected word (extracted from URLs, [[]], {{}})
+  if (protectedWords.has(wLower)) return true;
+
+  // 3) All-uppercase word (acronym: GEM, HTTP, API, CSS, ...)
+  if (w.length >= 2 && w === w.toUpperCase() && /^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]+$/.test(w)) return true;
+
+  // 4) Token starts or ends with syntax chars
+  if (SYNTAX_CHARS.test(w.charAt(0)) || SYNTAX_CHARS.test(w.charAt(w.length - 1))) return true;
+
+  // 5) Case-related: first (best) suggestion is just a different casing
+  //    e.g. "Dokumenty" -> "dokumenty" means the word exists, just cased
+  if (suggestions.length > 0) {
+    var firstSugg = suggestions[0].trim();
+    // First suggestion lowercased matches original lowercased?
+    if (firstSugg.toLowerCase() === wLower) return true;
+    // First suggestion is original with first letter lowered?
+    if (w.length > 0 && firstSugg === w.charAt(0).toLowerCase() + w.slice(1)) return true;
+  }
+
+  // 6) Single-character or number-only tokens
+  if (/^[0-9]+$/.test(w)) return true;
+
+  return false;
+}
+
+// =====================================================
+// Dictionary
+// =====================================================
+async function loadDict() {
+  var el = document.getElementById("dictStatus");
+  el.className = "dict-status loading";
+  el.textContent = "⏳ Načítám vlastní slovník…";
+  try {
+    var res = await fetch(DICT_URL);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var text = await res.text();
+    var words = text.split(/[\r\n]+/).map(function(w) { return w.trim().toLowerCase(); }).filter(Boolean);
+    customDict = new Set(words);
+    el.className = "dict-status ok";
+    el.textContent = "✓ Vlastní slovník načten — " + customDict.size + " slov";
+  } catch (err) {
+    el.className = "dict-status error";
+    el.textContent = "✗ Slovník se nepodařilo načíst: " + err.message;
+  }
+}
+
+async function reloadDictAndRecheck() {
+  await loadDict();
+  if (apiResults) {
+    // Re-scan protected words from current input
+    buildProtectedWords(document.getElementById("inputText").value);
+    renderAll();
+  } else {
+    await checkSpelling();
+  }
+}
+
+// =====================================================
+// Spell check
+// =====================================================
+function getOpenErrors() {
+  if (!apiResults) return [];
+  return apiResults
+    .map(function(item, idx) { return { item: item, idx: idx }; })
+    .filter(function(o) {
+      return o.item.length > 1 &&
+        corrections[o.idx] === undefined &&
+        !shouldSkipToken(o.item[0], o.item.slice(1));
+    })
+    .map(function(o) { return o.idx; });
+}
+
+async function checkSpelling() {
+  var text = document.getElementById("inputText").value;
+  if (!text.trim()) return;
+
+  // Pre-scan: build protected word set from URLs, wiki syntax etc.
+  buildProtectedWords(text);
+
+  var btn = document.getElementById("btnCheck");
+  btn.disabled = true;
+  btn.textContent = "⏳ Kontroluji…";
+  document.getElementById("errorBox").classList.add("hidden");
+  document.getElementById("resultsSection").classList.add("hidden");
+  corrections = {};
+  filteredCount = 0;
+
+  try {
+    var fd = new FormData();
+    fd.append("data", text);
+    fd.append("model", "czech-spellchecker-130202");
+    fd.append("suggestions", "5");
+
+    var res = await fetch(KOREKTOR_API, { method: "POST", body: fd });
+    if (!res.ok) throw new Error("API chyba: " + res.status);
+    var data = await res.json();
+    apiResults = data.result;
+
+    // Count auto-filtered (not from custom dict or ignored)
+    filteredCount = 0;
+    apiResults.forEach(function(item) {
+      if (item.length > 1) {
+        var w = item[0].trim().toLowerCase();
+        var isUserSkip = customDict.has(w) || ignoredWords.has(w);
+        if (!isUserSkip && shouldSkipToken(item[0], item.slice(1))) {
+          filteredCount++;
+        }
+      }
+    });
+
+    document.getElementById("resultsSection").classList.remove("hidden");
+    renderAll();
+  } catch (err) {
+    var eb = document.getElementById("errorBox");
+    eb.classList.remove("hidden");
+    eb.innerHTML = "<strong>Chyba:</strong> " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Zkontrolovat pravopis";
+  }
+}
+
+// =====================================================
+// Render
+// =====================================================
+function renderAll() {
+  renderStats();
+  renderResultText();
+  renderErrorBlocks();
+  renderFilterInfo();
+  document.getElementById("btnClearIgnored").style.display = ignoredWords.size > 0 ? "" : "none";
+}
+
+function renderStats() {
+  var open = getOpenErrors();
+  var corrected = Object.keys(corrections).length;
+  var h = "";
+  h += open.length > 0
+    ? '<span class="stat-badge stat-errors">' + open.length + ' chyb</span>'
+    : '<span class="stat-badge stat-ok">✓ Bez chyb</span>';
+  if (corrected > 0) h += '<span class="stat-badge stat-corrected">' + corrected + ' opraveno</span>';
+  if (ignoredWords.size > 0) h += '<span class="stat-badge stat-ignored">' + ignoredWords.size + ' ignorováno</span>';
+  document.getElementById("statsBar").innerHTML = h;
+}
+
+function renderFilterInfo() {
+  var el = document.getElementById("filterStats");
+  if (filteredCount > 0) {
+    el.classList.remove("hidden");
+    el.textContent = "⚙ Automaticky odfiltrováno " + filteredCount + " falešných nálezů (URL, wiki syntax, zkratky, změna velkých/malých písmen)";
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function renderResultText() {
+  var area = document.getElementById("resultArea");
+  var h = "";
+  apiResults.forEach(function(item, idx) {
+    var orig = item[0];
+    var has = item.length > 1;
+    var fixed = corrections[idx] !== undefined;
+    var skip = shouldSkipToken(orig, item.slice(1));
+
+    if (fixed) {
+      h += esc(corrections[idx]);
+    } else if (has && !skip) {
+      h += '<a href="#err-' + idx + '" class="word-error" id="word-' + idx + '">' + esc(orig) + '</a>';
+    } else {
+      h += esc(orig);
+    }
+  });
+  area.innerHTML = h;
+}
+
+function renderErrorBlocks() {
+  var container = document.getElementById("errorsList");
+  var open = getOpenErrors();
+
+  if (open.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+
+  var h = "";
+  open.forEach(function(idx) {
+    var item = apiResults[idx];
+    var orig = item[0];
+    var suggs = item.slice(1);
+
+    h += '<div class="error-block" id="err-' + idx + '">';
+    h += '<h6><span class="err-word">' + esc(orig) + '</span>';
+    h += '<a href="#word-' + idx + '" class="back-link">↑ zpět na text</a></h6>';
+
+    h += '<div class="suggestions-row"><span class="label">Návrhy:</span>';
+    suggs.forEach(function(s, i) {
+      var cls = i === 0 ? "suggestion-link best" : "suggestion-link";
+      h += '<a class="' + cls + '" onclick="applySuggestion(' + idx + ',\'' + escA(s) + '\')">' + esc(s) + '</a>';
+    });
+    h += '</div>';
+
+    h += '<div class="manual-row">';
+    h += '<span class="label">Ručně:</span>';
+    h += '<input type="text" class="manual-input" id="manual-' + idx + '" placeholder="vlastní oprava" onkeydown="if(event.key===\'Enter\')applyManual(' + idx + ')">';
+    h += '<button class="btn btn-dark" style="padding:5px 14px;font-size:13px" onclick="applyManual(' + idx + ')">Použít</button>';
+    h += '</div>';
+
+    h += '<div class="action-links">';
+    h += '<a onclick="ignoreWord(' + idx + ')">⊘ Ignorovat slovo</a>';
+    h += '</div>';
+
+    h += '</div>';
+  });
+
+  container.innerHTML = h;
+}
+
+// =====================================================
+// Actions
+// =====================================================
+function applySuggestion(idx, suggestion) {
+  corrections[idx] = suggestion;
+  renderAll();
+  var open = getOpenErrors();
+  scrollTo(open.length > 0 ? "err-" + open[0] : "resultArea");
+}
+
+function applyManual(idx) {
+  var val = document.getElementById("manual-" + idx).value.trim();
+  if (!val) return;
+  corrections[idx] = val;
+  renderAll();
+  var open = getOpenErrors();
+  scrollTo(open.length > 0 ? "err-" + open[0] : "resultArea");
+}
+
+function ignoreWord(idx) {
+  ignoredWords.add(apiResults[idx][0].trim().toLowerCase());
+  delete corrections[idx];
+  renderAll();
+}
+
+function clearIgnored() {
+  ignoredWords.clear();
+  renderAll();
+}
+
+function scrollTo(id) {
+  var el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function copyResult() {
+  if (!apiResults) return;
+  var text = apiResults.map(function(item, idx) {
+    return corrections[idx] !== undefined ? corrections[idx] : item[0];
+  }).join("");
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = event.target.closest(".btn");
+    var orig = btn.textContent;
+    btn.textContent = "✓ Zkopírováno";
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  });
+}
+
+// =====================================================
+// Helpers
+// =====================================================
+function esc(s) {
+  var d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+function escA(s) {
+  return s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+</script>
+</body>
+</html>
