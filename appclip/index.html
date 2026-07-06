@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generátor WebClip profilu</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #555;
+    --border: #767676;
+    --focus: #0050c8;
+    --accent: #0050c8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --fg: #f0f0f0;
+      --muted: #b0b0b0;
+      --border: #9a9a9a;
+      --focus: #6ea8ff;
+      --accent: #6ea8ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.5;
+    margin: 0;
+    padding: 1.5rem;
+    max-width: 40rem;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+  form { display: block; }
+  .field { margin-bottom: 1.25rem; }
+  label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .hint {
+    display: block;
+    font-weight: 400;
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  input[type="text"],
+  input[type="url"] {
+    width: 100%;
+    padding: 0.6rem;
+    font-size: 1rem;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  input:focus-visible,
+  button:focus-visible,
+  .checkbox-row:focus-within {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .checkbox-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .checkbox-row input { width: auto; }
+  .checkbox-row label { font-weight: 400; margin: 0; }
+  button {
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.7rem 1.4rem;
+    color: #fff;
+    background: var(--accent);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  @media (prefers-color-scheme: dark) {
+    button { color: #121212; }
+  }
+  button:hover { opacity: 0.9; }
+  [role="status"] {
+    margin-top: 1rem;
+    font-weight: 600;
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem;
+    margin: 0 0 1.25rem;
+  }
+  legend { font-weight: 600; padding: 0 0.4rem; }
+</style>
+</head>
+<body>
+<h1>Generátor WebClip profilu</h1>
+<p>Vytvoří konfigurační profil (.mobileconfig) pro iOS, který otevře zadanou adresu jako samostatnou aplikaci na ploše. Vše probíhá jen ve vašem prohlížeči, nic se nikam neodesílá.</p>
+
+<form id="form" novalidate>
+  <div class="field">
+    <label for="name">Název</label>
+    <span class="hint" id="name-hint">Text pod ikonou na ploše.</span>
+    <input type="text" id="name" name="name" aria-describedby="name-hint" autocomplete="off" required>
+  </div>
+
+  <div class="field">
+    <label for="url">Adresa (URL)</label>
+    <span class="hint" id="url-hint">Musí začínat na https:// nebo http://.</span>
+    <input type="url" id="url" name="url" aria-describedby="url-hint" inputmode="url" autocomplete="off" required>
+  </div>
+
+  <div class="field">
+    <label for="bundle">Identifikátor profilu</label>
+    <span class="hint" id="bundle-hint">Např. cz.egdilna.mojeapp. Nevyplněno = doplní se automaticky.</span>
+    <input type="text" id="bundle" name="bundle" aria-describedby="bundle-hint" autocomplete="off">
+  </div>
+
+  <fieldset>
+    <legend>Možnosti</legend>
+    <div class="field checkbox-row">
+      <input type="checkbox" id="fullscreen" checked>
+      <label for="fullscreen">Celá obrazovka (otevřít bez Safari UI jako aplikace)</label>
+    </div>
+    <div class="field checkbox-row" style="margin-bottom:0">
+      <input type="checkbox" id="removable" checked>
+      <label for="removable">Umožnit odebrání uživatelem</label>
+    </div>
+  </fieldset>
+
+  <button type="submit">Vygenerovat a stáhnout</button>
+</form>
+
+<p role="status" id="status"></p>
+
+<script>
+(function () {
+  var form = document.getElementById('form');
+  var statusEl = document.getElementById('status');
+
+  function escapeXml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  function uuid() {
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0;
+      var v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    }).toUpperCase();
+  }
+
+  function slug(s) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24) || 'webclip';
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    statusEl.textContent = '';
+
+    var name = document.getElementById('name').value.trim();
+    var url = document.getElementById('url').value.trim();
+    var bundle = document.getElementById('bundle').value.trim();
+    var fullscreen = document.getElementById('fullscreen').checked;
+    var removable = document.getElementById('removable').checked;
+
+    if (!name) {
+      statusEl.textContent = 'Chyba: vyplňte název.';
+      document.getElementById('name').focus();
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      statusEl.textContent = 'Chyba: adresa musí začínat na https:// nebo http://.';
+      document.getElementById('url').focus();
+      return;
+    }
+    if (!bundle) {
+      bundle = 'cz.egdilna.' + slug(name);
+    }
+
+    var payloadUuid = uuid();
+    var profileUuid = uuid();
+
+    var plist =
+'<?xml version="1.0" encoding="UTF-8"?>\n' +
+'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+'<plist version="1.0">\n' +
+'<dict>\n' +
+'\t<key>PayloadContent</key>\n' +
+'\t<array>\n' +
+'\t\t<dict>\n' +
+'\t\t\t<key>PayloadType</key>\n' +
+'\t\t\t<string>com.apple.webClip.managed</string>\n' +
+'\t\t\t<key>PayloadVersion</key>\n' +
+'\t\t\t<integer>1</integer>\n' +
+'\t\t\t<key>PayloadIdentifier</key>\n' +
+'\t\t\t<string>' + escapeXml(bundle) + '.webclip</string>\n' +
+'\t\t\t<key>PayloadUUID</key>\n' +
+'\t\t\t<string>' + payloadUuid + '</string>\n' +
+'\t\t\t<key>PayloadDisplayName</key>\n' +
+'\t\t\t<string>' + escapeXml(name) + '</string>\n' +
+'\t\t\t<key>Label</key>\n' +
+'\t\t\t<string>' + escapeXml(name) + '</string>\n' +
+'\t\t\t<key>URL</key>\n' +
+'\t\t\t<string>' + escapeXml(url) + '</string>\n' +
+'\t\t\t<key>FullScreen</key>\n' +
+'\t\t\t<' + (fullscreen ? 'true' : 'false') + '/>\n' +
+'\t\t\t<key>IsRemovable</key>\n' +
+'\t\t\t<' + (removable ? 'true' : 'false') + '/>\n' +
+'\t\t</dict>\n' +
+'\t</array>\n' +
+'\t<key>PayloadType</key>\n' +
+'\t<string>Configuration</string>\n' +
+'\t<key>PayloadVersion</key>\n' +
+'\t<integer>1</integer>\n' +
+'\t<key>PayloadIdentifier</key>\n' +
+'\t<string>' + escapeXml(bundle) + '</string>\n' +
+'\t<key>PayloadUUID</key>\n' +
+'\t<string>' + profileUuid + '</string>\n' +
+'\t<key>PayloadDisplayName</key>\n' +
+'\t<string>' + escapeXml(name) + '</string>\n' +
+'\t<key>PayloadRemovalDisallowed</key>\n' +
+'\t<' + (removable ? 'false' : 'true') + '/>\n' +
+'</dict>\n' +
+'</plist>\n';
+
+    var blob = new Blob([plist], { type: 'application/x-apple-aspen-config' });
+    var href = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = href;
+    a.download = slug(name) + '.mobileconfig';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+
+    statusEl.textContent = 'Profil „' + name + '" byl vygenerován a stažen.';
+  });
+})();
+</script>
+</body>
+</html>
