@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Správce složky na GitHubu</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#555; --line:#8a8a8a;
+    --accent:#0b4f9e; --accent-fg:#ffffff; --warn:#8a2b06; --ok:#0a5c2a;
+    --box:#f2f4f7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#101216; --fg:#f2f2f2; --muted:#c3c3c3; --line:#7d848e;
+           --accent:#7fb4ff; --accent-fg:#0b1220; --warn:#ffb3a0; --ok:#8be0a8; --box:#1a1e25;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:1rem;background:var(--bg);color:var(--fg);
+       font:1rem/1.5 system-ui,"Segoe UI",Arial,sans-serif;max-width:70rem}
+  h1{font-size:1.5rem;margin:0 0 .25rem}
+  h2{font-size:1.2rem;margin:1.5rem 0 .5rem}
+  h3{font-size:1.05rem;margin:0 0 .25rem}
+  p.lead{color:var(--muted);margin:.25rem 0 1rem}
+  a{color:var(--accent)}
+  fieldset{border:1px solid var(--line);border-radius:.4rem;padding:.75rem 1rem;margin:0 0 1rem}
+  legend{padding:0 .4rem;font-weight:600}
+  label{display:block;margin:.6rem 0 .2rem;font-weight:600}
+  input[type=text],input[type=password],input[type=url],textarea,select{
+    width:100%;padding:.45rem .5rem;border:1px solid var(--line);border-radius:.3rem;
+    background:var(--bg);color:var(--fg);font:inherit}
+  textarea{min-height:5rem;resize:vertical}
+  button{font:inherit;padding:.45rem .8rem;border:1px solid var(--line);border-radius:.3rem;
+         background:var(--box);color:var(--fg);cursor:pointer;margin:.15rem .3rem .15rem 0}
+  button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  ul.files{list-style:none;margin:0;padding:0}
+  ul.files > li{border:1px solid var(--line);border-radius:.4rem;padding:.7rem .9rem;margin:0 0 .7rem;background:var(--box)}
+  ul.files dl{display:grid;grid-template-columns:auto 1fr;gap:.1rem .6rem;margin:.3rem 0 .5rem}
+  ul.files dt{font-weight:600;color:var(--muted)}
+  ul.files dd{margin:0}
+  ul.files h4{font-size:1rem;margin:0 0 .25rem}
+  p.chyba{color:var(--warn);margin:.3rem 0}
+  #osirele-obal{border:1px solid var(--warn);border-left-width:.35rem;border-radius:.4rem;
+                padding:.6rem .9rem;margin:1rem 0}
+  #osirele-obal h3{color:var(--warn)}
+  .actions{margin-top:.4rem}
+  .status{border:1px solid var(--line);border-left-width:.35rem;border-radius:.3rem;
+          padding:.5rem .75rem;margin:.75rem 0;background:var(--box)}
+  .status.err{border-left-color:var(--warn)}
+  .status.ok{border-left-color:var(--ok)}
+  .hint{color:var(--muted);font-size:.9rem;margin:.15rem 0 0}
+  .row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end}
+  .row > div{flex:1 1 14rem}
+  .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+      clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  pre#log{white-space:pre-wrap;word-break:break-word;background:var(--box);
+          border:1px solid var(--line);border-radius:.3rem;padding:.6rem;max-height:22rem;overflow:auto;font-size:.85rem}
+  hr{border:0;border-top:1px solid var(--line);margin:1.5rem 0}
+  details{border-top:1px solid var(--line);margin:1.5rem 0 0;padding-top:.5rem}
+  details > summary{cursor:pointer;padding:.3rem .2rem;border-radius:.3rem}
+  details > summary > h2{display:inline;margin:0}
+  details[open] > summary{margin-bottom:.75rem}
+  .badge{display:inline-block;border:1px solid var(--line);border-radius:.8rem;padding:0 .5rem;font-size:.85rem;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1 id="nadpis">Správce složky na GitHubu</h1>
+<p class="lead" id="podnadpis">Nastavení není vyplněno.</p>
+
+<div id="stav" class="status" role="status" aria-live="polite">Připraveno.</div>
+
+<h2 id="seznam-h">Soubory ve složce</h2>
+<div class="row" style="margin-bottom:.6rem">
+  <button type="button" class="primary" id="btn-nacist">Načíst / obnovit seznam</button>
+  <button type="button" id="btn-novy-toggle" aria-expanded="false" aria-controls="novy-blok">Vytvořit nový soubor</button>
+  <button type="button" id="btn-init">Založit folder.json</button>
+</div>
+
+<div id="novy-blok" hidden>
+  <fieldset>
+    <legend>Nový soubor</legend>
+    <label for="novy-nazev">Název souboru včetně přípony</label>
+    <input type="text" id="novy-nazev" autocomplete="off" aria-describedby="novy-nazev-hint">
+    <p class="hint" id="novy-nazev-hint">Například <code>smlouva.docx</code>. Tento název je závazný – jakýkoli později nahraný soubor se uloží pod ním.</p>
+
+    <label for="novy-popis">Popis</label>
+    <textarea id="novy-popis" aria-describedby="novy-popis-hint"></textarea>
+    <p class="hint" id="novy-popis-hint">Popis se ukládá do metadat v souboru folder.json.</p>
+
+    <label for="novy-obsah">Počáteční obsah (nepovinné)</label>
+    <input type="file" id="novy-obsah">
+    <p class="hint">Pokud soubor nevyberete, vytvoří se prázdný soubor.</p>
+
+    <div class="actions">
+      <button type="button" class="primary" id="btn-novy-ulozit">Vytvořit a odeslat na GitHub</button>
+      <button type="button" id="btn-novy-zrusit">Zrušit</button>
+    </div>
+  </fieldset>
+</div>
+
+<div id="seznam-obal">
+  <p id="seznam-prazdno">Seznam zatím nebyl načten.</p>
+  <ul class="files" id="seznam"></ul>
+</div>
+
+<div id="osirele-obal" hidden></div>
+
+<details id="nastaveni-blok">
+  <summary><h2 id="nastaveni-h">Nastavení</h2></summary>
+
+  <fieldset>
+    <legend>Připojení k repozitáři</legend>
+
+    <label for="cfg-repo">Repozitář ve tvaru vlastnik/repozitar</label>
+    <input type="text" id="cfg-repo" autocomplete="off" spellcheck="false">
+
+    <label for="cfg-vetev">Větev</label>
+    <input type="text" id="cfg-vetev" autocomplete="off" spellcheck="false" aria-describedby="cfg-vetev-hint">
+    <p class="hint" id="cfg-vetev-hint">Nevyplníte-li nic, použije se výchozí větev repozitáře.</p>
+
+    <label for="cfg-slozka">Složka v repozitáři</label>
+    <input type="text" id="cfg-slozka" autocomplete="off" spellcheck="false" aria-describedby="cfg-slozka-hint">
+    <p class="hint" id="cfg-slozka-hint">Cesta bez počátečního lomítka, například <code>dokumenty/smlouvy</code>. Prázdná hodnota znamená kořen repozitáře.</p>
+
+    <label for="cfg-token">Přístupový token GitHubu</label>
+    <input type="password" id="cfg-token" autocomplete="off" spellcheck="false" aria-describedby="cfg-token-hint">
+    <p class="hint" id="cfg-token-hint">Token zůstává pouze ve vašem prohlížeči (localStorage). Nikam jinam se neodesílá než přímo na api.github.com. Nikdy se nepřenáší v URL.</p>
+
+    <div class="actions">
+      <button type="button" class="primary" id="btn-cfg-ulozit">Uložit nastavení</button>
+      <button type="button" id="btn-cfg-token-zobrazit" aria-pressed="false">Zobrazit token</button>
+      <button type="button" id="btn-cfg-smazat">Smazat uložené nastavení</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Odkaz s předvyplněným nastavením</legend>
+    <p class="hint">Odkaz obsahuje repozitář, větev a složku. Token v odkazu nikdy není.</p>
+    <label for="cfg-odkaz">Odkaz</label>
+    <input type="text" id="cfg-odkaz" readonly>
+    <div class="actions">
+      <button type="button" id="btn-odkaz-kopirovat">Zkopírovat odkaz do schránky</button>
+    </div>
+  </fieldset>
+</details>
+
+<details id="log-blok">
+<summary><h2 id="log-h">Ladicí výpis</h2></summary>
+<div class="actions">
+  <button type="button" id="btn-log-smazat">Vymazat výpis</button>
+  <button type="button" id="btn-log-kopirovat">Zkopírovat výpis</button>
+</div>
+<pre id="log" tabindex="0" aria-label="Ladicí výpis operací"></pre>
+</details>
+
+<script>
+(function(){
+"use strict";
+
+var KLIC = "spravce-slozky-github";
+var cfg = { repo:"", vetev:"", slozka:"", token:"" };
+var metadata = null;      // obsah folder.json
+var metaSha = null;       // sha folder.json
+var shaMapa = {};         // nazev -> sha souboru v repozitáři
+
+/* ---------- pomocné ---------- */
+
+function el(id){ return document.getElementById(id); }
+
+function log(text){
+  var p = el("log");
+  var cas = new Date().toLocaleTimeString("cs-CZ");
+  p.textContent += "[" + cas + "] " + text + "\n";
+  p.scrollTop = p.scrollHeight;
+}
+
+function stav(text, typ){
+  var d = el("stav");
+  d.className = "status" + (typ ? " " + typ : "");
+  d.textContent = text;
+  log(text);
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+  });
+}
+
+function velikost(b){
+  if (b === null || b === undefined) return "neznámá";
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b/1024).toFixed(1).replace(".",",") + " kB";
+  return (b/1048576).toFixed(1).replace(".",",") + " MB";
+}
+
+function datum(iso){
+  if (!iso) return "neuvedeno";
+  var d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString("cs-CZ");
+}
+
+function pripona(nazev){
+  var i = nazev.lastIndexOf(".");
+  return i > 0 ? nazev.slice(i+1).toLowerCase() : "";
+}
+
+var MIME = {
+  txt:"text/plain", md:"text/markdown", csv:"text/csv", json:"application/json",
+  xml:"application/xml", html:"text/html", htm:"text/html", css:"text/css",
+  js:"text/javascript", pdf:"application/pdf", png:"image/png", jpg:"image/jpeg",
+  jpeg:"image/jpeg", gif:"image/gif", svg:"image/svg+xml", webp:"image/webp",
+  zip:"application/zip",
+  docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt:"application/vnd.oasis.opendocument.text",
+  ods:"application/vnd.oasis.opendocument.spreadsheet"
+};
+function mime(nazev){ return MIME[pripona(nazev)] || "application/octet-stream"; }
+
+function textovy(nazev){
+  return /^(txt|md|markdown|csv|tsv|json|xml|html|htm|css|js|mjs|yml|yaml|ini|cfg|conf|log|sql|py|sh|bat|svg|rst|adoc|tex)$/
+    .test(pripona(nazev));
+}
+
+/* base64 <-> bytes bez závislostí */
+function bytesNaBase64(bytes){
+  var bin = "", chunk = 0x8000;
+  for (var i=0; i<bytes.length; i+=chunk){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  }
+  return btoa(bin);
+}
+function base64NaBytes(b64){
+  var bin = atob(String(b64).replace(/\s+/g,""));
+  var out = new Uint8Array(bin.length);
+  for (var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function textNaBase64(t){
+  return bytesNaBase64(new TextEncoder().encode(t));
+}
+
+/* ---------- konfigurace ---------- */
+
+function nactiCfg(){
+  try{
+    var ulozene = JSON.parse(localStorage.getItem(KLIC) || "{}");
+    cfg.repo = ulozene.repo || "";
+    cfg.vetev = ulozene.vetev || "";
+    cfg.slozka = ulozene.slozka || "";
+    cfg.token = ulozene.token || "";
+  }catch(e){ log("Uložené nastavení se nepodařilo přečíst: " + e.message); }
+
+  var u = new URL(location.href);
+  var q = u.searchParams;
+  var zUrl = false;
+  if (q.get("repo")){ cfg.repo = q.get("repo").trim(); zUrl = true; }
+  if (q.get("branch")){ cfg.vetev = q.get("branch").trim(); zUrl = true; }
+  if (q.get("vetev")){ cfg.vetev = q.get("vetev").trim(); zUrl = true; }
+  if (q.get("folder") !== null){ cfg.slozka = normSlozka(q.get("folder")); zUrl = true; }
+  if (q.get("slozka") !== null){ cfg.slozka = normSlozka(q.get("slozka")); zUrl = true; }
+  if (zUrl) log("Nastavení bylo částečně převzato z parametrů URL.");
+  zapisCfgDoFormulare();
+  aktualizujHlavicku();
+}
+
+function normSlozka(s){
+  return String(s || "").trim().replace(/^\/+/,"").replace(/\/+$/,"");
+}
+
+function zapisCfgDoFormulare(){
+  el("cfg-repo").value = cfg.repo;
+  el("cfg-vetev").value = cfg.vetev;
+  el("cfg-slozka").value = cfg.slozka;
+  el("cfg-token").value = cfg.token;
+  el("cfg-odkaz").value = sestavOdkaz();
+}
+
+function sestavOdkaz(){
+  var z = location.origin + location.pathname;
+  var q = [];
+  if (cfg.repo) q.push("repo=" + encodeURIComponent(cfg.repo));
+  if (cfg.vetev) q.push("branch=" + encodeURIComponent(cfg.vetev));
+  if (cfg.slozka) q.push("folder=" + encodeURIComponent(cfg.slozka));
+  return q.length ? z + "?" + q.join("&") : z;
+}
+
+function ulozCfg(){
+  cfg.repo = el("cfg-repo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/+$/,"");
+  cfg.vetev = el("cfg-vetev").value.trim();
+  cfg.slozka = normSlozka(el("cfg-slozka").value);
+  cfg.token = el("cfg-token").value.trim();
+  try{
+    localStorage.setItem(KLIC, JSON.stringify(cfg));
+    stav("Nastavení bylo uloženo do prohlížeče.", "ok");
+  }catch(e){
+    stav("Nastavení se nepodařilo uložit: " + e.message, "err");
+  }
+  zapisCfgDoFormulare();
+  aktualizujHlavicku();
+}
+
+function aktualizujHlavicku(){
+  var h1 = el("nadpis"), p = el("podnadpis");
+  if (cfg.repo){
+    var cesta = cfg.slozka || "(kořen repozitáře)";
+    h1.textContent = cesta === "(kořen repozitáře)" ? cfg.repo : cesta;
+    document.title = h1.textContent + " – správa složky na GitHubu";
+    p.textContent = "Repozitář " + cfg.repo + (cfg.vetev ? ", větev " + cfg.vetev : ", výchozí větev")
+      + (cfg.token ? ". Token je nastaven." : ". Token není nastaven – zápis nebude možný.");
+  }else{
+    h1.textContent = "Správce složky na GitHubu";
+    document.title = "Správce složky na GitHubu";
+    p.textContent = "Nastavení není vyplněno. Otevřete oddíl Nastavení a doplňte repozitář, složku a token.";
+  }
+}
+
+/* ---------- GitHub API ---------- */
+
+function cestaK(nazev){
+  return cfg.slozka ? cfg.slozka + "/" + nazev : nazev;
+}
+
+function api(cesta, volby){
+  volby = volby || {};
+  var hlavicky = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+  if (cfg.token) hlavicky["Authorization"] = "Bearer " + cfg.token;
+  if (volby.body) hlavicky["Content-Type"] = "application/json";
+  return fetch("https://api.github.com" + cesta, {
+    method: volby.method || "GET",
+    headers: hlavicky,
+    body: volby.body ? JSON.stringify(volby.body) : undefined
+  }).then(function(r){
+    return r.text().then(function(t){
+      var data = null;
+      try{ data = t ? JSON.parse(t) : null; }catch(e){ data = null; }
+      if (!r.ok){
+        var zprava = (data && data.message) ? data.message : ("HTTP " + r.status);
+        var chyba = new Error(zprava);
+        chyba.status = r.status;
+        throw chyba;
+      }
+      return data;
+    });
+  });
+}
+
+function kontrola(potrebaToken){
+  if (!cfg.repo){ stav("Není vyplněn repozitář. Doplňte jej v nastavení.", "err"); return false; }
+  if (potrebaToken && !cfg.token){ stav("Pro zápis je potřeba přístupový token. Doplňte jej v nastavení.", "err"); return false; }
+  return true;
+}
+
+function refParam(){ return cfg.vetev ? "?ref=" + encodeURIComponent(cfg.vetev) : ""; }
+
+function ziskejSoubor(nazev){
+  return api("/repos/" + cfg.repo + "/contents/" + cesta(nazev) + refParam());
+}
+function cesta(nazev){
+  return cestaK(nazev).split("/").map(encodeURIComponent).join("/");
+}
+
+function ulozSoubor(nazev, base64, zprava, sha){
+  var telo = { message: zprava, content: base64 };
+  if (cfg.vetev) telo.branch = cfg.vetev;
+  if (sha) telo.sha = sha;
+  return api("/repos/" + cfg.repo + "/contents/" + cesta(nazev), { method:"PUT", body: telo });
+}
+
+/* ---------- načtení seznamu ---------- */
+
+function nacti(){
+  if (!kontrola(false)) return;
+  stav("Načítám obsah složky…");
+  el("btn-nacist").disabled = true;
+
+  var url = "/repos/" + cfg.repo + "/contents/" +
+            (cfg.slozka ? cfg.slozka.split("/").map(encodeURIComponent).join("/") : "") + refParam();
+
+  api(url).then(function(polozky){
+    shaMapa = {};
+    var velikosti = {};
+    if (Array.isArray(polozky)){
+      polozky.forEach(function(p){
+        if (p.type === "file"){ shaMapa[p.name] = p.sha; velikosti[p.name] = p.size; }
+      });
+    }
+    log("Ve složce nalezeno " + Object.keys(shaMapa).length + " souborů.");
+    return ziskejSoubor("folder.json").then(function(d){
+      metaSha = d.sha;
+      var text = new TextDecoder().decode(base64NaBytes(d.content));
+      metadata = JSON.parse(text);
+      if (!metadata || !Array.isArray(metadata.files)) metadata = { files: [] };
+      vykresli(velikosti);
+      stav("Načteno. Evidováno " + metadata.files.length + " souborů.", "ok");
+    }).catch(function(e){
+      if (e.status === 404){
+        metadata = null; metaSha = null;
+        vykresli(velikosti);
+        stav("Ve složce chybí folder.json. Můžete jej založit tlačítkem „Založit folder.json“.", "err");
+      } else throw e;
+    });
+  }).catch(function(e){
+    stav("Načtení se nezdařilo: " + e.message, "err");
+    if (e.status === 404) log("Zkontrolujte název repozitáře, větev a cestu ke složce.");
+    if (e.status === 401 || e.status === 403) log("Zkontrolujte platnost tokenu a jeho oprávnění k obsahu repozitáře.");
+  }).then(function(){
+    el("btn-nacist").disabled = false;
+  });
+}
+
+function zalozMetadata(){
+  if (!kontrola(true)) return;
+  if (!confirm("Opravdu založit nový soubor folder.json ve zvolené složce?")) return;
+  var prazdne = { version: 1, folder: cfg.slozka, files: [] };
+  ulozSoubor("folder.json", textNaBase64(JSON.stringify(prazdne, null, 2)),
+             "Založení folder.json", metaSha || undefined)
+    .then(function(){ stav("Soubor folder.json byl založen.", "ok"); nacti(); })
+    .catch(function(e){ stav("Založení se nezdařilo: " + e.message, "err"); });
+}
+
+function ulozMetadata(zprava){
+  metadata.version = 1;
+  metadata.folder = cfg.slozka;
+  metadata.updated = new Date().toISOString();
+  return ulozSoubor("folder.json", textNaBase64(JSON.stringify(metadata, null, 2)),
+                    zprava, metaSha)
+    .then(function(d){ metaSha = d.content.sha; return d; });
+}
+
+function najdi(nazev){
+  if (!metadata) return null;
+  for (var i=0;i<metadata.files.length;i++){
+    if (metadata.files[i].name === nazev) return metadata.files[i];
+  }
+  return null;
+}
+
+/* ---------- vykreslení ---------- */
+
+function vykresli(velikosti){
+  var ul = el("seznam");
+  var prazdno = el("seznam-prazdno");
+  ul.textContent = "";
+
+  if (!metadata || !metadata.files.length){
+    prazdno.hidden = false;
+    prazdno.textContent = metadata
+      ? "V metadatech není evidován žádný soubor. Použijte tlačítko „Vytvořit nový soubor“."
+      : "Metadata (folder.json) nejsou k dispozici.";
+    vykresliOsirele(
+      metadata ? Object.keys(shaMapa).filter(function(n){ return n !== "folder.json"; })
+                       .sort(function(a,b){ return a.localeCompare(b,"cs"); })
+               : [],
+      velikosti);
+    return;
+  }
+  prazdno.hidden = true;
+
+  var serazene = metadata.files.slice().sort(function(a,b){
+    return a.name.localeCompare(b.name, "cs");
+  });
+
+  var evidovane = {};
+  serazene.forEach(function(f){ evidovane[f.name] = true; });
+
+  var osirele = Object.keys(shaMapa).filter(function(n){
+    return n !== "folder.json" && !evidovane[n];
+  }).sort(function(a,b){ return a.localeCompare(b, "cs"); });
+
+  serazene.forEach(function(f, poradi){
+    var li = document.createElement("li");
+    var idBase = "soubor-" + poradi;
+    var existuje = Object.prototype.hasOwnProperty.call(shaMapa, f.name);
+    var vel = velikosti && velikosti[f.name];
+
+    li.innerHTML =
+      '<h3 id="' + idBase + '-h">' + esc(f.name) + '</h3>' +
+      '<p>' + (f.description ? esc(f.description) : '<em>Bez popisu.</em>') + '</p>' +
+      (existuje ? '' :
+        '<p class="chyba"><strong>Nesrovnalost: soubor v repozitáři chybí, ' +
+        'je evidován pouze v metadatech.</strong></p>') +
+      '<dl>' +
+        '<dt>Verze</dt><dd>' + esc(String(f.version || 1)) + '</dd>' +
+        '<dt>Poslední změna</dt><dd>' + esc(datum(f.updated)) + '</dd>' +
+        '<dt>Velikost</dt><dd>' + esc(velikost(vel)) + '</dd>' +
+      '</dl>' +
+      '<div class="actions" role="group" aria-labelledby="' + idBase + '-h">' +
+        '<button type="button" data-akce="stahnout" data-nazev="' + esc(f.name) + '">Stáhnout</button>' +
+        '<button type="button" data-akce="nahrat" data-nazev="' + esc(f.name) + '">Nahrát novou verzi</button>' +
+        '<button type="button" data-akce="kopirovat" data-nazev="' + esc(f.name) + '">Zkopírovat obsah do schránky</button>' +
+        '<button type="button" data-akce="vlozit" data-nazev="' + esc(f.name) + '">Vložit novou verzi ze schránky</button>' +
+        '<button type="button" data-akce="popis" data-nazev="' + esc(f.name) + '">Upravit popis</button>' +
+        '<button type="button" data-akce="smazat" data-nazev="' + esc(f.name) + '">Odstranit</button>' +
+      '</div>';
+    ul.appendChild(li);
+  });
+
+  vykresliOsirele(osirele, velikosti);
+}
+
+function vykresliOsirele(osirele, velikosti){
+  var obal = el("osirele-obal");
+  obal.textContent = "";
+  if (!osirele.length){ obal.hidden = true; return; }
+  obal.hidden = false;
+
+  var h = document.createElement("h3");
+  h.textContent = "Nesrovnalost: soubory bez metadat";
+  obal.appendChild(h);
+
+  var p = document.createElement("p");
+  p.textContent = "Tyto soubory jsou ve složce přítomny, ale nejsou evidovány v souboru folder.json.";
+  obal.appendChild(p);
+
+  var ul = document.createElement("ul");
+  ul.className = "files";
+  osirele.forEach(function(nazev){
+    var li = document.createElement("li");
+    li.innerHTML =
+      '<h4>' + esc(nazev) + '</h4>' +
+      '<p>Velikost ' + esc(velikost(velikosti && velikosti[nazev])) + '.</p>' +
+      '<div class="actions">' +
+        '<button type="button" data-akce="stahnout" data-nazev="' + esc(nazev) + '">Stáhnout</button>' +
+        '<button type="button" data-akce="doplnit" data-nazev="' + esc(nazev) + '">Doplnit do metadat</button>' +
+        '<button type="button" data-akce="smazat" data-nazev="' + esc(nazev) + '">Odstranit z repozitáře</button>' +
+      '</div>';
+    ul.appendChild(li);
+  });
+  obal.appendChild(ul);
+}
+
+function doplnitDoMetadat(nazev){
+  if (!kontrola(true)) return;
+  if (!metadata) return;
+  if (najdi(nazev)) return;
+  var popis = prompt("Popis souboru " + nazev, "");
+  if (popis === null) return;
+  metadata.files.push({
+    name: nazev, description: popis, version: 1,
+    created: new Date().toISOString(), updated: new Date().toISOString()
+  });
+  ulozMetadata("Doplnění " + nazev + " do metadat").then(function(){
+    stav("Soubor " + nazev + " byl doplněn do metadat.", "ok");
+    nacti();
+  }).catch(function(e){ stav("Doplnění se nezdařilo: " + e.message, "err"); });
+}
+
+/* ---------- akce nad souborem ---------- */
+
+function stahnout(nazev){
+  if (!kontrola(false)) return;
+  stav("Stahuji soubor " + nazev + "…");
+  ziskejSoubor(nazev).then(function(d){
+    var bytes;
+    if (d.content){ bytes = base64NaBytes(d.content); }
+    else { throw new Error("Soubor je příliš velký pro přímé stažení přes API."); }
+    var blob = new Blob([bytes], {type: mime(nazev)});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nazev;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+    stav("Soubor " + nazev + " byl stažen.", "ok");
+  }).catch(function(e){
+    stav("Stažení se nezdařilo: " + e.message, "err");
+  });
+}
+
+function nahrat(nazev){
+  if (!kontrola(true)) return;
+  var vstup = document.createElement("input");
+  vstup.type = "file";
+  vstup.addEventListener("change", function(){
+    var soubor = vstup.files && vstup.files[0];
+    if (!soubor) return;
+    if (soubor.name !== nazev){
+      log("Vybraný soubor se jmenuje " + soubor.name + ", uloží se ale jako " + nazev + ".");
+    }
+    stav("Nahrávám novou verzi souboru " + nazev + "…");
+    var ctecka = new FileReader();
+    ctecka.onload = function(){
+      var b64 = bytesNaBase64(new Uint8Array(ctecka.result));
+      odesliVerzi(nazev, b64, "z místního souboru " + soubor.name);
+    };
+    ctecka.onerror = function(){ stav("Soubor se nepodařilo přečíst.", "err"); };
+    ctecka.readAsArrayBuffer(soubor);
+  });
+  vstup.click();
+}
+
+function kopirovat(nazev){
+  if (!kontrola(false)) return;
+  if (!textovy(nazev)){
+    stav("Do schránky lze zkopírovat pouze textový soubor. " + nazev + " textový není.", "err");
+    return;
+  }
+  ziskejSoubor(nazev).then(function(d){
+    var text = new TextDecoder().decode(base64NaBytes(d.content));
+    return navigator.clipboard.writeText(text).then(function(){
+      stav("Obsah souboru " + nazev + " byl zkopírován do schránky.", "ok");
+    });
+  }).catch(function(e){
+    stav("Kopírování se nezdařilo: " + e.message, "err");
+  });
+}
+
+function vlozit(nazev){
+  if (!kontrola(true)) return;
+  if (!textovy(nazev)){
+    stav("Ze schránky lze vložit pouze textový obsah. " + nazev + " textový není.", "err");
+    return;
+  }
+  navigator.clipboard.readText().then(function(text){
+    if (!confirm("Nahradit obsah souboru " + nazev + " textem ze schránky (" + text.length + " znaků)?")) return;
+    odesliVerzi(nazev, textNaBase64(text), "z obsahu schránky");
+  }).catch(function(e){
+    stav("Ze schránky se nepodařilo číst: " + e.message + " Použijte tlačítko pro nahrání souboru.", "err");
+  });
+}
+
+function odesliVerzi(nazev, base64, zdroj){
+  var zaznam = najdi(nazev);
+  var novaVerze = (zaznam && zaznam.version ? zaznam.version : 0) + 1;
+
+  ziskejSoubor(nazev).catch(function(e){
+    if (e.status === 404) return null;
+    throw e;
+  }).then(function(existujici){
+    var sha = existujici ? existujici.sha : undefined;
+    return ulozSoubor(nazev, base64, "Nová verze " + nazev + " (v" + novaVerze + ") " + zdroj, sha);
+  }).then(function(d){
+    shaMapa[nazev] = d.content.sha;
+    if (zaznam){
+      zaznam.version = novaVerze;
+      zaznam.updated = new Date().toISOString();
+      zaznam.size = d.content.size;
+    }else{
+      metadata = metadata || { files: [] };
+      metadata.files.push({ name: nazev, description: "", version: novaVerze,
+                            created: new Date().toISOString(), updated: new Date().toISOString(),
+                            size: d.content.size });
+    }
+    return ulozMetadata("Aktualizace metadat po uložení " + nazev);
+  }).then(function(){
+    stav("Soubor " + nazev + " byl uložen jako verze " + novaVerze + " a odeslán na GitHub.", "ok");
+    nacti();
+  }).catch(function(e){
+    stav("Uložení se nezdařilo: " + e.message, "err");
+  });
+}
+
+function upravPopis(nazev){
+  if (!kontrola(true)) return;
+  var zaznam = najdi(nazev);
+  if (!zaznam) return;
+  var novy = prompt("Popis souboru " + nazev, zaznam.description || "");
+  if (novy === null) return;
+  zaznam.description = novy;
+  zaznam.updated = new Date().toISOString();
+  ulozMetadata("Úprava popisu souboru " + nazev).then(function(){
+    stav("Popis souboru " + nazev + " byl upraven.", "ok");
+    nacti();
+  }).catch(function(e){ stav("Uložení popisu se nezdařilo: " + e.message, "err"); });
+}
+
+function smazat(nazev){
+  if (!kontrola(true)) return;
+  if (!confirm("Opravdu odstranit soubor " + nazev + " z repozitáře i z metadat? Akci nelze vzít zpět.")) return;
+  stav("Odstraňuji " + nazev + "…");
+  var telo = { message: "Odstranění souboru " + nazev, sha: shaMapa[nazev] };
+  if (cfg.vetev) telo.branch = cfg.vetev;
+
+  var krok = shaMapa[nazev]
+    ? api("/repos/" + cfg.repo + "/contents/" + cesta(nazev), { method:"DELETE", body: telo })
+    : Promise.resolve(null);
+
+  krok.then(function(){
+    if (!metadata) return null;
+    var puvodni = metadata.files.length;
+    metadata.files = metadata.files.filter(function(f){ return f.name !== nazev; });
+    if (metadata.files.length === puvodni) return null;
+    return ulozMetadata("Odstranění " + nazev + " z metadat");
+  }).then(function(){
+    stav("Soubor " + nazev + " byl odstraněn.", "ok");
+    nacti();
+  }).catch(function(e){ stav("Odstranění se nezdařilo: " + e.message, "err"); });
+}
+
+/* ---------- vytvoření nového souboru ---------- */
+
+function vytvorNovy(){
+  if (!kontrola(true)) return;
+  var nazev = el("novy-nazev").value.trim();
+  var popis = el("novy-popis").value.trim();
+
+  if (!nazev){ stav("Zadejte název souboru včetně přípony.", "err"); el("novy-nazev").focus(); return; }
+  if (/[\\/]/.test(nazev)){ stav("Název nesmí obsahovat lomítka.", "err"); el("novy-nazev").focus(); return; }
+  if (nazev === "folder.json"){ stav("Název folder.json je vyhrazen pro metadata.", "err"); return; }
+  if (nazev.indexOf(".") <= 0){ if (!confirm("Název neobsahuje příponu. Pokračovat?")) return; }
+  if (!metadata){ stav("Nejprve načtěte nebo založte folder.json.", "err"); return; }
+  if (najdi(nazev)){ stav("Soubor s tímto názvem je již evidován.", "err"); return; }
+
+  var vstup = el("novy-obsah");
+  var soubor = vstup.files && vstup.files[0];
+
+  function dokonci(base64, zdroj){
+    ziskejSoubor(nazev).catch(function(e){
+      if (e.status === 404) return null;
+      throw e;
+    }).then(function(existujici){
+      if (existujici && !confirm("Soubor " + nazev + " už v repozitáři existuje. Přepsat jej?")) throw new Error("Zrušeno uživatelem.");
+      return ulozSoubor(nazev, base64, "Vytvoření souboru " + nazev + " " + zdroj,
+                        existujici ? existujici.sha : undefined);
+    }).then(function(d){
+      metadata.files.push({
+        name: nazev, description: popis, version: 1,
+        created: new Date().toISOString(), updated: new Date().toISOString(),
+        size: d.content.size
+      });
+      return ulozMetadata("Zápis metadat pro " + nazev);
+    }).then(function(){
+      stav("Soubor " + nazev + " byl vytvořen a odeslán na GitHub.", "ok");
+      el("novy-nazev").value = ""; el("novy-popis").value = ""; vstup.value = "";
+      prepniNovy(false);
+      nacti();
+    }).catch(function(e){
+      stav("Vytvoření se nezdařilo: " + e.message, "err");
+    });
+  }
+
+  stav("Vytvářím soubor " + nazev + "…");
+  if (soubor){
+    var ctecka = new FileReader();
+    ctecka.onload = function(){ dokonci(bytesNaBase64(new Uint8Array(ctecka.result)), "z místního souboru " + soubor.name); };
+    ctecka.onerror = function(){ stav("Vybraný soubor se nepodařilo přečíst.", "err"); };
+    ctecka.readAsArrayBuffer(soubor);
+  }else{
+    dokonci("", "jako prázdný soubor");
+  }
+}
+
+/* ---------- ovládání ---------- */
+
+function prepniNovy(zobrazit){
+  var blok = el("novy-blok"), tl = el("btn-novy-toggle");
+  blok.hidden = !zobrazit;
+  tl.setAttribute("aria-expanded", zobrazit ? "true" : "false");
+  if (zobrazit) el("novy-nazev").focus();
+}
+
+el("btn-nacist").addEventListener("click", nacti);
+el("btn-init").addEventListener("click", zalozMetadata);
+el("btn-novy-toggle").addEventListener("click", function(){ prepniNovy(el("novy-blok").hidden); });
+el("btn-novy-zrusit").addEventListener("click", function(){ prepniNovy(false); el("btn-novy-toggle").focus(); });
+el("btn-novy-ulozit").addEventListener("click", vytvorNovy);
+
+el("btn-cfg-ulozit").addEventListener("click", ulozCfg);
+el("btn-cfg-token-zobrazit").addEventListener("click", function(){
+  var pole = el("cfg-token"), skryto = pole.type === "password";
+  pole.type = skryto ? "text" : "password";
+  this.setAttribute("aria-pressed", skryto ? "true" : "false");
+  this.textContent = skryto ? "Skrýt token" : "Zobrazit token";
+});
+el("btn-cfg-smazat").addEventListener("click", function(){
+  if (!confirm("Opravdu smazat uložené nastavení včetně tokenu z tohoto prohlížeče?")) return;
+  localStorage.removeItem(KLIC);
+  cfg = { repo:"", vetev:"", slozka:"", token:"" };
+  zapisCfgDoFormulare(); aktualizujHlavicku();
+  stav("Uložené nastavení bylo smazáno.", "ok");
+});
+el("btn-odkaz-kopirovat").addEventListener("click", function(){
+  navigator.clipboard.writeText(el("cfg-odkaz").value).then(function(){
+    stav("Odkaz byl zkopírován do schránky.", "ok");
+  }).catch(function(e){ stav("Kopírování se nezdařilo: " + e.message, "err"); });
+});
+
+el("btn-log-smazat").addEventListener("click", function(){ el("log").textContent = ""; });
+el("btn-log-kopirovat").addEventListener("click", function(){
+  navigator.clipboard.writeText(el("log").textContent).then(function(){
+    stav("Ladicí výpis byl zkopírován do schránky.", "ok");
+  }).catch(function(e){ stav("Kopírování se nezdařilo: " + e.message, "err"); });
+});
+
+function obsluhaAkce(ev){
+  var tl = ev.target.closest("button[data-akce]");
+  if (!tl) return;
+  var nazev = tl.getAttribute("data-nazev");
+  switch (tl.getAttribute("data-akce")){
+    case "stahnout":  stahnout(nazev); break;
+    case "nahrat":    nahrat(nazev); break;
+    case "kopirovat": kopirovat(nazev); break;
+    case "vlozit":    vlozit(nazev); break;
+    case "popis":     upravPopis(nazev); break;
+    case "smazat":    smazat(nazev); break;
+    case "doplnit":   doplnitDoMetadat(nazev); break;
+  }
+}
+el("seznam").addEventListener("click", obsluhaAkce);
+el("osirele-obal").addEventListener("click", obsluhaAkce);
+
+/* ---------- start ---------- */
+
+nactiCfg();
+log("Aplikace spuštěna.");
+if (!cfg.repo) el("nastaveni-blok").open = true;
+if (cfg.repo && cfg.token) nacti();
+else if (cfg.repo) stav("Repozitář je nastaven, token chybí. Načtení veřejného obsahu je možné, zápis nikoli.", "err");
+
+})();
+</script>
+</body>
+</html>
