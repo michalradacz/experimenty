@@ -138,10 +138,9 @@ dialog textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size
 .flags{display:inline-flex;gap:.25rem;flex-wrap:wrap;vertical-align:middle;margin-right:.3rem}
 .flag{font-size:.75rem;padding:.05rem .35rem;border:1px solid var(--line);border-radius:999px;
  background:var(--panel2);white-space:nowrap}
-.flag[data-k="ukol"]{border-color:var(--accent)}
-.flag[data-k="dulezite"]{border-color:var(--err);color:var(--err)}
-.flag[data-k="otazka"]{border-color:var(--warn);color:var(--warn)}
-.flag[data-k="hotovo"]{border-color:var(--ok);color:var(--ok)}
+html[data-theme="dark"] .flag,html[data-theme="contrast"] .flag{color:var(--fg)!important;border-color:var(--line)!important}
+.flagprev{font-size:1.3rem}
+table td input[type=text]{width:100%}
 .meta{font-size:.75rem;color:var(--muted)}
 /* styles of paragraph */
 .item[data-style="h1"]>.itemrow .txt{font-size:1.4rem;font-weight:700}
@@ -300,6 +299,7 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnFlagDul">Důležité <span class="acc">Ctrl+Shift+2</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagOt">Otázka <span class="acc">Ctrl+Shift+3</span></button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnFlagMore">Všechny příznaky…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnFlagManage">Spravovat příznaky…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagClear">Odebrat příznaky z řádku</button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnDone">Hotovo / nehotovo <span class="acc">Ctrl+Shift+D</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagsPane" aria-pressed="false">Souhrn příznaků (panel)</button></li>
@@ -428,34 +428,71 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function uid(){return 'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
 function say(m){ var s=$('status'); s.textContent=m; }
 
-var FLAGS = [
- {k:'ukol',       n:'Úkol',                 s:'☐'},
- {k:'hotovo',     n:'Hotový úkol',          s:'☑'},
- {k:'dulezite',   n:'Důležité',             s:'★'},
- {k:'otazka',     n:'Otázka',               s:'?'},
- {k:'pamatovat',  n:'Zapamatovat na později',s:'!'},
- {k:'definice',   n:'Definice',             s:'§'},
- {k:'zvyrazneno', n:'Zvýrazněné',           s:'▮'},
- {k:'kontakt',    n:'Kontakt',              s:'☏'},
- {k:'adresa',     n:'Adresa',               s:'⌂'},
- {k:'telefon',    n:'Telefonní číslo',      s:'✆'},
- {k:'email',      n:'E-mail',               s:'✉'},
- {k:'schuzka',    n:'Schůzka',              s:'☕'},
- {k:'nazev',      n:'Název projektu',       s:'▣'},
- {k:'heslo',      n:'Heslo / přístup',      s:'⚿'},
- {k:'kniha',      n:'Kniha ke čtení',       s:'📖'},
- {k:'film',       n:'Film ke zhlédnutí',    s:'🎬'},
- {k:'hudba',      n:'Hudba k poslechu',     s:'♪'},
- {k:'citace',     n:'Citace',               s:'”'},
- {k:'nakup',      n:'Nákup',                s:'🛒'},
- {k:'napad',      n:'Nápad',                s:'💡'},
- {k:'kritika',    n:'K diskusi',            s:'⚖'},
- {k:'riziko',     n:'Riziko',               s:'⚠'},
- {k:'rozhodnuti', n:'Rozhodnutí',           s:'✔'},
- {k:'odkaz',      n:'Zdroj / odkaz',        s:'🔗'}
+var FLAGS_DEFAULT = [
+ {k:'ukol',       n:'Úkol',                  s:'☐',  c:'modra'},
+ {k:'hotovo',     n:'Hotový úkol',           s:'✅', c:'zelena'},
+ {k:'dulezite',   n:'Důležité',              s:'⭐', c:'cervena'},
+ {k:'otazka',     n:'Otázka',                s:'❓', c:'oranzova'},
+ {k:'pamatovat',  n:'Zapamatovat na později',s:'📌', c:'fialova'},
+ {k:'definice',   n:'Definice',              s:'📗', c:'zelena'},
+ {k:'zvyrazneno', n:'Zvýrazněné',            s:'🔆', c:'zluta'},
+ {k:'kontakt',    n:'Kontakt',               s:'👤', c:'modra'},
+ {k:'adresa',     n:'Adresa',                s:'🏠', c:'hneda'},
+ {k:'telefon',    n:'Telefonní číslo',       s:'📞', c:'modra'},
+ {k:'email',      n:'E-mail',                s:'✉️', c:'modra'},
+ {k:'schuzka',    n:'Schůzka',               s:'📅', c:'fialova'},
+ {k:'nazev',      n:'Název projektu',        s:'🗂️', c:'seda'},
+ {k:'heslo',      n:'Heslo a přístup',       s:'🔑', c:'hneda'},
+ {k:'kniha',      n:'Kniha ke čtení',        s:'📖', c:'hneda'},
+ {k:'film',       n:'Film ke zhlédnutí',     s:'🎬', c:'fialova'},
+ {k:'hudba',      n:'Hudba k poslechu',      s:'🎵', c:'fialova'},
+ {k:'citace',     n:'Citace',                s:'💬', c:'seda'},
+ {k:'nakup',      n:'Nákup',                 s:'🛒', c:'zelena'},
+ {k:'napad',      n:'Nápad',                 s:'💡', c:'zluta'},
+ {k:'kritika',    n:'K diskusi',             s:'⚖️', c:'oranzova'},
+ {k:'riziko',     n:'Riziko',                s:'⚠️', c:'cervena'},
+ {k:'rozhodnuti', n:'Rozhodnutí',            s:'✔️', c:'zelena'},
+ {k:'odkaz',      n:'Zdroj a odkaz',         s:'🔗', c:'modra'}
 ];
-function flagDef(k){ for(var i=0;i<FLAGS.length;i++) if(FLAGS[i].k===k) return FLAGS[i];
-  return {k:k,n:k,s:'•'}; }
+var FLAG_COLORS=[
+ {k:'',         n:'bez barvy', hex:'#5a5a5a'},
+ {k:'cervena',  n:'červená',   hex:'#b3261e'},
+ {k:'oranzova', n:'oranžová',  hex:'#8a4b00'},
+ {k:'zluta',    n:'žlutá',     hex:'#6d5600'},
+ {k:'zelena',   n:'zelená',    hex:'#0f5c2e'},
+ {k:'modra',    n:'modrá',     hex:'#1a4f8a'},
+ {k:'fialova',  n:'fialová',   hex:'#5b2d90'},
+ {k:'hneda',    n:'hnědá',     hex:'#6b4423'},
+ {k:'seda',     n:'šedá',      hex:'#44484d'}
+];
+function flagColor(c){
+  for(var i=0;i<FLAG_COLORS.length;i++) if(FLAG_COLORS[i].k===c) return FLAG_COLORS[i];
+  return FLAG_COLORS[0];
+}
+/* Uživatelské úpravy příznaků se ukládají do bloku, takže putují se souborem.
+   Klíč k je neměnný – je to identifikátor uložený u řádků. Měnit lze název,
+   symbol a barvu. */
+function flags(){
+  if(nb && nb.flags && nb.flags.length) return nb.flags;
+  return FLAGS_DEFAULT;
+}
+function flagDef(k){
+  var a=flags();
+  for(var i=0;i<a.length;i++) if(a[i].k===k) return a[i];
+  for(var j=0;j<FLAGS_DEFAULT.length;j++) if(FLAGS_DEFAULT[j].k===k) return FLAGS_DEFAULT[j];
+  return {k:k,n:k,s:'•'};
+}
+function flagsEnsure(){
+  if(!nb) return;
+  if(!nb.flags || !nb.flags.length)
+    nb.flags=JSON.parse(JSON.stringify(FLAGS_DEFAULT));
+  /* doplní případné chybějící výchozí příznaky (např. po načtení staršího souboru) */
+  FLAGS_DEFAULT.forEach(function(f){
+    var has=false;
+    nb.flags.forEach(function(x){ if(x.k===f.k) has=true; });
+    if(!has) nb.flags.push(JSON.parse(JSON.stringify(f)));
+  });
+}
 
 var nb = null;        // notebook
 var curSecId = null, curPageId = null, curItemId = null;
@@ -497,6 +534,7 @@ function isGroup(n){ return n && n.type==='group'; }
 function kids(n){ return isGroup(n) ? (n.children||(n.children=[])) : null; }
 function newNotebook(name){
   return {name:name||"Nový poznámkový blok",sections:[],
+          flags:JSON.parse(JSON.stringify(FLAGS_DEFAULT)),
           settings:{theme:'light',fontsize:16,autosave:true,debug:false}};
 }
 /* -------- lokátory -------- */
@@ -839,7 +877,15 @@ function renderItems(list,parentUl,depth){
       var fs=document.createElement('span'); fs.className='flags';
       it.flags.forEach(function(k){ var d=flagDef(k);
         var sp=document.createElement('span'); sp.className='flag'; sp.setAttribute('data-k',k);
-        sp.textContent=d.s+' '+d.n; fs.appendChild(sp); });
+        var col=flagColor(d.c);
+        if(d.c){ sp.style.borderColor=col.hex; sp.style.color=col.hex; }
+        /* symbol je dekorace, název nese informaci – proto se symbol
+           pro odečítač skryje a nečte se jako „emodži“ */
+        var sym=document.createElement('span'); sym.setAttribute('aria-hidden','true');
+        sym.textContent=d.s+' ';
+        sp.appendChild(sym);
+        sp.appendChild(document.createTextNode(d.n));
+        fs.appendChild(sp); });
       body.appendChild(fs);
     }
 
@@ -1196,9 +1242,11 @@ function dlgWiki(){
 function dlgFlags(){
   var it=requireItem(); if(!it) return;
   var html='<fieldset><legend>Příznaky řádku</legend><ul class="plain">'+
-    FLAGS.map(function(f){
+    flags().filter(function(f){ return !f.hidden || it.flags.indexOf(f.k)>=0; })
+      .map(function(f){
       return '<li><label><input type="checkbox" class="fchk" value="'+f.k+'"'+
-        (it.flags.indexOf(f.k)>=0?' checked':'')+'> '+f.s+' '+esc(f.n)+'</label></li>';
+        (it.flags.indexOf(f.k)>=0?' checked':'')+'> <span aria-hidden="true">'+esc(f.s)+
+        '</span> '+esc(f.n)+'</label></li>';
     }).join("")+'</ul></fieldset>';
   openDlg('Příznaky',html,[{t:'Použít',fn:function(){
       snapshot('příznaky');
@@ -1268,6 +1316,17 @@ function dlgHelp(){
   '<li>Velké soubory výrazně zvětší uložený blok, proto vkládejte spíše menší přílohy</li></ul>'+
   '<h3>Ostatní</h3><ul>'+
   '<li>Zápis [[Název stránky]] v textu vytvoří wiki odkaz po opuštění řádku</li></ul>'+
+  '<h3>Správa příznaků</h3><ul>'+
+  '<li>Příznaky → Spravovat příznaky… umožní změnit název, symbol i barvu '+
+  'u všech 24 příznaků</li>'+
+  '<li>Symbol může být emoji i běžný znak; lze jej napsat z klávesnice '+
+  'nebo vybrat ze seznamu</li>'+
+  '<li>Vnitřní klíč příznaku se nemění, proto úpravy nerozbijí označení, '+
+  'která už v poznámkách máte</li>'+
+  '<li>Nepoužívaný příznak lze skrýt z nabídky; u řádků, kde už je použitý, zůstane</li>'+
+  '<li>Sloupec Použití ukazuje, kolikrát je příznak v bloku použit</li>'+
+  '<li>Nastavení příznaků se ukládá do poznámkového bloku, takže putuje se souborem</li>'+
+  '<li>Symbol je pro odečítač skrytý, informaci nese název příznaku</li></ul>'+
   '<h3>Vnitřní odkazy</h3><ul>'+
   '<li>Kromě wiki odkazu na název stránky lze odkazovat na konkrétní odstavec, '+
   'stránku, oddíl, skupinu oddílů i celý blok</li>'+
@@ -1499,7 +1558,8 @@ function dlgSearch(){
    '<option value="page">Aktuální stránka</option></select></div></div>'+
    '<div class="row"><div class="field"><label for="sflag">Jen s příznakem</label>'+
    '<select id="sflag"><option value="">(libovolný)</option>'+
-   FLAGS.map(function(f){return '<option value="'+f.k+'">'+esc(f.n)+'</option>';}).join("")+
+   flags().filter(function(f){return !f.hidden;})
+     .map(function(f){return '<option value="'+f.k+'">'+esc(f.n)+'</option>';}).join("")+
    '</select></div>'+
    '<div class="field"><label><input type="checkbox" id="scase"> Rozlišovat velikost písmen</label>'+
    '<label><input type="checkbox" id="stitles"> Hledat i v názvech stránek</label></div></div>'+
@@ -1756,6 +1816,150 @@ function clipFallbackPaste(){
    function(){ $('clipin').focus(); });
 }
 
+
+
+/* ===================== SPRÁVA PŘÍZNAKŮ =====================
+   Upravovat lze název, symbol a barvu. Klíč zůstává neměnný, protože
+   je uložený u jednotlivých řádků – jinak by se vazba rozpadla.
+   Příznak lze skrýt, pokud jej nepoužíváte; skrytím se nesmaže
+   z řádků, které ho už mají. */
+function flagUsage(k){
+  var n=0;
+  allPages().forEach(function(o){
+    (function r(list){ list.forEach(function(it){
+      if(it.flags.indexOf(k)>=0) n++; r(it.children); }); })(o.page.items);
+  });
+  return n;
+}
+function dlgFlagManager(){
+  flagsEnsure();
+  var rows=flags().map(function(f,i){
+    var u=flagUsage(f.k);
+    return '<tr>'+
+      '<td><span class="flagprev" data-i="'+i+'">'+esc(f.s)+'</span></td>'+
+      '<td><label class="vh" for="fn'+i+'">Název příznaku '+esc(f.n)+'</label>'+
+        '<input type="text" id="fn'+i+'" class="fname" data-i="'+i+'" value="'+esc(f.n)+'"></td>'+
+      '<td><label class="vh" for="fs'+i+'">Symbol příznaku '+esc(f.n)+'</label>'+
+        '<input type="text" id="fs'+i+'" class="fsym" data-i="'+i+'" value="'+esc(f.s)+'" size="3"></td>'+
+      '<td><label class="vh" for="fc'+i+'">Barva příznaku '+esc(f.n)+'</label>'+
+        '<select id="fc'+i+'" class="fcol" data-i="'+i+'">'+
+        FLAG_COLORS.map(function(c){
+          return '<option value="'+c.k+'"'+(c.k===(f.c||'')?' selected':'')+'>'+esc(c.n)+'</option>';
+        }).join('')+'</select></td>'+
+      '<td><label><input type="checkbox" class="fhid" data-i="'+i+'"'+(f.hidden?' checked':'')+
+        '> <span class="vh">Skrýt příznak '+esc(f.n)+' z nabídky</span><span aria-hidden="true">skrýt</span></label></td>'+
+      '<td class="sub">'+u+'×</td>'+
+      '</tr>';
+  }).join('');
+  openDlg('Správa příznaků',
+    '<p class="hint">Upravit lze název, symbol a barvu. Symbol může být emoji '+
+    'i běžný znak. Vnitřní klíč příznaku se nemění, proto úpravy nerozbijí '+
+    'označení, která už v poznámkách máte. Skrytý příznak zmizí z nabídky, '+
+    'ale zůstane u řádků, kde už je použitý.</p>'+
+    '<table><caption>Příznaky v tomto poznámkovém bloku</caption><thead><tr>'+
+    '<th scope="col">Náhled</th><th scope="col">Název</th><th scope="col">Symbol</th>'+
+    '<th scope="col">Barva</th><th scope="col">Skrýt</th><th scope="col">Použití</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<p><button type="button" id="btnFlagPick">Vybrat symbol ze seznamu…</button> '+
+    '<button type="button" id="btnFlagReset">Obnovit výchozí nastavení příznaků</button></p>',
+    [{t:'Uložit',fn:function(){
+       snapshot('správa příznaků');
+       var a=flags();
+       Array.prototype.forEach.call(document.querySelectorAll('.fname'),function(e){
+         var f=a[+e.getAttribute('data-i')]; if(f && e.value.trim()) f.n=e.value.trim(); });
+       Array.prototype.forEach.call(document.querySelectorAll('.fsym'),function(e){
+         var f=a[+e.getAttribute('data-i')]; if(f && e.value.trim()) f.s=e.value.trim(); });
+       Array.prototype.forEach.call(document.querySelectorAll('.fcol'),function(e){
+         var f=a[+e.getAttribute('data-i')]; if(f) f.c=e.value; });
+       Array.prototype.forEach.call(document.querySelectorAll('.fhid'),function(e){
+         var f=a[+e.getAttribute('data-i')]; if(f) f.hidden=e.checked; });
+       nb.flags=a; touch(); renderAll(); say('Nastavení příznaků uloženo.');
+     }},{t:'Zrušit'}],
+    function(){
+      /* živý náhled symbolu při psaní */
+      Array.prototype.forEach.call(document.querySelectorAll('.fsym'),function(e){
+        e.addEventListener('input',function(){
+          var p=document.querySelector('.flagprev[data-i="'+e.getAttribute('data-i')+'"]');
+          if(p) p.textContent=e.value; });
+      });
+      var pick=$('btnFlagPick'); if(pick) pick.onclick=dlgSymbolPicker;
+      var rs=$('btnFlagReset'); if(rs) rs.onclick=function(){
+        if(!confirm('Obnovit u všech příznaků výchozí název, symbol i barvu?')) return;
+        snapshot('obnova příznaků');
+        nb.flags=JSON.parse(JSON.stringify(FLAGS_DEFAULT));
+        touch(); closeDlg(); renderAll(); say('Výchozí nastavení příznaků obnoveno.');
+      };
+    });
+}
+/* nabídka emoji a znaků – vloží se do naposledy zaměřeného pole symbolu */
+var SYMBOLS=[
+ '☐','☑','✅','✔️','❌','⭐','🌟','❗','❓','❔','💡','📌','📍','🔖','🏷️',
+ '📖','📕','📗','📘','📙','📚','📝','📄','📋','🗂️','📁','📅','📆','⏰','⏳',
+ '👤','👥','📞','☎️','📱','✉️','📧','🏠','🏢','🔑','🔒','🔓','🛒','💰','💳',
+ '🎬','🎵','🎧','🎨','📷','🔗','🌐','⚠️','⛔','⚖️','🔥','💬','🗨️','✍️','🖊️',
+ '🚩','🏁','🎯','✨','🔆','♻️','➡️','⬆️','⬇️','🔄','🧩','🧭','🔍','🧪','⚙️'
+];
+var lastSymIdx=-1;
+function collectFlagDraft(){
+  var names=[],syms=[],cols=[],hids=[],any=false;
+  Array.prototype.forEach.call(document.querySelectorAll('.fname'),function(e){
+    names[+e.getAttribute('data-i')]=e.value; any=true; });
+  Array.prototype.forEach.call(document.querySelectorAll('.fsym'),function(e){
+    syms[+e.getAttribute('data-i')]=e.value; });
+  Array.prototype.forEach.call(document.querySelectorAll('.fcol'),function(e){
+    cols[+e.getAttribute('data-i')]=e.value; });
+  Array.prototype.forEach.call(document.querySelectorAll('.fhid'),function(e){
+    hids[+e.getAttribute('data-i')]=e.checked; });
+  return any?{name:names,sym:syms,col:cols,hid:hids}:null;
+}
+function applyFlagDraft(dr){
+  if(!dr) return;
+  Array.prototype.forEach.call(document.querySelectorAll('.fname'),function(e){
+    var i=+e.getAttribute('data-i'); if(dr.name[i]!==undefined) e.value=dr.name[i]; });
+  Array.prototype.forEach.call(document.querySelectorAll('.fsym'),function(e){
+    var i=+e.getAttribute('data-i'); if(dr.sym[i]!==undefined){ e.value=dr.sym[i];
+      var p=document.querySelector('.flagprev[data-i="'+i+'"]'); if(p) p.textContent=dr.sym[i]; } });
+  Array.prototype.forEach.call(document.querySelectorAll('.fcol'),function(e){
+    var i=+e.getAttribute('data-i'); if(dr.col[i]!==undefined) e.value=dr.col[i]; });
+  Array.prototype.forEach.call(document.querySelectorAll('.fhid'),function(e){
+    var i=+e.getAttribute('data-i'); if(dr.hid[i]!==undefined) e.checked=dr.hid[i]; });
+}
+function reopenFlagManager(draft,focusIdx){
+  dlgFlagManager();
+  applyFlagDraft(draft);
+  var f=document.querySelector('.fsym[data-i="'+focusIdx+'"]');
+  if(f) f.focus();
+  say('Symbol vložen. Pokračujte v úpravách a potvrďte tlačítkem Uložit.');
+}
+var lastSymField=null;
+function dlgSymbolPicker(){
+  /* dialogové okno je jen jedno, proto si zapamatujeme rozpracované hodnoty
+     správce, po výběru symbolu jej otevřeme znovu a hodnoty vrátíme */
+  var draft=collectFlagDraft();
+  openDlg('Vybrat symbol',
+    '<p class="hint">Vyberte symbol a potvrďte. Vloží se do pole symbolu, '+
+    'které jste naposledy upravoval. Do pole lze také kdykoli vložit '+
+    'libovolné emoji přímo z klávesnice.</p>'+
+    '<div class="field"><label for="symsel">Symbol</label>'+
+    '<select id="symsel" size="10">'+
+    SYMBOLS.map(function(x){ return '<option value="'+esc(x)+'">'+esc(x)+'</option>'; }).join('')+
+    '</select></div>',
+    [{t:'Použít',fn:function(){
+       var v=$('symsel').value;
+       if(draft && lastSymIdx>=0){
+         draft.sym[lastSymIdx]=v;
+         reopenFlagManager(draft,lastSymIdx);
+         return false;
+       }
+       say('Nejprve klepněte do pole symbolu, které chcete změnit.');
+     }},{t:'Zpět do správy příznaků',fn:function(){
+       if(draft){ reopenFlagManager(draft,lastSymIdx); return false; }
+     }}]);
+}
+document.addEventListener('focusin',function(e){
+  if(e.target && e.target.classList && e.target.classList.contains('fsym')){
+    lastSymField=e.target; lastSymIdx=+e.target.getAttribute('data-i'); }
+});
 
 /* ===================== VNITŘNÍ ODKAZY NA ID =====================
    Na rozdíl od wiki odkazu, který míří na název stránky, tyto odkazy
@@ -2055,8 +2259,9 @@ function flagPrefixXml(it){
   var xml='';
   it.flags.forEach(function(k){
     var f=flagDef(k);
+    var hex=flagColor(f.c).hex.replace('#','').toUpperCase();
     xml+=runXml('['+f.s+' '+f.n+'] ',
-      '<w:rPr><w:b/><w:color w:val="5B2D90"/><w:sz w:val="18"/></w:rPr>');
+      '<w:rPr><w:b/><w:color w:val="'+hex+'"/><w:sz w:val="18"/></w:rPr>');
   });
   return xml;
 }
@@ -2255,6 +2460,7 @@ function restore(){
 function normalize(){
   if(!nb) return;
   nb.sections=nb.sections||[];
+  flagsEnsure();
   /* migrace starších souborů: uzel bez type je oddíl */
   (function mig(list){ list.forEach(function(n,i){
     if(!n.type) n.type = n.children ? 'group' : 'section';
@@ -2715,6 +2921,7 @@ on('btnFlagUkol',function(){toggleFlag('ukol');});
 on('btnFlagDul',function(){toggleFlag('dulezite');});
 on('btnFlagOt',function(){toggleFlag('otazka');});
 on('btnFlagMore',dlgFlags);
+on('btnFlagManage',dlgFlagManager);
 on('btnFlagClear',clearFlags);
 on('btnDone',toggleDone);
 on('btnAddItem',function(){
