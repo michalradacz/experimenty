@@ -116,6 +116,14 @@ html[data-theme="contrast"] li.nodegroup[data-hascol="1"]>.navrow{border-left-co
 button.ord{flex:none;width:1.8rem;padding:.1rem;font-size:.85rem}
 nav.side textarea{width:100%}
 dialog textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:.85rem}
+#ghbar{padding:.25rem .6rem;border-top:1px solid var(--line);background:var(--panel);
+ font-size:.85rem;margin:0}
+#ghbadge{font-weight:600}
+.titlefield{margin:.2rem 0 .6rem}
+.titlefield label{font-weight:600;display:block;font-size:.85rem;color:var(--muted)}
+.titlefield input{width:100%;max-width:40rem;font-size:1.15rem;font-weight:700}
+h6.flags{font-size:inherit;font-weight:normal;margin:0;display:inline-flex;
+ gap:.25rem;flex-wrap:wrap;vertical-align:middle}
 /* ---- vnitřní odkazy ---- */
 .reflink{text-decoration:underline dotted;text-underline-offset:2px}
 .reflink::before{content:"⮡ ";speak:none}
@@ -220,6 +228,9 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxPage">Exportovat stránku do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxAll">Exportovat celý blok do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnImportMd">Importovat Markdown…</button></li>
+    <li role="none" class="msep"><button type="button" role="menuitem" id="btnGhPull">Načíst z GitHubu</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnGhPush">Uložit na GitHub <span class="acc">Ctrl+Alt+S</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnGhCfg">Nastavení GitHubu…</button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnPrint">Tisk stránky</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnSettings">Nastavení…</button></li>
    </ul>
@@ -374,6 +385,8 @@ ul.plain{list-style:none;margin:0;padding:0}
 
  <main class="work" id="main">
   <div id="outlinewrap" tabindex="-1">
+   <p class="field titlefield"><label for="pagetitleedit">Název stránky</label>
+    <input type="text" id="pagetitleedit" autocomplete="off"></p>
    <h2 class="sec" id="outh">Obsah stránky</h2>
    <ul id="outline" aria-labelledby="outh"></ul>
    <p class="hint" id="outempty" hidden>Stránka je prázdná. Stiskněte tlačítko níže nebo Enter v prvním řádku.</p>
@@ -388,6 +401,7 @@ ul.plain{list-style:none;margin:0;padding:0}
 </div>
 
 <p id="status" role="status" aria-live="polite"></p>
+<p id="ghbar"><span id="ghbadge">GitHub: nenastaveno</span> <span id="ghstate2" class="sub"></span></p>
 <div id="debug" hidden aria-labelledby="dbgh">
  <h2 class="sec" id="dbgh">Ladicí výpis</h2>
  <ul class="plain" id="dbglist"></ul>
@@ -828,6 +842,11 @@ function renderPage(){
   var s=curSecId?getSection(curSecId):null; if(s) crumb.push(s.name);
   if(p){ var par=pageParent(p.id); if(par) crumb.push(par.title); crumb.push(p.title); }
   $('breadcrumb').textContent=crumb.join(" › ");
+  var tf=$('pagetitleedit');
+  if(tf){
+    if(document.activeElement!==tf) tf.value = p?p.title:'';
+    tf.disabled = !p || isView();
+  }
   if(!p){ $('outempty').hidden=false; $('outempty').textContent="Není otevřena žádná stránka."; return; }
   $('outempty').hidden = p.items.length>0;
   if(!p.items.length) $('outempty').textContent="Stránka je prázdná. Použijte tlačítko níže.";
@@ -874,7 +893,9 @@ function renderItems(list,parentUl,depth){
     }
 
     if(it.flags.length){
-      var fs=document.createElement('span'); fs.className='flags';
+      /* Sémanticky nadpis 6. úrovně, aby se dalo mezi označenými řádky
+         přesouvat klávesovou navigací po nadpisech. Vzhled zůstává jako štítky. */
+      var fs=document.createElement('h6'); fs.className='flags';
       it.flags.forEach(function(k){ var d=flagDef(k);
         var sp=document.createElement('span'); sp.className='flag'; sp.setAttribute('data-k',k);
         var col=flagColor(d.c);
@@ -1316,6 +1337,19 @@ function dlgHelp(){
   '<li>Velké soubory výrazně zvětší uložený blok, proto vkládejte spíše menší přílohy</li></ul>'+
   '<h3>Ostatní</h3><ul>'+
   '<li>Zápis [[Název stránky]] v textu vytvoří wiki odkaz po opuštění řádku</li></ul>'+
+  '<h3>Ukládání a synchronizace s GitHubem</h3><ul>'+
+  '<li>Obsah poznámkového bloku se v prohlížeči neukládá; '+
+  'v prohlížeči je pouze nastavení synchronizace</li>'+
+  '<li>Soubor → Nastavení GitHubu… zadejte cestu ve tvaru '+
+  'vlastnik/repozitar/slozka/soubor.mrone, případně větev, a přístupový token</li>'+
+  '<li>Token potřebuje oprávnění ke čtení i zápisu obsahu repozitáře; '+
+  'funguje i se soukromým repozitářem</li>'+
+  '<li>Po spuštění se blok automaticky načte z GitHubu a otevře v režimu čtení</li>'+
+  '<li>Změny se automaticky ukládají zpět; ručně kdykoli klávesou Ctrl+Alt+S</li>'+
+  '<li>Pokud soubor mezitím změnil někdo jiný, aplikace načte aktuální verzi '+
+  'a uložení zopakuje</li>'+
+  '<li>Stav synchronizace je vypsaný v dolní liště</li>'+
+  '<li>Nezávisle na tom lze blok kdykoli uložit do souboru nebo do schránky</li></ul>'+
   '<h3>Správa příznaků</h3><ul>'+
   '<li>Příznaky → Spravovat příznaky… umožní změnit název, symbol i barvu '+
   'u všech 24 příznaků</li>'+
@@ -1362,6 +1396,7 @@ var SHORTCUTS=[
   ['Nová stránka','Ctrl+N'],
   ['Nový oddíl','Ctrl+Shift+N'],
   ['Uložit do souboru','Ctrl+S'],
+  ['Uložit na GitHub','Ctrl+Alt+S'],
   ['Zkopírovat celý blok do schránky','Ctrl+Shift+S'],
   ['Načíst celý blok ze schránky','Ctrl+Shift+O'],
   ['Hledat','Ctrl+F'],
@@ -2436,27 +2471,240 @@ function pageParas(p,paras,lvl){
   if(p.sub) p.sub.forEach(function(c){ pageParas(c,paras,lvl+1); });
 }
 
-/* ===================== ÚLOŽIŠTĚ ===================== */
-var KEY='mronenote.v1';
-var asTimer=null;
-function scheduleAutosave(){
-  if(!nb||!nb.settings.autosave) return;
-  clearTimeout(asTimer); asTimer=setTimeout(persist,800);
-}
-function persist(){
-  try{ localStorage.setItem(KEY,JSON.stringify({nb:nb,page:curPageId,sec:curSecId}));
-    dbg("Uloženo do úložiště prohlížeče."); }
-  catch(e){ dbg("Chyba ukládání: "+e.message); say("Data se nepodařilo uložit do prohlížeče."); }
-}
-function restore(){
+/* ===================== SYNCHRONIZACE S GITHUBEM =====================
+   V úložišti prohlížeče je uloženo POUZE nastavení synchronizace
+   (repozitář, cesta, větev, token). Samotný poznámkový blok se
+   načítá a ukládá přes GitHub API, takže funguje i se soukromým
+   repozitářem. Obsah bloku se v prohlížeči neukládá. */
+var GHKEY='mronenote.github.v1';
+var gh={owner:'',repo:'',path:'',branch:'',token:'',auto:true};
+var ghSha=null;        /* SHA poslední známé verze souboru – kvůli konfliktům */
+var ghTimer=null, ghBusy=false, ghDirty=false;
+
+function ghLoadCfg(){
   try{
-    var raw=localStorage.getItem(KEY); if(!raw) return false;
-    var o=JSON.parse(raw); if(!o||!o.nb) return false;
-    nb=o.nb; curPageId=o.page; curSecId=o.sec;
-    if(!nb.settings) nb.settings={theme:'light',fontsize:16,autosave:true,debug:false};
-    normalize(); dbg("Obnoveno z úložiště."); return true;
-  }catch(e){ dbg("Chyba obnovy: "+e.message); return false; }
+    var raw=localStorage.getItem(GHKEY); if(!raw) return false;
+    var o=JSON.parse(raw); if(!o) return false;
+    gh.owner=o.owner||''; gh.repo=o.repo||''; gh.path=o.path||'';
+    gh.branch=o.branch||''; gh.token=o.token||'';
+    gh.auto=(o.auto!==false);
+    return true;
+  }catch(e){ dbg('Nastavení GitHubu se nepodařilo načíst: '+e.message); return false; }
 }
+function ghSaveCfg(){
+  try{ localStorage.setItem(GHKEY,JSON.stringify(gh)); dbg('Nastavení GitHubu uloženo.'); }
+  catch(e){ dbg('Nastavení GitHubu se nepodařilo uložit: '+e.message);
+    say('Nastavení se nepodařilo uložit do prohlížeče.'); }
+}
+function ghReady(){ return !!(gh.owner && gh.repo && gh.path && gh.token); }
+/* "michalradacz/experimenty/mronenote/public.mrone" -> owner/repo + cesta */
+function ghParseSpec(spec){
+  var p=String(spec||'').trim().replace(/^\/+/,'').split('/').filter(function(x){return x!=='';});
+  if(p.length<3) return null;
+  return {owner:p[0],repo:p[1],path:p.slice(2).join('/')};
+}
+function ghSpec(){ return gh.owner?(gh.owner+'/'+gh.repo+'/'+gh.path):''; }
+function ghApi(){
+  return 'https://api.github.com/repos/'+encodeURIComponent(gh.owner)+'/'+
+    encodeURIComponent(gh.repo)+'/contents/'+
+    gh.path.split('/').map(encodeURIComponent).join('/');
+}
+function ghHeaders(){
+  return {'Authorization':'Bearer '+gh.token,
+          'Accept':'application/vnd.github+json',
+          'X-GitHub-Api-Version':'2022-11-28'};
+}
+/* base64 s podporou diakritiky */
+function b64enc(str){
+  var bytes=utf8(str), bin='';
+  for(var i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64dec(b64){
+  var bin=atob(String(b64).replace(/\s+/g,'')), bytes=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  if(window.TextDecoder) return new TextDecoder('utf-8').decode(bytes);
+  return decodeURIComponent(escape(bin));
+}
+function ghErrText(st){
+  if(st===401) return 'Neplatný nebo vypršelý přístupový token.';
+  if(st===403) return 'Přístup odmítnut. Token nemá oprávnění k zápisu do repozitáře.';
+  if(st===404) return 'Soubor ani repozitář nebyl nalezen. Zkontrolujte cestu.';
+  if(st===409) return 'Konflikt verzí – soubor mezitím někdo změnil.';
+  if(st===422) return 'GitHub odmítl uložení, obvykle kvůli neplatné větvi.';
+  return 'Chyba GitHubu (kód '+st+').';
+}
+
+/* ---- načtení bloku z GitHubu ---- */
+function ghPull(silent){
+  if(!ghReady()){ if(!silent) say('Nejprve nastavte synchronizaci s GitHubem.'); return; }
+  ghSetStatus('Načítám z GitHubu…');
+  var url=ghApi()+(gh.branch?('?ref='+encodeURIComponent(gh.branch)):'');
+  fetch(url,{headers:ghHeaders(),cache:'no-store'})
+    .then(function(r){
+      if(r.status===404){ ghSha=null;
+        ghSetStatus('Soubor na GitHubu zatím není. Uloží se při prvním uložení.');
+        if(!silent) say('Soubor na GitHubu zatím neexistuje.');
+        return null; }
+      if(!r.ok) throw new Error(ghErrText(r.status));
+      return r.json();
+    })
+    .then(function(j){
+      if(!j) return;
+      ghSha=j.sha;
+      var txt=b64dec(j.content||'');
+      var o=JSON.parse(txt);
+      var loaded = o.sections ? o : o.nb;
+      if(!loaded||!loaded.sections) throw new Error('Soubor nemá očekávanou strukturu.');
+      nb=loaded; normalize();
+      undoStack=[]; redoStack=[];
+      var first=allPages()[0];
+      curPageId=first?first.page.id:null; curSecId=first?first.section.id:null;
+      ghDirty=false;
+      renderAll(); setMode('view');
+      ghSetStatus('Načteno z GitHubu.');
+      say('Poznámkový blok načten z GitHubu.');
+      dbg('GitHub pull OK, sha='+String(ghSha).slice(0,7));
+    })
+    .catch(function(e){
+      ghSetStatus('Načtení selhalo: '+e.message);
+      say('Načtení z GitHubu selhalo: '+e.message);
+      dbg('GitHub pull chyba: '+e.message);
+    });
+}
+/* ---- uložení bloku na GitHub ---- */
+function ghPush(silent){
+  if(!ghReady()){ if(!silent) say('Nejprve nastavte synchronizaci s GitHubem.'); return; }
+  if(!nb){ return; }
+  if(ghBusy){ ghDirty=true; return; }
+  ghBusy=true;
+  ghSetStatus('Ukládám na GitHub…');
+  var body={message:'Mronenote: '+(nb.name||'poznámkový blok')+' – '+
+              new Date().toLocaleString('cs-CZ'),
+            content:b64enc(JSON.stringify(nb,null,1))};
+  if(ghSha) body.sha=ghSha;
+  if(gh.branch) body.branch=gh.branch;
+  fetch(ghApi(),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
+                 body:JSON.stringify(body)})
+    .then(function(r){
+      if(r.status===409||r.status===422){
+        /* soubor se mezitím změnil – načteme aktuální sha a zkusíme jednou znovu */
+        return fetch(ghApi()+(gh.branch?('?ref='+encodeURIComponent(gh.branch)):''),
+                     {headers:ghHeaders(),cache:'no-store'})
+          .then(function(r2){ return r2.ok?r2.json():null; })
+          .then(function(j2){
+            if(!j2) throw new Error(ghErrText(409));
+            ghSha=j2.sha; body.sha=ghSha;
+            return fetch(ghApi(),{method:'PUT',
+              headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
+              body:JSON.stringify(body)});
+          });
+      }
+      return r;
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error(ghErrText(r.status));
+      return r.json();
+    })
+    .then(function(j){
+      ghSha=(j.content&&j.content.sha)||ghSha;
+      ghBusy=false;
+      ghSetStatus('Uloženo na GitHub v '+new Date().toLocaleTimeString('cs-CZ')+'.');
+      if(!silent) say('Uloženo na GitHub.');
+      dbg('GitHub push OK, sha='+String(ghSha).slice(0,7));
+      if(ghDirty){ ghDirty=false; ghPushSoon(1200); }
+    })
+    .catch(function(e){
+      ghBusy=false;
+      ghSetStatus('Uložení selhalo: '+e.message);
+      say('Uložení na GitHub selhalo: '+e.message);
+      dbg('GitHub push chyba: '+e.message);
+    });
+}
+/* automatické ukládání po změnách */
+function ghPushSoon(delay){
+  if(!ghReady()||!gh.auto) return;
+  clearTimeout(ghTimer);
+  ghTimer=setTimeout(function(){ ghPush(true); }, delay===undefined?2500:delay);
+}
+function ghSetStatus(t){
+  var e=$('ghstate'); if(e) e.textContent=t;
+  var e2=$('ghstate2'); if(e2) e2.textContent=t;
+  var b=$('ghbadge'); if(b) b.textContent=ghReady()?('GitHub: '+ghSpec()):'GitHub: nenastaveno';
+}
+
+/* ---- dialog nastavení ---- */
+function dlgGithub(){
+  openDlg('Nastavení synchronizace s GitHubem',
+   '<div class="field"><label for="ghspec">Repozitář a cesta k souboru</label>'+
+   '<input type="text" id="ghspec" value="'+xesc(ghSpec())+'" '+
+   'placeholder="vlastnik/repozitar/slozka/soubor.mrone" autocomplete="off">'+
+   '<span class="hint">Například michalradacz/experimenty/mronenote/public.mrone – '+
+   'první část je vlastník, druhá název repozitáře, zbytek cesta v repozitáři.</span></div>'+
+   '<div class="field"><label for="ghbranch">Větev (nepovinné)</label>'+
+   '<input type="text" id="ghbranch" value="'+xesc(gh.branch)+'" placeholder="main" autocomplete="off">'+
+   '<span class="hint">Ponechte prázdné pro výchozí větev repozitáře.</span></div>'+
+   '<div class="field"><label for="ghtoken">Přístupový token GitHubu</label>'+
+   '<input type="password" id="ghtoken" value="'+xesc(gh.token)+'" autocomplete="off">'+
+   '<span class="hint">Token potřebuje oprávnění pro čtení i zápis obsahu repozitáře. '+
+   'Ukládá se pouze do tohoto prohlížeče, nikam se neodesílá kromě GitHubu.</span></div>'+
+   '<div class="field"><label><input type="checkbox" id="ghauto"'+(gh.auto?' checked':'')+
+   '> Automaticky ukládat změny na GitHub</label></div>'+
+   '<p class="warnbox">Token uložený v prohlížeči si může přečíst kdokoli, kdo má '+
+   'přístup k tomuto počítači a účtu. Na sdíleném počítači jej nepoužívejte a '+
+   'používejte token s co nejužším oprávněním a omezenou platností.</p>'+
+   '<p id="ghstate" role="status" aria-live="polite">'+xesc(ghReady()?('Nastaveno: '+ghSpec()):'Zatím nenastaveno.')+'</p>',
+   [{t:'Uložit nastavení',fn:function(){
+      var sp=ghParseSpec($('ghspec').value);
+      if(!sp){ say('Cesta musí mít tvar vlastnik/repozitar/cesta/soubor.'); return false; }
+      gh.owner=sp.owner; gh.repo=sp.repo; gh.path=sp.path;
+      gh.branch=$('ghbranch').value.trim();
+      gh.token=$('ghtoken').value.trim();
+      gh.auto=$('ghauto').checked;
+      ghSaveCfg(); ghSha=null; ghSetStatus('Nastavení uloženo.');
+      say('Nastavení GitHubu uloženo.');
+    }},
+    {t:'Ověřit spojení',fn:function(){ ghTest(); return false; }},
+    {t:'Načíst z GitHubu',fn:function(){ ghPull(); }},
+    {t:'Uložit na GitHub',fn:function(){ ghPush(); }},
+    {t:'Odstranit nastavení',fn:function(){
+      if(!confirm('Odstranit nastavení GitHubu z tohoto prohlížeče?')) return false;
+      localStorage.removeItem(GHKEY);
+      gh={owner:'',repo:'',path:'',branch:'',token:'',auto:true}; ghSha=null;
+      ghSetStatus('Nastavení odstraněno.'); say('Nastavení GitHubu odstraněno.');
+    }},
+    {t:'Zavřít'}]);
+}
+function ghTest(){
+  var sp=ghParseSpec($('ghspec')?$('ghspec').value:ghSpec());
+  var tok=$('ghtoken')?$('ghtoken').value.trim():gh.token;
+  if(!sp||!tok){ ghSetStatus('Vyplňte cestu i token.'); return; }
+  ghSetStatus('Ověřuji spojení…');
+  fetch('https://api.github.com/repos/'+encodeURIComponent(sp.owner)+'/'+encodeURIComponent(sp.repo),
+    {headers:{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json',
+              'X-GitHub-Api-Version':'2022-11-28'},cache:'no-store'})
+    .then(function(r){
+      if(!r.ok) throw new Error(ghErrText(r.status));
+      return r.json();
+    })
+    .then(function(j){
+      ghSetStatus('Spojení v pořádku. Repozitář '+j.full_name+
+        (j.private?' (soukromý)':' (veřejný)')+
+        (j.permissions&&j.permissions.push?', zápis povolen.':', ale token nemá právo zápisu!'));
+    })
+    .catch(function(e){ ghSetStatus('Ověření selhalo: '+e.message); });
+}
+
+/* ===================== ÚLOŽIŠTĚ ===================== */
+/* Obsah poznámkového bloku se v prohlížeči NEUKLÁDÁ.
+   V úložišti prohlížeče je pouze nastavení synchronizace s GitHubem.
+   Ukládání obsahu obstarává ghPush, načítání ghPull. */
+function scheduleAutosave(){
+  if(!nb) return;
+  ghPushSoon();
+}
+function persist(){ ghPushSoon(600); }
+function restore(){ return false; }
 function normalize(){
   if(!nb) return;
   nb.sections=nb.sections||[];
@@ -2486,24 +2734,24 @@ function dlgSettings(){
    '<div class="field"><label for="setFs">Velikost písma (px)</label>'+
    '<input type="number" id="setFs" min="12" max="28" value="'+(nb?nb.settings.fontsize:16)+'"></div></div>'+
    '<div class="field"><label><input type="checkbox" id="setAuto"'+(nb&&nb.settings.autosave?' checked':'')+
-   '> Průběžně ukládat do prohlížeče</label>'+
+   '> Průběžně ukládat na GitHub</label>'+
    '<label><input type="checkbox" id="setDbg"'+(nb&&nb.settings.debug?' checked':'')+
    '> Zobrazovat ladicí výpis na stránce</label></div>'+
-   '<p><button type="button" id="btnWipe">Smazat data uložená v prohlížeči</button></p>',
+   '<p class="hint">Obsah poznámkového bloku se v prohlížeči neukládá. '+
+   'Ukládá se na GitHub podle nastavení v nabídce Soubor, případně do souboru.</p>',
    [{t:'Použít',fn:function(){
      snapshot('nastavení');
      nb.name=$('setName').value.trim()||nb.name;
      nb.settings.theme=$('setTheme').value;
      nb.settings.fontsize=Math.min(28,Math.max(12,+$('setFs').value||16));
      nb.settings.autosave=$('setAuto').checked;
+     gh.auto=nb.settings.autosave; ghSaveCfg();
      nb.settings.debug=$('setDbg').checked;
      applySettings(); renderAll(); persist(); say("Nastavení uloženo.");
    }},{t:'Zrušit'}],
    function(){
      if(nb) $('setTheme').value=nb.settings.theme||'light';
-     $('btnWipe').onclick=function(){
-       if(confirm('Opravdu smazat uložená data v prohlížeči? Soubory na disku zůstanou.')){
-         localStorage.removeItem(KEY); say("Data v prohlížeči smazána."); }};
+
    });
 }
 
@@ -2641,20 +2889,27 @@ function addSub(){
     snapshot('nová podstránka'); p.sub=p.sub||[];
     var np=newPage(v.trim()||'Podstránka'); p.sub.push(np); p.navCollapsed=false;
     openPage(np.id,curSecId); }); }
+/* přesměruje wiki odkazy po přejmenování stránky */
+function retargetWiki(oldTitle,newTitle){
+  var n=0;
+  if(!oldTitle||oldTitle===newTitle) return 0;
+  allPages().forEach(function(o){ (function r(l){l.forEach(function(it){
+    var d=document.createElement('div'); d.innerHTML=it.html||'';
+    var ch=false;
+    Array.prototype.forEach.call(d.querySelectorAll('a[data-wiki]'),function(a){
+      if(a.getAttribute('data-wiki').trim().toLowerCase()===oldTitle.trim().toLowerCase()){
+        a.setAttribute('data-wiki',newTitle);
+        if(a.textContent===oldTitle) a.textContent=newTitle; ch=true; n++; }});
+    if(ch) it.html=sanitize(d.innerHTML);
+    r(it.children);});})(o.page.items); });
+  return n;
+}
 function renamePage(){
   var p=curPage(); if(!p){say("Není otevřena stránka.");return;}
   ask('Přejmenovat stránku','Nový název',p.title,function(v){
     v=v.trim(); if(!v) return;
     snapshot('přejmenování'); var old=p.title; p.title=v;
-    var n=0;
-    allPages().forEach(function(o){ (function r(l){l.forEach(function(it){
-      var d=document.createElement('div'); d.innerHTML=it.html||'';
-      var ch=false;
-      Array.prototype.forEach.call(d.querySelectorAll('a[data-wiki]'),function(a){
-        if(a.getAttribute('data-wiki').trim().toLowerCase()===old.trim().toLowerCase()){
-          a.setAttribute('data-wiki',v); if(a.textContent===old) a.textContent=v; ch=true; n++; }});
-      if(ch) it.html=sanitize(d.innerHTML);
-      r(it.children);});})(o.page.items); });
+    var n=retargetWiki(old,v);
     renderAll(); say("Stránka přejmenována."+(n?" Upraveno "+n+" wiki odkazů.":"")); }); }
 function deletePage(){
   var p=curPage(); if(!p){say("Není otevřena stránka.");return;}
@@ -2839,6 +3094,9 @@ $('fileIn').onchange=function(){
 };
 on('btnSave',saveJson);
 on('btnExportHtml',exportHtml);
+on('btnGhPull',function(){ ghPull(); });
+on('btnGhPush',function(){ ghPush(); });
+on('btnGhCfg',dlgGithub);
 on('btnExportMd',exportMd);
 on('btnExportDocxPage',function(){ exportDocx(false); });
 on('btnExportDocxAll',function(){ exportDocx(true); });
@@ -2929,6 +3187,30 @@ on('btnAddItem',function(){
   snapshot('nový řádek'); var it=newItem(''); p.items.push(it);
   touch(); renderPage(); focusItem(it.id); });
 $('quickfilter').oninput=function(){ renderNav(); };
+(function(){
+  var tf=$('pagetitleedit'); if(!tf) return;
+  var prev=null;
+  tf.addEventListener('focus',function(){ var p=curPage(); prev=p?p.title:null; });
+  tf.addEventListener('input',function(){
+    var p=curPage(); if(!p) return;
+    var v=tf.value.trim(); if(!v) return;
+    p.title=v; $('pagetitle').textContent=v; touch(); renderNav();
+  });
+  tf.addEventListener('change',function(){ commitTitle(); });
+  tf.addEventListener('blur',function(){ commitTitle(); });
+  tf.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){ e.preventDefault(); commitTitle();
+      var f=document.querySelector('.txt'); if(f) f.focus(); }
+    if(e.key==='Escape'){ e.preventDefault();
+      var p=curPage(); if(p&&prev){ p.title=prev; tf.value=prev; renderAll(); } }
+  });
+  function commitTitle(){
+    var p=curPage(); if(!p||!prev||prev===p.title) { prev=p?p.title:null; return; }
+    var n=retargetWiki(prev,p.title);
+    prev=p.title; renderAll();
+    say('Stránka přejmenována.'+(n?' Upraveno '+n+' wiki odkazů.':''));
+  }
+})();
 
 document.addEventListener('keydown',function(e){
   if(e.ctrlKey && !e.shiftKey && (e.key==='s'||e.key==='S')){ e.preventDefault(); saveJson(); }
@@ -2951,6 +3233,7 @@ document.addEventListener('keydown',function(e){
   if(e.ctrlKey && e.shiftKey && (e.key==='v'||e.key==='V')){ e.preventDefault(); pasteRef(); }
   if(e.ctrlKey && e.shiftKey && (e.key==='o'||e.key==='O')){ e.preventDefault(); pasteFromClipboard(); }
   if(e.ctrlKey && e.shiftKey && (e.key==='s'||e.key==='S')){ e.preventDefault(); copyToClipboard(); }
+  if(e.ctrlKey && e.altKey && (e.key==='s'||e.key==='S')){ e.preventDefault(); ghPush(); }
   if(e.ctrlKey && e.shiftKey && !(e.target && e.target.classList &&
       e.target.classList.contains('txt'))){
     /* stejné zkratky i mimo řádek; uvnitř řádku je řeší itemKey */
@@ -2963,22 +3246,27 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('focusout',function(e){
   if(e.target && e.target.classList && e.target.classList.contains('txt')) autoWiki();
 });
-window.addEventListener('beforeunload',function(e){
-  if(nb) persist();
-  if(dirty){ e.preventDefault(); e.returnValue=''; }
+window.addEventListener('beforeunload',function(){
+  /* žádné varování o neuložených změnách – ukládá se průběžně na GitHub */
+  if(nb && ghReady()) ghPushSoon(0);
 });
 
 /* ===================== START ===================== */
 (function init(){
-  if(!restore()){
-    nb=newNotebook('');
-    nb.name='Nepojmenovaný blok';
-  }
+  nb=newNotebook('');
+  nb.name='Nepojmenovaný blok';
+  ghLoadCfg();
   initMenu(); initQuick();
-  setMode(nb&&nb.settings&&nb.settings.mode==='view'?'view':'edit');
+  setMode('view');   /* po načtení vždy režim čtení */
   renderAll();
+  ghSetStatus(ghReady()?'Připojeno k '+ghSpec():'GitHub není nastaven.');
   dbg("Aplikace spuštěna.");
-  say("Mronenote je připraven. Nápovědu otevřete klávesou F1.");
+  if(ghReady()){
+    say("Načítám poznámkový blok z GitHubu…");
+    ghPull(true);
+  } else {
+    say("Mronenote je připraven. Nastavte synchronizaci v nabídce Soubor. Nápověda je pod klávesou F1.");
+  }
 })();
 </script>
 </body>
