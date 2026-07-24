@@ -82,7 +82,6 @@ ul.mpanel button:hover{background:var(--sel)}
 ul.mpanel button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
 .acc{color:var(--muted);font-size:.8rem;white-space:nowrap}
 ul.mpanel button[aria-pressed="true"] .acc{color:var(--accent-fg)}
-li.msep{border-top:1px solid var(--line);margin-top:.25rem;padding-top:.25rem}
 li.mfield{display:flex;flex-direction:column;gap:.15rem;padding:.35rem .6rem}
 li.mfield label{font-size:.85rem;color:var(--muted)}
 .quickbar{display:flex;flex-wrap:wrap;gap:.3rem;padding:.35rem .6rem;
@@ -229,18 +228,18 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnNewNb">Nový poznámkový blok…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnOpen">Otevřít soubor…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnSave">Uložit jako .json…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnClipCopy">Zkopírovat celý blok do schránky <span class="acc">Ctrl+Shift+S</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnClipCopy">Zkopírovat celý blok do schránky <span class="acc">Ctrl+Shift+S</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnClipPaste">Načíst celý blok ze schránky… <span class="acc">Ctrl+Shift+O</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnExportHtml">Exportovat do HTML…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnExportHtml">Exportovat do HTML…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExportMd">Exportovat do Markdownu…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxPage">Exportovat stránku do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxAll">Exportovat celý blok do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnImportMd">Importovat Markdown…</button></li>
-    <li role="none" class="msep mfield"><span id="ghLastInfo">GitHub není nastaven</span></li>
+    <li role="none" class="mfield"><span id="ghLastInfo">GitHub není nastaven</span></li>
     <li role="none"><button type="button" role="menuitem" id="btnGhPull">Načíst z GitHubu</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnGhPush">Uložit na GitHub <span class="acc">Ctrl+S</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnGhCfg">Nastavení GitHubu…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnPrint">Tisk stránky</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnPrint">Tisk stránky</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnSettings">Nastavení…</button></li>
    </ul>
   </li>
@@ -250,18 +249,18 @@ ul.plain{list-style:none;margin:0;padding:0}
    <ul class="mpanel" id="m-upravy" role="menu" aria-labelledby="mb-upravy" hidden>
     <li role="none"><button type="button" role="menuitem" id="btnUndo">Zpět <span class="acc">Ctrl+Z</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnRedo">Znovu <span class="acc">Ctrl+Y</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="miAddItem">Přidat řádek na konec</button></li>
+    <li role="none"><button type="button" role="menuitem" id="miAddItem">Přidat řádek na konec</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnDelItem">Smazat řádek</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnIndent">Zanořit <span class="acc">Tab</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnIndent">Zanořit <span class="acc">Tab</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnOutdent">Vynořit <span class="acc">Shift+Tab</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnUp">Přesunout nahoru <span class="acc">Alt+↑</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnDown">Přesunout dolů <span class="acc">Alt+↓</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnCopyRefItem">Kopírovat odkaz na odstavec <span class="acc">Ctrl+Shift+C</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnCopyRefItem">Kopírovat odkaz na odstavec <span class="acc">Ctrl+Shift+C</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCopyRefPage">Kopírovat odkaz na stránku</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCopyRefSection">Kopírovat odkaz na oddíl</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCopyRefNb">Kopírovat odkaz na poznámkový blok</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnPasteRef">Vložit zkopírovaný odkaz <span class="acc">Ctrl+Shift+V</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnSearch">Hledat… <span class="acc">Ctrl+F</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnSearch">Hledat… <span class="acc">Ctrl+F</span></button></li>
    </ul>
   </li>
 
@@ -274,8 +273,8 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnStrike">Přeškrtnutí</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCode">Kód</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnHl">Zvýraznění <span class="acc">Ctrl+Shift+H</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnClearFmt">Zrušit formátování</button></li>
-    <li role="none" class="msep mfield">
+    <li role="none"><button type="button" role="menuitem" id="btnClearFmt">Zrušit formátování</button></li>
+    <li role="none" class="mfield">
      <label for="selStyle">Styl odstavce</label>
      <select id="selStyle">
       <option value="p">Odstavec</option><option value="h1">Nadpis 1</option>
@@ -299,15 +298,15 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnLink">Odkaz… <span class="acc">Ctrl+K</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnWiki">Wiki odkaz… <span class="acc">Ctrl+Shift+K</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnRefIns">Vnitřní odkaz na odstavec či stránku…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnTable">Tabulku…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnTable">Tabulku…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnImage">Obrázek…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFile">Přílohu…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnCmIns">Revize: vložený text {++…++}</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnCmIns">Revize: vložený text {++…++}</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCmDel">Revize: smazaný text {--…--}</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCmSub">Revize: záměna {~~…~&gt;…~~}</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCmCom">Revize: poznámka {&gt;&gt;…&lt;&lt;}</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCmMark">Revize: zvýraznění {==…==}</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnDate">Datum a čas</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnDate">Datum a čas</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnRule">Oddělovač</button></li>
    </ul>
   </li>
@@ -316,10 +315,10 @@ ul.plain{list-style:none;margin:0;padding:0}
    <button type="button" role="menuitem" class="mbtn" aria-haspopup="true" aria-expanded="false" aria-controls="m-priznaky" id="mb-priznaky"><u>P</u>říznaky</button>
    <ul class="mpanel" id="m-priznaky" role="menu" aria-labelledby="mb-priznaky" hidden>
     <li role="none" class="flaglist" id="flagMenuList"></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnFlagMore">Příznaky řádku v dialogu…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnFlagMore">Příznaky řádku v dialogu…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagManage">Spravovat příznaky…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagClear">Odebrat příznaky z řádku</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnDone">Hotovo / nehotovo <span class="acc">Ctrl+Shift+D</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnDone">Hotovo / nehotovo <span class="acc">Ctrl+Shift+D</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagsPane" aria-pressed="false">Souhrn příznaků (panel)</button></li>
    </ul>
   </li>
@@ -331,9 +330,10 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnAddGroup">Nová skupina oddílů…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnAddPage">Nová stránka… <span class="acc">Ctrl+N</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnAddSub">Nová podstránka…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnRenamePage">Přejmenovat stránku…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnRenamePage">Přejmenovat stránku…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnMovePage">Přesunout stránku…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnDeletePage">Smazat stránku</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnHistory">Historie stránky…</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnHistory">Historie stránky…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnLinksPane" aria-pressed="false">Odkazy stránky (panel)</button></li>
    </ul>
   </li>
@@ -343,7 +343,7 @@ ul.plain{list-style:none;margin:0;padding:0}
    <ul class="mpanel" id="m-zobrazeni" role="menu" aria-labelledby="mb-zobrazeni" hidden>
     <li role="none"><button type="button" role="menuitemradio" aria-checked="true" id="miModeEdit">Režim úprav <span class="acc">F2</span></button></li>
     <li role="none"><button type="button" role="menuitemradio" aria-checked="false" id="miModeView">Režim čtení <span class="acc">F2</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnToggle">Sbalit / rozbalit řádek <span class="acc">Ctrl+tečka</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnToggle">Sbalit / rozbalit řádek <span class="acc">Ctrl+tečka</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnCollapseAll">Sbalit vše</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExpandAll">Rozbalit vše</button></li>
     <li role="none" class="mfield">
@@ -1343,6 +1343,9 @@ function dlgHelp(){
   'doporučuje se nezanořovat hlouběji než tři úrovně</li>'+
   '<li>Pořadí oddílů, skupin i stránek měníte tlačítky se šipkami v navigaci</li>'+
   '<li>Přesun do jiné skupiny provedete v dialogu oddílu nebo skupiny volbou „Přesunout do“</li>'+
+  '<li>Stránku přesunete do jiného oddílu nabídkou Blok a stránky → Přesunout stránku…; '+
+  'cílem může být oddíl, nebo jiná stránka, pod kterou se stránka zařadí jako podstránka</li>'+
+  '<li>Podstránky se přesouvají spolu s nadřízenou stránkou</li>'+
   '<li>Barvu oddílu i skupiny lze nastavit; barva se hlásí i textem a oddíly ji dědí ze skupiny</li></ul>'+
   '<h3>Schránka</h3><ul>'+
   '<li>Celý blok lze zkopírovat do schránky a odjinud zase načíst</li>'+
@@ -3013,6 +3016,80 @@ function moveTargets(exclId){
   });
   return opts;
 }
+
+/* ---- přesun stránky do jiného oddílu nebo pod jinou stránku ----
+   Cílem může být oddíl (stránka se zařadí na jeho konec) nebo jiná
+   stránka (stane se její podstránkou). Vlastní potomci se přesouvají
+   se stránkou. Do vlastního potomka přesunout nelze, vznikla by smyčka. */
+function pageTargets(pid){
+  var opts='';
+  var banned={}; 
+  (function ban(p){ banned[p.id]=1; if(p.sub) p.sub.forEach(ban); })(getPage(pid));
+  walkNodes(function(n,list,i,parent,depth){
+    var pad=new Array(depth).join('— ');
+    if(isGroup(n)){
+      opts+='<option value="" disabled>'+esc(pad+'Skupina: '+n.name)+'</option>';
+      return;
+    }
+    opts+='<option value="sec/'+n.id+'">'+esc(pad+'Oddíl: '+n.name)+'</option>';
+    (function rec(pages,d){
+      pages.forEach(function(p){
+        if(!banned[p.id])
+          opts+='<option value="page/'+p.id+'">'+
+            esc(new Array(d).join('— ')+'   pod stránku: '+p.title)+'</option>';
+        if(p.sub) rec(p.sub,d+1);
+      });
+    })(n.pages,depth+1);
+  });
+  return opts;
+}
+/* odpojí stránku z místa, kde je */
+function detachPage(pid){
+  var par=pageParent(pid);
+  if(par){ par.sub=par.sub.filter(function(x){return x.id!==pid;}); return true; }
+  var sec=pageSection(pid);
+  if(sec){ sec.pages=sec.pages.filter(function(x){return x.id!==pid;}); return true; }
+  return false;
+}
+function movePageTo(pid,target){
+  if(!target) return false;
+  var p=getPage(pid); if(!p) return false;
+  var t=String(target).split('/'), kind=t[0], id=t.slice(1).join('/');
+  /* kontrola smyčky */
+  if(kind==='page'){
+    var loop=false;
+    (function chk(x){ if(x.id===id) loop=true; if(x.sub) x.sub.forEach(chk); })(p);
+    if(loop){ say('Stránku nelze přesunout pod vlastní podstránku.'); return false; }
+  }
+  var obj = kind==='sec' ? getNode(id) : getPage(id);
+  if(!obj){ say('Cíl přesunu neexistuje.'); return false; }
+  snapshot('přesun stránky');
+  detachPage(pid);
+  if(kind==='sec'){ obj.pages.push(p); curSecId=obj.id; }
+  else { obj.sub=obj.sub||[]; obj.sub.push(p); obj.navCollapsed=false;
+         var s2=pageSection(obj.id); if(s2) curSecId=s2.id; }
+  renderAll(); scheduleAutosave();
+  say('Stránka „'+p.title+'“ přesunuta do '+
+      (kind==='sec'?('oddílu '+obj.name):('podstránek stránky '+obj.title))+'.');
+  return true;
+}
+function dlgMovePage(){
+  var p=curPage();
+  if(!p){ say('Není otevřena stránka.'); return; }
+  var sec=pageSection(p.id), par=pageParent(p.id);
+  openDlg('Přesunout stránku '+p.title,
+   '<p class="hint">Nyní je stránka '+
+   (par?('podstránkou stránky '+esc(par.title)):('v oddílu '+esc(sec?sec.name:'?')))+
+   (p.sub&&p.sub.length?('. Přesune se včetně '+p.sub.length+' podstránek'):'')+'.</p>'+
+   '<div class="field"><label for="mvtgt">Přesunout do</label>'+
+   '<select id="mvtgt" size="12">'+pageTargets(p.id)+'</select></div>',
+   [{t:'Přesunout',fn:function(){
+      var v=$('mvtgt').value;
+      if(!v){ say('Vyberte cíl přesunu.'); return false; }
+      if(!movePageTo(p.id,v)) return false;
+    }},{t:'Zrušit'}]);
+}
+
 function dlgSection(sec){
   openDlg('Oddíl '+sec.name,
    '<div class="field"><label for="ndname">Název oddílu</label>'+
@@ -3161,7 +3238,7 @@ function deletePage(){
 var EDIT_ONLY = ['btnAddItem','miAddItem','btnDelItem','btnIndent','btnOutdent','btnUp','btnDown',
  'btnBold','btnItalic','btnUnder','btnStrike','btnCode','btnHl','btnClearFmt','btnLink','btnWiki',
  'btnTable','btnImage','btnFile','btnDate','btnRule',
- 'btnCmIns','btnCmDel','btnCmSub','btnCmCom','btnCmMark','btnPasteRef','btnRefIns','btnFlagMore','btnFlagClear','btnDone','selStyle','selList','btnUndo','btnRedo',
+ 'btnCmIns','btnCmDel','btnCmSub','btnCmCom','btnCmMark','btnPasteRef','btnRefIns','btnMovePage','btnFlagMore','btnFlagClear','btnDone','selStyle','selList','btnUndo','btnRedo',
  'qbIndent','qbOutdent','qbUp','qbDown','qbUkol','qbDul','qbOt','qbWiki'];
 
 function isView(){ return mode==='view'; }
@@ -3365,6 +3442,7 @@ on('btnAddSection',addSection);
 on('btnAddPage',addPage);
 on('btnAddSub',addSub);
 on('btnRenamePage',renamePage);
+on('btnMovePage',dlgMovePage);
 on('btnDeletePage',deletePage);
 on('btnSearch',dlgSearch);
 on('btnFlagsPane',function(){setRight('flags');});
