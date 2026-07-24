@@ -116,6 +116,14 @@ html[data-theme="contrast"] li.nodegroup[data-hascol="1"]>.navrow{border-left-co
 button.ord{flex:none;width:1.8rem;padding:.1rem;font-size:.85rem}
 nav.side textarea{width:100%}
 dialog textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:.85rem}
+ul.flagmenu{list-style:none;margin:0;padding:0;max-height:22rem;overflow:auto}
+ul.flagmenu li{margin:0}
+li.flaglist{display:block}
+button.flagitem{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left}
+button.flagitem[aria-checked="true"]{background:var(--sel);font-weight:600}
+button.flagitem[aria-checked="true"]::after{content:" ✓";margin-left:auto}
+html[data-theme="contrast"] button.flagitem[aria-checked="true"]{background:var(--accent);color:var(--accent-fg)}
+.fmsym{font-size:1.1rem;min-width:1.5rem;text-align:center}
 #ghbar{padding:.25rem .6rem;border-top:1px solid var(--line);background:var(--panel);
  font-size:.85rem;margin:0}
 #ghbadge{font-weight:600}
@@ -220,7 +228,7 @@ ul.plain{list-style:none;margin:0;padding:0}
    <ul class="mpanel" id="m-soubor" role="menu" aria-labelledby="mb-soubor" hidden>
     <li role="none"><button type="button" role="menuitem" id="btnNewNb">Nový poznámkový blok…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnOpen">Otevřít soubor…</button></li>
-    <li role="none"><button type="button" role="menuitem" id="btnSave">Uložit jako .json <span class="acc">Ctrl+S</span></button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnSave">Uložit jako .json…</button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnClipCopy">Zkopírovat celý blok do schránky <span class="acc">Ctrl+Shift+S</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnClipPaste">Načíst celý blok ze schránky… <span class="acc">Ctrl+Shift+O</span></button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnExportHtml">Exportovat do HTML…</button></li>
@@ -228,8 +236,9 @@ ul.plain{list-style:none;margin:0;padding:0}
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxPage">Exportovat stránku do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnExportDocxAll">Exportovat celý blok do DOCX…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnImportMd">Importovat Markdown…</button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnGhPull">Načíst z GitHubu</button></li>
-    <li role="none"><button type="button" role="menuitem" id="btnGhPush">Uložit na GitHub <span class="acc">Ctrl+Alt+S</span></button></li>
+    <li role="none" class="msep mfield"><span id="ghLastInfo">GitHub není nastaven</span></li>
+    <li role="none"><button type="button" role="menuitem" id="btnGhPull">Načíst z GitHubu</button></li>
+    <li role="none"><button type="button" role="menuitem" id="btnGhPush">Uložit na GitHub <span class="acc">Ctrl+S</span></button></li>
     <li role="none"><button type="button" role="menuitem" id="btnGhCfg">Nastavení GitHubu…</button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnPrint">Tisk stránky</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnSettings">Nastavení…</button></li>
@@ -306,10 +315,8 @@ ul.plain{list-style:none;margin:0;padding:0}
   <li role="none" class="mtop">
    <button type="button" role="menuitem" class="mbtn" aria-haspopup="true" aria-expanded="false" aria-controls="m-priznaky" id="mb-priznaky"><u>P</u>říznaky</button>
    <ul class="mpanel" id="m-priznaky" role="menu" aria-labelledby="mb-priznaky" hidden>
-    <li role="none"><button type="button" role="menuitem" id="btnFlagUkol">Úkol <span class="acc">Ctrl+Shift+1</span></button></li>
-    <li role="none"><button type="button" role="menuitem" id="btnFlagDul">Důležité <span class="acc">Ctrl+Shift+2</span></button></li>
-    <li role="none"><button type="button" role="menuitem" id="btnFlagOt">Otázka <span class="acc">Ctrl+Shift+3</span></button></li>
-    <li role="none" class="msep"><button type="button" role="menuitem" id="btnFlagMore">Všechny příznaky…</button></li>
+    <li role="none" class="flaglist" id="flagMenuList"></li>
+    <li role="none" class="msep"><button type="button" role="menuitem" id="btnFlagMore">Příznaky řádku v dialogu…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagManage">Spravovat příznaky…</button></li>
     <li role="none"><button type="button" role="menuitem" id="btnFlagClear">Odebrat příznaky z řádku</button></li>
     <li role="none" class="msep"><button type="button" role="menuitem" id="btnDone">Hotovo / nehotovo <span class="acc">Ctrl+Shift+D</span></button></li>
@@ -691,6 +698,12 @@ function renderNav(){
   $('navempty').hidden=true;
   var filter=($('quickfilter').value||"").trim().toLowerCase();
   box.appendChild(nodeList(nb.sections,filter,1));
+  /* ve stromu je jen jedna položka dosažitelná tabulátorem */
+  var items=navItems();
+  var want=null;
+  items.forEach(function(a){ if(a.getAttribute('aria-current')==='true') want=a; });
+  if(!want) want=items[0];
+  if(want) navSetTabstop(want);
 }
 function nodeList(list,filter,depth){
   var ul=document.createElement('ul');
@@ -715,13 +728,17 @@ function nodeLi(n,list,idx,filter,depth){
   row.appendChild(tog);
 
   var a=document.createElement('a'); a.className='navlink'; a.href='#';
+  a.setAttribute('data-node',n.id); a.tabIndex=-1;
   var kind = isGroup(n)?'Skupina oddílů':'Oddíl';
   var cnt  = isGroup(n)? (countSectionsIn(n)+' oddílů') : (countPages(n)+' stránek');
   /* barvu hlásíme i textem, ne jen graficky */
   var colTxt = col ? (', barva '+col.n) : ', bez barvy';
   a.innerHTML='<span class="secdot" aria-hidden="true"></span><strong>'+esc(n.name)+'</strong>'+
     ' <span class="sub">'+esc(kind.toLowerCase()+', '+cnt+colTxt)+'</span>';
-  a.setAttribute('aria-label',kind+' '+n.name+', '+cnt+colTxt);
+  var expandable = isGroup(n) ? kids(n).length>0 : n.pages.length>0;
+  if(expandable) a.setAttribute('aria-expanded', n.collapsed?'false':'true');
+  a.setAttribute('aria-label',kind+' '+n.name+', '+cnt+colTxt+
+    (expandable?(n.collapsed?', sbaleno':', rozbaleno'):''));
   a.onclick=function(e){ e.preventDefault();
     if(isGroup(n)){ curSecId=null; dlgGroup(n); }
     else { curSecId=n.id; dlgSection(n); } };
@@ -783,9 +800,11 @@ function pageLi(p,sec,filter,arr,idx){
     tog.onclick=function(){ p.navCollapsed=!p.navCollapsed; renderNav(); };
   } else { tog.setAttribute('aria-hidden','true'); tog.tabIndex=-1; tog.style.visibility='hidden'; }
   var a=document.createElement('a'); a.className='navlink'; a.href='#';
+  a.setAttribute('data-page',p.id); a.tabIndex=-1;
   a.textContent=p.title;
   var nf=countFlags(p);
   if(nf) a.innerHTML=esc(p.title)+' <span class="sub">'+nf+' příznak(ů)</span>';
+  if(p.sub && p.sub.length) a.setAttribute('aria-expanded', p.navCollapsed?'false':'true');
   if(p.id===curPageId) a.setAttribute('aria-current','true');
   a.onclick=function(e){e.preventDefault(); openPage(p.id,sec.id);};
   row.appendChild(tog); row.appendChild(a);
@@ -923,7 +942,7 @@ function renderItems(list,parentUl,depth){
         (it.children.length?', obsahuje '+it.children.length+' podřízených':'' ));
       txt.addEventListener('focus',function(){ curItemId=it.id; syncToolbarState(it); });
       txt.addEventListener('input',function(){ it.html=sanitize(txt.innerHTML); touch(); });
-      txt.addEventListener('blur',function(){ it.html=sanitize(txt.innerHTML); });
+      txt.addEventListener('blur',function(){ it.html=sanitize(txt.innerHTML); ghPushNow(); });
       txt.addEventListener('keydown',function(e){ itemKey(e,it,txt,depth); });
     } else {
       txt.className='txt viewtxt';
@@ -1335,6 +1354,13 @@ function dlgHelp(){
   '<li>U obrázku je vyžadován alternativní text</li>'+
   '<li>Příloha se zobrazí pod textem řádku jako odkaz s názvem a velikostí a lze ji stáhnout</li>'+
   '<li>Velké soubory výrazně zvětší uložený blok, proto vkládejte spíše menší přílohy</li></ul>'+
+  '<h3>Navigace v levém stromu</h3><ul>'+
+  '<li>Šipky nahoru a dolů procházejí položky</li>'+
+  '<li>Šipka doprava rozbalí položku, druhý stisk přejde na první podřízenou</li>'+
+  '<li>Šipka doleva sbalí položku, u sbalené přejde na nadřízenou</li>'+
+  '<li>Home a End skáčou na začátek a konec</li>'+
+  '<li>Z pole rychlého filtru lze do stromu vstoupit šipkou dolů</li>'+
+  '<li>Tabulátor strom přeskočí, protože je v něm jen jeden vstupní bod</li></ul>'+
   '<h3>Ostatní</h3><ul>'+
   '<li>Zápis [[Název stránky]] v textu vytvoří wiki odkaz po opuštění řádku</li></ul>'+
   '<h3>Ukládání a synchronizace s GitHubem</h3><ul>'+
@@ -1345,11 +1371,24 @@ function dlgHelp(){
   '<li>Token potřebuje oprávnění ke čtení i zápisu obsahu repozitáře; '+
   'funguje i se soukromým repozitářem</li>'+
   '<li>Po spuštění se blok automaticky načte z GitHubu a otevře v režimu čtení</li>'+
-  '<li>Změny se automaticky ukládají zpět; ručně kdykoli klávesou Ctrl+Alt+S</li>'+
+  '<li>Změny se ukládají automaticky: 3 sekundy po poslední úpravě, '+
+  'a pokud píšete bez přestávky, nejpozději po 30 sekundách</li>'+
+  '<li>Uloží se také při opuštění řádku a při zavření okna; '+
+  'ručně kdykoli klávesou Ctrl+Alt+S</li>'+
+  '<li>Každé uložení se ohlásí ve stavovém řádku, čas posledního uložení '+
+  'najdete v nabídce Soubor a v dolní liště</li>'+
+  '<li>Pokud uložení selže, změny zůstanou označené jako neuložené '+
+  'a aplikace to zkusí znovu</li>'+
   '<li>Pokud soubor mezitím změnil někdo jiný, aplikace načte aktuální verzi '+
   'a uložení zopakuje</li>'+
   '<li>Stav synchronizace je vypsaný v dolní liště</li>'+
   '<li>Nezávisle na tom lze blok kdykoli uložit do souboru nebo do schránky</li></ul>'+
+  '<h3>Příznaky</h3><ul>'+
+  '<li>Nabídka Příznaky obsahuje všechny příznaky, každý jako přepínač; '+
+  'aktuálně přiřazené jsou zaškrtnuté</li>'+
+  '<li>Ctrl+Shift+1 až 3 přepnou první tři příznaky v pořadí</li>'+
+  '<li>Nabídka se sestavuje z aktuálních definic, takže se v ní hned '+
+  'projeví přejmenování, změna symbolu i skrytí</li></ul>'+
   '<h3>Správa příznaků</h3><ul>'+
   '<li>Příznaky → Spravovat příznaky… umožní změnit název, symbol i barvu '+
   'u všech 24 příznaků</li>'+
@@ -1395,8 +1434,8 @@ var SHORTCUTS=[
   ['Přejít do hlavní nabídky','F10'],
   ['Nová stránka','Ctrl+N'],
   ['Nový oddíl','Ctrl+Shift+N'],
-  ['Uložit do souboru','Ctrl+S'],
-  ['Uložit na GitHub','Ctrl+Alt+S'],
+  ['Uložit na GitHub','Ctrl+S nebo Ctrl+Alt+S'],
+  ['Uložit do souboru','z nabídky Soubor'],
   ['Zkopírovat celý blok do schránky','Ctrl+Shift+S'],
   ['Načíst celý blok ze schránky','Ctrl+Shift+O'],
   ['Hledat','Ctrl+F'],
@@ -1418,9 +1457,7 @@ var SHORTCUTS=[
   ['Wiki odkaz','Ctrl+Shift+K'],
   ['Kopírovat odkaz na odstavec','Ctrl+Shift+C'],
   ['Vložit zkopírovaný odkaz','Ctrl+Shift+V'],
-  ['Příznak Úkol','Ctrl+Shift+1'],
-  ['Příznak Důležité','Ctrl+Shift+2'],
-  ['Příznak Otázka','Ctrl+Shift+3'],
+  ['První tři příznaky v nabídce','Ctrl+Shift+1 až 3'],
   ['Označit hotovo nebo nehotovo','Ctrl+Shift+D'],
   ['Otevřít nabídku podle podtrženého písmene','Alt a písmeno'],
   ['Pohyb v nabídce','šipky, Home, End'],
@@ -1853,6 +1890,114 @@ function clipFallbackPaste(){
 
 
 
+
+/* ===================== KLÁVESOVÁ NAVIGACE VE STROMU =====================
+   Šipky nahoru a dolů procházejí viditelné položky, doprava rozbalí
+   (a podruhé přejde na první potomka), doleva sbalí (a podruhé přejde
+   na rodiče). Home a End skáčou na začátek a konec. Ve stromu je vždy
+   jen jedna položka v pořadí tabulátoru, aby tabulátor strom přeskočil. */
+function navItems(){
+  return Array.prototype.slice.call(
+    document.querySelectorAll('#navtree a.navlink'))
+    .filter(function(a){
+      /* skryté větve a odfiltrované položky vynecháme */
+      var el=a; while(el && el!==document.body){
+        if(el.hidden) return false;
+        if(el.tagName==='LI' && el.parentNode && el.parentNode.hidden) return false;
+        el=el.parentNode; }
+      return a.offsetParent!==null || true;
+    });
+}
+function navSetTabstop(target){
+  var items=navItems();
+  items.forEach(function(a){ a.tabIndex = (a===target)?0:-1; });
+}
+function navCurrent(){
+  var a=document.activeElement;
+  if(a && a.classList && a.classList.contains('navlink')) return a;
+  var items=navItems();
+  for(var i=0;i<items.length;i++)
+    if(items[i].getAttribute('aria-current')==='true') return items[i];
+  return items[0]||null;
+}
+function navMove(dir){
+  var items=navItems(), cur=navCurrent();
+  var i=items.indexOf(cur);
+  var t=items[i+dir];
+  if(!t){ say(dir<0?'Začátek seznamu.':'Konec seznamu.'); return; }
+  navSetTabstop(t); t.focus();
+}
+function navEdge(last){
+  var items=navItems(); if(!items.length) return;
+  var t=items[last?items.length-1:0];
+  navSetTabstop(t); t.focus();
+}
+/* vrátí uzel nebo stránku podle odkazu */
+function navEntry(a){
+  var id=a.getAttribute('data-node')||a.getAttribute('data-page');
+  if(!id) return null;
+  if(a.getAttribute('data-node')) return {kind:'node',obj:getNode(id)};
+  return {kind:'page',obj:getPage(id)};
+}
+function navExpandable(e){
+  if(!e||!e.obj) return false;
+  if(e.kind==='node') return isGroup(e.obj) ? kids(e.obj).length>0 : e.obj.pages.length>0;
+  return !!(e.obj.sub && e.obj.sub.length);
+}
+function navIsCollapsed(e){
+  if(!e||!e.obj) return false;
+  return e.kind==='node' ? !!e.obj.collapsed : !!e.obj.navCollapsed;
+}
+function navSetCollapsed(e,v){
+  if(!e||!e.obj) return;
+  if(e.kind==='node') e.obj.collapsed=v; else e.obj.navCollapsed=v;
+}
+function navRight(){
+  var cur=navCurrent(); if(!cur) return;
+  var e=navEntry(cur);
+  if(!navExpandable(e)){ say('Položka nemá podřízené.'); return; }
+  if(navIsCollapsed(e)){
+    navSetCollapsed(e,false); renderNav();
+    refocusNav(cur); say('Rozbaleno.');
+  } else {
+    /* už je rozbaleno – přejdeme na první podřízenou položku */
+    var items=navItems(), i=items.indexOf(document.activeElement);
+    var t=items[i+1];
+    if(t){ navSetTabstop(t); t.focus(); }
+  }
+}
+function navLeft(){
+  var cur=navCurrent(); if(!cur) return;
+  var e=navEntry(cur);
+  if(navExpandable(e) && !navIsCollapsed(e)){
+    navSetCollapsed(e,true); renderNav();
+    refocusNav(cur); say('Sbaleno.');
+    return;
+  }
+  /* jinak přejdeme na rodiče */
+  var li=cur.closest?cur.closest('li'):null;
+  var parentLi=li&&li.parentNode?li.parentNode.closest('li'):null;
+  var pa=parentLi?parentLi.querySelector('a.navlink'):null;
+  if(pa){ navSetTabstop(pa); pa.focus(); }
+  else say('Položka je na nejvyšší úrovni.');
+}
+/* po překreslení stromu vrátí fokus na tutéž položku */
+function refocusNav(prev){
+  var id=prev.getAttribute('data-node')||prev.getAttribute('data-page');
+  var sel=prev.getAttribute('data-node')?'a[data-node="'+id+'"]':'a[data-page="'+id+'"]';
+  var t=document.querySelector('#navtree '+sel);
+  if(t){ navSetTabstop(t); t.focus(); }
+}
+function navKey(e){
+  var k=e.key;
+  if(k==='ArrowDown'){ e.preventDefault(); navMove(1); return; }
+  if(k==='ArrowUp'){ e.preventDefault(); navMove(-1); return; }
+  if(k==='ArrowRight'){ e.preventDefault(); navRight(); return; }
+  if(k==='ArrowLeft'){ e.preventDefault(); navLeft(); return; }
+  if(k==='Home'){ e.preventDefault(); navEdge(false); return; }
+  if(k==='End'){ e.preventDefault(); navEdge(true); return; }
+}
+
 /* ===================== SPRÁVA PŘÍZNAKŮ =====================
    Upravovat lze název, symbol a barvu. Klíč zůstává neměnný, protože
    je uložený u jednotlivých řádků – jinak by se vazba rozpadla.
@@ -1865,6 +2010,38 @@ function flagUsage(k){
       if(it.flags.indexOf(k)>=0) n++; r(it.children); }); })(o.page.items);
   });
   return n;
+}
+/* Nabídka příznaků se sestavuje z definic, aby odrážela uživatelské
+   úpravy názvů, symbolů i skrytí. Položky se chovají jako přepínače,
+   proto role menuitemcheckbox a aria-checked podle aktuálního řádku. */
+function renderFlagMenu(){
+  var host=$('flagMenuList'); if(!host) return;
+  host.innerHTML='';
+  var it=curItem();
+  var ul=document.createElement('ul'); ul.className='flagmenu'; ul.setAttribute('role','none');
+  flags().filter(function(f){ return !f.hidden || (it && it.flags.indexOf(f.k)>=0); })
+    .forEach(function(f,i){
+      var li=document.createElement('li'); li.setAttribute('role','none');
+      var b=document.createElement('button'); b.type='button';
+      b.setAttribute('role','menuitemcheckbox');
+      b.setAttribute('data-flag',f.k);
+      b.className='flagitem';
+      var on = !!(it && it.flags.indexOf(f.k)>=0);
+      b.setAttribute('aria-checked', on?'true':'false');
+      var col=flagColor(f.c);
+      var sym=document.createElement('span');
+      sym.setAttribute('aria-hidden','true'); sym.className='fmsym';
+      sym.textContent=f.s;
+      if(f.c) sym.style.color=col.hex;
+      b.appendChild(sym);
+      b.appendChild(document.createTextNode(f.n));
+      /* zkratka jen u prvních tří, ty jsou na Ctrl+Shift+1 až 3 */
+      if(i<3){ var acc=document.createElement('span'); acc.className='acc';
+        acc.textContent='Ctrl+Shift+'+(i+1); b.appendChild(acc); }
+      b.onclick=function(){ toggleFlag(f.k); };
+      li.appendChild(b); ul.appendChild(li);
+    });
+  host.appendChild(ul);
 }
 function dlgFlagManager(){
   flagsEnsure();
@@ -2480,6 +2657,8 @@ var GHKEY='mronenote.github.v1';
 var gh={owner:'',repo:'',path:'',branch:'',token:'',auto:true};
 var ghSha=null;        /* SHA poslední známé verze souboru – kvůli konfliktům */
 var ghTimer=null, ghBusy=false, ghDirty=false;
+var ghLastSave=0;   /* čas posledního úspěšného uložení */
+var ghTick=null;
 
 function ghLoadCfg(){
   try{
@@ -2560,7 +2739,7 @@ function ghPull(silent){
       undoStack=[]; redoStack=[];
       var first=allPages()[0];
       curPageId=first?first.page.id:null; curSecId=first?first.section.id:null;
-      ghDirty=false;
+      ghDirty=false; ghFirstChange=0; ghLastSave=0;
       renderAll(); setMode('view');
       ghSetStatus('Načteno z GitHubu.');
       say('Poznámkový blok načten z GitHubu.');
@@ -2608,29 +2787,86 @@ function ghPush(silent){
     })
     .then(function(j){
       ghSha=(j.content&&j.content.sha)||ghSha;
-      ghBusy=false;
-      ghSetStatus('Uloženo na GitHub v '+new Date().toLocaleTimeString('cs-CZ')+'.');
-      if(!silent) say('Uloženo na GitHub.');
+      ghBusy=false; ghLastSave=Date.now(); ghFirstChange=0;
+      ghSetStatus('Uloženo na GitHub v '+ghFmtTime(ghLastSave)+'.');
+      /* i automatické uložení se ohlásí, ať je vidět, že se něco děje */
+      say(silent?('Automaticky uloženo na GitHub v '+ghFmtTime(ghLastSave)+'.')
+               :'Uloženo na GitHub.');
       dbg('GitHub push OK, sha='+String(ghSha).slice(0,7));
       if(ghDirty){ ghDirty=false; ghPushSoon(1200); }
     })
     .catch(function(e){
       ghBusy=false;
       ghSetStatus('Uložení selhalo: '+e.message);
-      say('Uložení na GitHub selhalo: '+e.message);
+      say('Uložení na GitHub selhalo: '+e.message+' Změny zůstávají neuložené.');
       dbg('GitHub push chyba: '+e.message);
+      /* neúspěch nesmí zahodit rozpracované změny – zkusíme to znovu později */
+      if(ghPending()) ghTimer=setTimeout(function(){ ghPush(true); },20000);
     });
 }
-/* automatické ukládání po změnách */
+/* ---- automatické ukládání ----
+   Kombinace dvou lhůt, aby se neukládalo po každém písmenu, ale ani
+   se ukládání neodkládalo donekonečna při souvislém psaní:
+   - klidová lhůta: uloží se 3 s po poslední změně,
+   - nejzazší lhůta: pokud se píše bez přestávky, uloží se nejpozději
+     po 30 s od první neuložené změny.
+   Navíc se ukládá při opuštění řádku a při zavření okna. */
+var GH_IDLE=3000, GH_MAX=30000;
+var ghFirstChange=0;
+function ghPending(){ return ghFirstChange>0; }
 function ghPushSoon(delay){
-  if(!ghReady()||!gh.auto) return;
+  if(!ghReady()||!gh.auto){ ghUpdateBadge(); return; }
+  var now=Date.now();
+  if(!ghFirstChange) ghFirstChange=now;
   clearTimeout(ghTimer);
-  ghTimer=setTimeout(function(){ ghPush(true); }, delay===undefined?2500:delay);
+  var idle=(delay===undefined)?GH_IDLE:delay;
+  var left=Math.max(0, GH_MAX-(now-ghFirstChange));
+  ghTimer=setTimeout(function(){ ghPush(true); }, Math.min(idle,left));
+  ghUpdateBadge();
+}
+/* uložení hned, například při opuštění řádku nebo zavření okna */
+function ghPushNow(){
+  if(!ghReady()||!gh.auto||!ghPending()) return;
+  clearTimeout(ghTimer); ghPush(true);
+}
+function ghFmtTime(t){
+  if(!t) return 'zatím neuloženo';
+  var d=new Date(t), now=new Date();
+  var sameDay = d.toDateString()===now.toDateString();
+  return sameDay ? d.toLocaleTimeString('cs-CZ') : d.toLocaleString('cs-CZ');
+}
+function ghAgo(t){
+  if(!t) return '';
+  var sec=Math.round((Date.now()-t)/1000);
+  if(sec<10) return 'před chvílí';
+  if(sec<60) return 'před '+sec+' s';
+  var min=Math.round(sec/60);
+  if(min<60) return 'před '+min+' min';
+  var hod=Math.round(min/60);
+  if(hod<24) return 'před '+hod+' h';
+  return 'před '+Math.round(hod/24)+' dny';
+}
+/* text stavu do dolní lišty i do nabídky Soubor */
+function ghStateText(){
+  if(!ghReady()) return 'GitHub není nastaven';
+  if(ghBusy) return 'ukládám…';
+  if(ghPending()) return 'neuložené změny';
+  if(ghLastSave) return 'uloženo '+ghFmtTime(ghLastSave)+' ('+ghAgo(ghLastSave)+')';
+  return 'zatím neuloženo';
+}
+function ghUpdateBadge(){
+  var b=$('ghbadge');
+  if(b) b.textContent = ghReady()?('GitHub: '+ghSpec()):'GitHub: nenastaveno';
+  var e2=$('ghstate2'); if(e2) e2.textContent=ghStateText();
+  var mi=$('ghLastInfo');
+  if(mi) mi.textContent = ghReady()
+    ? ('Poslední uložení: '+(ghLastSave?ghFmtTime(ghLastSave)+' ('+ghAgo(ghLastSave)+')':'zatím neuloženo')+
+       (ghPending()?' – jsou neuložené změny':''))
+    : 'GitHub není nastaven';
 }
 function ghSetStatus(t){
   var e=$('ghstate'); if(e) e.textContent=t;
-  var e2=$('ghstate2'); if(e2) e2.textContent=t;
-  var b=$('ghbadge'); if(b) b.textContent=ghReady()?('GitHub: '+ghSpec()):'GitHub: nenastaveno';
+  ghUpdateBadge();
 }
 
 /* ---- dialog nastavení ---- */
@@ -2925,8 +3161,7 @@ function deletePage(){
 var EDIT_ONLY = ['btnAddItem','miAddItem','btnDelItem','btnIndent','btnOutdent','btnUp','btnDown',
  'btnBold','btnItalic','btnUnder','btnStrike','btnCode','btnHl','btnClearFmt','btnLink','btnWiki',
  'btnTable','btnImage','btnFile','btnDate','btnRule',
- 'btnCmIns','btnCmDel','btnCmSub','btnCmCom','btnCmMark','btnPasteRef','btnRefIns','btnFlagUkol','btnFlagDul','btnFlagOt',
- 'btnFlagMore','btnFlagClear','btnDone','selStyle','selList','btnUndo','btnRedo',
+ 'btnCmIns','btnCmDel','btnCmSub','btnCmCom','btnCmMark','btnPasteRef','btnRefIns','btnFlagMore','btnFlagClear','btnDone','selStyle','selList','btnUndo','btnRedo',
  'qbIndent','qbOutdent','qbUp','qbDown','qbUkol','qbDul','qbOt','qbWiki'];
 
 function isView(){ return mode==='view'; }
@@ -2984,9 +3219,12 @@ function initMenu(){
       if(e.key==='End'){ e.preventDefault(); MENUS[MENUS.length-1].btn.focus(); return; }
     });
     m.panel.addEventListener('keydown',function(e){ panelKey(e,idx,m); });
-    /* kliknutí na položku nabídku zavře */
-    Array.prototype.forEach.call(m.panel.querySelectorAll('button'),function(b){
-      b.addEventListener('click',function(){ closeMenus(); });
+    /* kliknutí na položku nabídku zavře; delegováno, aby to platilo
+       i pro položky vytvořené za běhu (nabídka příznaků) */
+    m.panel.addEventListener('click',function(e){
+      var t=e.target;
+      while(t && t!==m.panel && t.tagName!=='BUTTON') t=t.parentNode;
+      if(t && t.tagName==='BUTTON') closeMenus();
     });
   });
   document.addEventListener('click',function(e){
@@ -3005,6 +3243,8 @@ function menuItems(m){
 }
 function openMenu(idx,focusFirst,focusLast){
   var m=MENUS[idx];
+  ghUpdateBadge();   /* údaj o posledním uložení musí být aktuální */
+  if(m.panel && m.panel.id==='m-priznaky') renderFlagMenu();
   m.btn.setAttribute('aria-expanded','true');
   m.panel.hidden=false;
   var it=menuItems(m);
@@ -3059,8 +3299,10 @@ function initQuick(){
   on('miModeView',function(){ setMode('view'); });
   alias('qbIndent','btnIndent'); alias('qbOutdent','btnOutdent');
   alias('qbUp','btnUp'); alias('qbDown','btnDown');
-  alias('qbToggle','btnToggle'); alias('qbUkol','btnFlagUkol');
-  alias('qbDul','btnFlagDul'); alias('qbOt','btnFlagOt');
+  alias('qbToggle','btnToggle');
+  var qu=$('qbUkol'); if(qu) qu.onclick=function(){ toggleFlagIndex(0); };
+  var qd=$('qbDul');  if(qd) qd.onclick=function(){ toggleFlagIndex(1); };
+  var qo=$('qbOt');   if(qo) qo.onclick=function(){ toggleFlagIndex(2); };
   alias('qbWiki','btnWiki'); alias('qbSearch','btnSearch');
 }
 
@@ -3175,9 +3417,15 @@ on('btnDate',function(){ var d=new Date();
 on('btnRule',function(){ var i=requireItem(); if(!i) return;
   snapshot('oddělovač'); var loc=itemParentArr(i.id); var r=newItem(''); r.style='rule';
   loc.arr.splice(loc.idx+1,0,r); touch(); renderPage(); say("Oddělovač vložen."); });
-on('btnFlagUkol',function(){toggleFlag('ukol');});
-on('btnFlagDul',function(){toggleFlag('dulezite');});
-on('btnFlagOt',function(){toggleFlag('otazka');});
+/* první tři příznaky v pořadí jsou na Ctrl+Shift+1 až 3 */
+function flagByIndex(i){
+  var v=flags().filter(function(f){ return !f.hidden; });
+  return v[i]?v[i].k:null;
+}
+function toggleFlagIndex(i){
+  var k=flagByIndex(i);
+  if(k) toggleFlag(k); else say('Příznak není k dispozici.');
+}
 on('btnFlagMore',dlgFlags);
 on('btnFlagManage',dlgFlagManager);
 on('btnFlagClear',clearFlags);
@@ -3187,6 +3435,14 @@ on('btnAddItem',function(){
   snapshot('nový řádek'); var it=newItem(''); p.items.push(it);
   touch(); renderPage(); focusItem(it.id); });
 $('quickfilter').oninput=function(){ renderNav(); };
+$('navtree').addEventListener('keydown',function(e){
+  var t=e.target;
+  if(t && t.classList && t.classList.contains('navlink')) navKey(e);
+});
+/* ze zrychleného filtru lze šipkou dolů skočit rovnou do stromu */
+$('quickfilter').addEventListener('keydown',function(e){
+  if(e.key==='ArrowDown'){ e.preventDefault(); navEdge(false); }
+});
 (function(){
   var tf=$('pagetitleedit'); if(!tf) return;
   var prev=null;
@@ -3213,7 +3469,11 @@ $('quickfilter').oninput=function(){ renderNav(); };
 })();
 
 document.addEventListener('keydown',function(e){
-  if(e.ctrlKey && !e.shiftKey && (e.key==='s'||e.key==='S')){ e.preventDefault(); saveJson(); }
+  if(e.ctrlKey && !e.shiftKey && !e.altKey && (e.key==='s'||e.key==='S')){
+    e.preventDefault();
+    if(ghReady()) ghPush();
+    else { saveJson(); say('GitHub není nastaven, uloženo do souboru.'); }
+  }
   if(e.ctrlKey && !e.shiftKey && (e.key==='f'||e.key==='F')){ e.preventDefault(); dlgSearch(); }
   if(e.ctrlKey && !e.shiftKey && (e.key==='z'||e.key==='Z')){
     if(!/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && !e.target.isContentEditable){ e.preventDefault(); doUndo(); } }
@@ -3248,7 +3508,7 @@ document.addEventListener('focusout',function(e){
 });
 window.addEventListener('beforeunload',function(){
   /* žádné varování o neuložených změnách – ukládá se průběžně na GitHub */
-  if(nb && ghReady()) ghPushSoon(0);
+  if(nb) ghPushNow();
 });
 
 /* ===================== START ===================== */
@@ -3260,6 +3520,10 @@ window.addEventListener('beforeunload',function(){
   setMode('view');   /* po načtení vždy režim čtení */
   renderAll();
   ghSetStatus(ghReady()?'Připojeno k '+ghSpec():'GitHub není nastaven.');
+  /* průběžná aktualizace údaje „před X min“ – jen když je co hlásit */
+  ghTick=setInterval(function(){
+    if(ghReady()) ghUpdateBadge(); else { clearInterval(ghTick); ghTick=null; }
+  },20000);
   dbg("Aplikace spuštěna.");
   if(ghReady()){
     say("Načítám poznámkový blok z GitHubu…");
