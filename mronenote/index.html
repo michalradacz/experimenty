@@ -941,7 +941,10 @@ function renderItems(list,parentUl,depth){
         (it.flags.length?', příznaky: '+it.flags.map(function(k){return flagDef(k).n;}).join(', '):'')+
         (it.children.length?', obsahuje '+it.children.length+' podřízených':'' ));
       txt.addEventListener('focus',function(){ curItemId=it.id; syncToolbarState(it); });
-      txt.addEventListener('input',function(){ it.html=sanitize(txt.innerHTML); touch(); });
+      txt.addEventListener('input',function(ev){
+        if(mdEnabled() && mdOnInput(it,txt,ev)) return;   /* markdown si obsah uložil sám */
+        it.html=sanitize(txt.innerHTML); touch();
+      });
       txt.addEventListener('blur',function(){ it.html=sanitize(txt.innerHTML); ghPushNow(); });
       txt.addEventListener('keydown',function(e){ itemKey(e,it,txt,depth); });
     } else {
@@ -1206,6 +1209,163 @@ function handleLinkClick(e){
   }
 }
 /* automatické převedení [[…]] při psaní */
+
+/* ===================== MARKDOWN V ŘÁDCÍCH =====================
+   Zpracování probíhá při psaní. Řádkové značky na začátku řádku
+   (#, ##, ###, -, *, 1., >, ```) změní styl nebo typ seznamu celého
+   řádku. Vložené značky (**tučně**, *kurzíva*, _kurzíva_, `kód`,
+   ~~přeškrtnuté~~, ==zvýrazněné==) se převedou na formátování, jakmile
+   uživatel dopíše uzavírací značku. Wiki odkazy [[…]] a CriticMarkup
+   zůstávají beze změny. */
+
+/* --- řádkové (blokové) značky na začátku řádku --- */
+function mdEnabled(){ return !nb || nb.settings.markdown!==false; }
+function mdBlockShortcut(it,txt){
+  var t=plain(txt.innerHTML);
+  var m;
+  /* nadpisy # ## ### #### */
+  if((m=t.match(/^(#{1,4})\s(.*)$/))){
+    var lvl=m[1].length;
+    it.style = lvl===1?'h1':lvl===2?'h2':'h3';
+    setLineText(it,txt,m[2]); return true;
+  }
+  /* citace > */
+  if((m=t.match(/^>\s(.*)$/))){ it.style='quote'; setLineText(it,txt,m[1]); return true; }
+  /* blok kódu ``` */
+  if((m=t.match(/^```\s?(.*)$/))){ it.style='code'; setLineText(it,txt,m[1]); return true; }
+  /* zaškrtávátko - [ ] / - [x] (musí být před obyčejnou odrážkou) */
+  if((m=t.match(/^[-*]\s\[([ xX])\]\s(.*)$/))){
+    it.list='todo'; it.done=/[xX]/.test(m[1]);
+    if(it.done && it.flags.indexOf('hotovo')<0) it.flags.push('hotovo');
+    setLineText(it,txt,m[2]); return true;
+  }
+  /* odrážka - nebo * */
+  if((m=t.match(/^[-*]\s(.*)$/))){ it.list='ul'; setLineText(it,txt,m[1]); return true; }
+  /* číslovaný seznam 1. */
+  if((m=t.match(/^\d+\.\s(.*)$/))){ it.list='ol'; setLineText(it,txt,m[1]); return true; }
+  return false;
+}
+function setLineText(it,txt,newText){
+  it.html=esc(newText);
+  renderPage(); focusItem(it.id);
+}
+
+/* --- vložené značky --- */
+function mdSafeUrl(u){
+  u=String(u).trim();
+  if(/^(https?:\/\/|mailto:)/i.test(u)) return u;
+  if(/^www\./i.test(u)) return 'https://'+u;
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(u)) return 'mailto:'+u;   /* holý e-mail */
+  return null;
+}
+function mdLinkHtml(url,text){
+  var safe=mdSafeUrl(url); if(!safe) return null;
+  return '<a href="'+esc(safe)+'" title="'+esc(safe)+'">'+esc(text||url)+'</a>';
+}
+/* Každé pravidlo má regulární výraz kotvený na konec textu před kurzorem
+   a builder, který vrátí buď řetězec HTML (jedna skupina), nebo objekt
+   {html, lead} pro složitější případy. lead je počet znaků na začátku
+   shody, které se do náhrady nezahrnou (např. znak před *kurzívou*). */
+var MD_INLINE=[
+  {re:/\*\*([^*\n]+)\*\*$/, wrap:function(x){return '<strong>'+x+'</strong>';}},
+  {re:/__([^_\n]+)__$/,     wrap:function(x){return '<strong>'+x+'</strong>';}},
+  {re:/(^|[^*])\*([^*\n]+)\*$/, wrap:function(x){return '<em>'+x+'</em>';}, keep1:true},
+  {re:/(^|[^_])_([^_\n]+)_$/,    wrap:function(x){return '<em>'+x+'</em>';}, keep1:true},
+  {re:/~~([^~\n]+)~~$/,     wrap:function(x){return '<s>'+x+'</s>';}},
+  {re:/==([^=\n]+)==$/,     wrap:function(x){return '<span class="hl">'+x+'</span>';}},
+  {re:/`([^`\n]+)`$/,       wrap:function(x){return '<code>'+x+'</code>';}},
+  /* [text](url) – povinný uzavírací znak ) */
+  {re:/\[([^\]\n]+)\]\(([^)\s]+)\)$/,
+     build:function(mm){ var h=mdLinkHtml(mm[2],mm[1]); return h?{html:h}:null; }},
+  /* holé URL nebo www. adresa. Spouštěč je koncový znak (mezera nebo
+     interpunkce), který už je napsaný – zachytíme jej jako mm[3] a
+     vrátíme za odkaz, aby uživateli nezmizel. */
+  {re:/(^|[\s(])((?:https?:\/\/|www\.)[^\s<>()]+?)([\s.,;:!?)]?)$/i,
+     build:function(mm){
+       var url=mm[2];
+       /* URL nesmí končit interpunkcí – tu vracíme zvlášť */
+       var h=mdLinkHtml(url);
+       return h?{html:h, lead:mm[1].length, tail:mm[3]||''}:null;
+     }}
+];
+/* Převede vloženou značku bezprostředně před kurzorem. Vrací true,
+   pokud něco změnil. Kurzor se umístí za vzniklé formátování. */
+function mdInlineAtCaret(it,txt){
+  var sel=window.getSelection();
+  if(!sel.rangeCount) return false;
+  var range=sel.getRangeAt(0);
+  if(!range.collapsed) return false;
+  var node=range.startContainer, off=range.startOffset;
+  /* je-li kurzor v prvku, sestoupíme do textového uzlu před kurzorem */
+  if(node.nodeType===1){
+    var child=node.childNodes[off-1] || node.childNodes[off] || node.lastChild;
+    while(child && child.nodeType===1) child=child.lastChild;
+    if(child && child.nodeType===3){ node=child; off=child.textContent.length; }
+    else return false;
+  }
+  if(node.nodeType!==3) return false;              /* jen v textovém uzlu */
+  /* nepřepisovat uvnitř již existujícího odkazu, kódu apod. */
+  var p=node.parentNode;
+  while(p && p!==txt){ if(/^(A|CODE|STRONG|EM|S|SPAN)$/.test(p.tagName)) return false; p=p.parentNode; }
+  var before=node.textContent.slice(0,off);
+  var after=node.textContent.slice(off);
+  for(var i=0;i<MD_INLINE.length;i++){
+    var d=MD_INLINE[i], mm=before.match(d.re);
+    if(!mm) continue;
+    var html, leadLen;
+    if(d.build){
+      var b=d.build(mm); if(!b) continue;
+      html=b.html; leadLen=b.lead||0;
+      var tail=b.tail||'';
+    } else {
+      var lead=d.keep1?mm[1]:'';
+      var inner=d.keep1?mm[2]:mm[1];
+      if(inner==='') continue;
+      html=d.wrap(esc(inner)); leadLen=lead.length;
+      var tail='';
+    }
+    var whole=mm[0], start=before.length-whole.length+leadLen;
+    /* nahradíme text: [start .. konec before] -> formátovaný html */
+    var frag=document.createElement('span');
+    frag.innerHTML=sanitize(html);
+    var repl=frag.firstChild;
+    if(!repl) continue;
+    var tailNode=tail?document.createTextNode(tail):null;
+    /* přestavíme textový uzel */
+    var pre=document.createTextNode(before.slice(0,start));
+    var post=document.createTextNode(after);
+    var parent=node.parentNode;
+    parent.insertBefore(pre,node);
+    parent.insertBefore(repl,node);
+    if(tailNode) parent.insertBefore(tailNode,node);
+    var spacer=document.createTextNode('\u200b'); /* kotva pro kurzor za značkou */
+    parent.insertBefore(spacer,node);
+    parent.insertBefore(post,node);
+    parent.removeChild(node);
+    /* kurzor za vloženou značku */
+    var r=document.createRange();
+    r.setStart(spacer,1); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+    it.html=sanitize(txt.innerHTML); touch();
+    return true;
+  }
+  return false;
+}
+/* zavolá se z obsluhy vstupu; vrací true, pokud proběhla úprava */
+function mdOnInput(it,txt,ev){
+  /* blokové značky: jen když se právě napsala mezera po značce na začátku */
+  var t=plain(txt.innerHTML);
+  if(/^[-*]\s\[[ xX]\]\s/.test(t) || /^(#{1,4}|>|[-*]|\d+\.|```)\s/.test(t)){
+    if(mdBlockShortcut(it,txt)){ say('Použit styl podle Markdownu.'); return true; }
+  }
+  /* vložené značky: reagujeme na dopsání uzavíracího znaku,
+     u holých URL na mezeru nebo interpunkci za adresou */
+  if(ev && ev.data && /[*_`~=)\s.,;:!?]/.test(ev.data)){
+    if(mdInlineAtCaret(it,txt)) return true;
+  }
+  return false;
+}
+
 function autoWiki(){
   var it=curItem(); if(!it) return;
   var el=document.querySelector('.txt[data-id="'+it.id+'"]'); if(!el) return;
@@ -1403,6 +1563,16 @@ function dlgHelp(){
   '<li>Sloupec Použití ukazuje, kolikrát je příznak v bloku použit</li>'+
   '<li>Nastavení příznaků se ukládá do poznámkového bloku, takže putuje se souborem</li>'+
   '<li>Symbol je pro odečítač skrytý, informaci nese název příznaku</li></ul>'+
+  '<h3>Markdown při psaní</h3><ul>'+
+  '<li>Na začátku řádku: # nadpis, ## a ### nižší nadpisy, - nebo * odrážka, '+
+  '1. číslování, &gt; citace, - [ ] a - [x] úkol</li>'+
+  '<li>Uvnitř textu: **tučně**, *kurzíva* nebo _kurzíva_, `kód`, '+
+  '~~přeškrtnuté~~, ==zvýrazněné==</li>'+
+  '<li>Odkazy: [popisek](https://adresa) a holé adresy https://… nebo www.… '+
+  'se převedou na klikací odkaz; samotný e-mail v [popisek](adresa) na mailto</li>'+
+  '<li>Vložená značka se převede, jakmile dopíšete uzavírací znak; '+
+  'řádková po mezeře za značkou</li>'+
+  '<li>Převod lze vypnout v Soubor → Nastavení</li></ul>'+
   '<h3>Vnitřní odkazy</h3><ul>'+
   '<li>Kromě wiki odkazu na název stránky lze odkazovat na konkrétní odstavec, '+
   'stránku, oddíl, skupinu oddílů i celý blok</li>'+
@@ -1822,6 +1992,11 @@ function importMd(text,name){
       var kk=k.toLowerCase(); if(flagDef(kk).n!==kk){ it2.flags.push(kk); return ''; } return mm; });
     var h=esc(txt.trim()).replace(/\[\[([^\[\]|]+)(\|([^\[\]]+))?\]\]/g,function(mm,t,x,lab){
       return wikiHtml(t.trim(),lab?lab.trim():t.trim()); });
+    /* [text](url) -> odkaz; a holé URL -> odkaz */
+    h=h.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,function(mm,t,u){
+      var l=mdLinkHtml(u,t); return l||mm; });
+    h=h.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?])/gi,function(mm,pre,u){
+      var l=mdLinkHtml(u); return l?pre+l:mm; });
     it2.html=h;
     while(stack.length>1 && stack[stack.length-1].lvl>=ind) stack.pop();
     stack[stack.length-1].arr.push(it2);
@@ -2791,10 +2966,9 @@ function ghPush(silent){
     .then(function(j){
       ghSha=(j.content&&j.content.sha)||ghSha;
       ghBusy=false; ghLastSave=Date.now(); ghFirstChange=0;
-      ghSetStatus('Uloženo na GitHub v '+ghFmtTime(ghLastSave)+'.');
+      ghSetStatus('Uloženo na GitHub '+ghAgo(ghLastSave)+'.');
       /* i automatické uložení se ohlásí, ať je vidět, že se něco děje */
-      say(silent?('Automaticky uloženo na GitHub v '+ghFmtTime(ghLastSave)+'.')
-               :'Uloženo na GitHub.');
+      say(silent?'Automaticky uloženo na GitHub.':'Uloženo na GitHub.');
       dbg('GitHub push OK, sha='+String(ghSha).slice(0,7));
       if(ghDirty){ ghDirty=false; ghPushSoon(1200); }
     })
@@ -2854,7 +3028,7 @@ function ghStateText(){
   if(!ghReady()) return 'GitHub není nastaven';
   if(ghBusy) return 'ukládám…';
   if(ghPending()) return 'neuložené změny';
-  if(ghLastSave) return 'uloženo '+ghFmtTime(ghLastSave)+' ('+ghAgo(ghLastSave)+')';
+  if(ghLastSave) return 'uloženo '+ghAgo(ghLastSave);
   return 'zatím neuloženo';
 }
 function ghUpdateBadge(){
@@ -2863,7 +3037,7 @@ function ghUpdateBadge(){
   var e2=$('ghstate2'); if(e2) e2.textContent=ghStateText();
   var mi=$('ghLastInfo');
   if(mi) mi.textContent = ghReady()
-    ? ('Poslední uložení: '+(ghLastSave?ghFmtTime(ghLastSave)+' ('+ghAgo(ghLastSave)+')':'zatím neuloženo')+
+    ? ('Poslední uložení: '+(ghLastSave?ghAgo(ghLastSave):'zatím neuloženo')+
        (ghPending()?' – jsou neuložené změny':''))
     : 'GitHub není nastaven';
 }
@@ -2975,7 +3149,9 @@ function dlgSettings(){
    '<div class="field"><label><input type="checkbox" id="setAuto"'+(nb&&nb.settings.autosave?' checked':'')+
    '> Průběžně ukládat na GitHub</label>'+
    '<label><input type="checkbox" id="setDbg"'+(nb&&nb.settings.debug?' checked':'')+
-   '> Zobrazovat ladicí výpis na stránce</label></div>'+
+   '> Zobrazovat ladicí výpis na stránce</label>'+
+   '<label><input type="checkbox" id="setMd"'+(nb&&nb.settings.markdown!==false?' checked':'')+
+   '> Převádět Markdown při psaní (**tučně**, # nadpis, - odrážka…)</label></div>'+
    '<p class="hint">Obsah poznámkového bloku se v prohlížeči neukládá. '+
    'Ukládá se na GitHub podle nastavení v nabídce Soubor, případně do souboru.</p>',
    [{t:'Použít',fn:function(){
@@ -2986,6 +3162,7 @@ function dlgSettings(){
      nb.settings.autosave=$('setAuto').checked;
      gh.auto=nb.settings.autosave; ghSaveCfg();
      nb.settings.debug=$('setDbg').checked;
+     nb.settings.markdown=$('setMd').checked;
      applySettings(); renderAll(); persist(); say("Nastavení uloženo.");
    }},{t:'Zrušit'}],
    function(){
