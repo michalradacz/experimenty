@@ -311,6 +311,9 @@ function transcriptText(f){
 function safeFileName(t){
   return t.replace(/[\/\\:*?"<>|]+/g, " -").replace(/\s+/g, " ").trim().replace(/^\.+/, "").slice(0, 150) || "Bez názvu";
 }
+/* a file added by hand without title or date: user fills them in on first open */
+function needsSetup(f){ return !fmGet(f.fm, "title") || !dateOf(f); }
+const setupDismissed = new Set();
 function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].join(" ")); }
 
 function detectCategory(text){
@@ -428,6 +431,7 @@ async function autoFix(){
   const changed = [];
   const backup = new Map();
   for (const f of files){
+    if (needsSetup(f)) continue;
     const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body);
     if (!needCat && !old) continue;
     backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
@@ -590,6 +594,7 @@ function renderMain(focusTitle){
     m.innerHTML = '<h1 tabindex="-1">Přepisy</h1><p class="hint">' + (files.length ? "Vyberte přepis v seznamu." : "Ve složce zatím nejsou žádné přepisy.") + "</p>";
     return;
   }
+  if (!panel && needsSetup(f) && !setupDismissed.has(f.path)) panel = "setup";
   const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = summaryOf(f);
   let h = '<h1 tabindex="-1" id="docTitle">' + esc(shownTitle(f)) + "</h1>";
   h += '<p class="meta">' + (d ? esc(dayLabel(d)) + (timeOf(f) ? ", " + esc(timeOf(f)) : "") : "Bez data") +
@@ -603,6 +608,7 @@ function renderMain(focusTitle){
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
+       (files.length > 1 ? '<button type="button" data-act="merge"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
        '<button type="button" data-act="copy">Zkopírovat obsah</button>' +
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
        '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
@@ -665,6 +671,32 @@ function renderPanel(f){
     box.appendChild(div);
     $("instrIn").value = instrOf(f);
     $("instrIn").focus();
+  } else if (panel === "setup"){
+    const cats = categories(), det = detectCategory(transcriptText(f)), cur = catOf(f) || det;
+    const all = cats.includes(cur) ? cats : cats.concat([cur]).sort((a,b) => a.localeCompare(b, "cs"));
+    const d0 = dateOf(f), firstH = /^\s*#\s+(.+)$/m.exec(f.body);
+    div.innerHTML = '<h2>Doplňte údaje</h2>' +
+      '<p class="hint">Tento soubor nemá název nebo datum. Po uložení bude jako ostatní přepisy.</p>' +
+      '<div><label for="suTitle">Název</label><input type="text" id="suTitle" autocomplete="off"></div>' +
+      '<div class="row"><div><label for="suDate">Datum</label><input type="date" id="suDate"></div>' +
+      '<div><label for="suTime">Čas (nepovinný)</label><input type="time" id="suTime"></div></div>' +
+      '<div><label for="suCat">Kategorie</label><select id="suCat">' + all.map(c => '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>").join("") + '<option value="__new">Nová kategorie…</option></select></div>' +
+      '<div id="suNewWrap" hidden><label for="suNew">Název nové kategorie</label><input type="text" id="suNew" autocomplete="off"></div>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Později</button></div>';
+    box.appendChild(div);
+    $("suTitle").value = fmGet(f.fm, "title") ? titleOf(f) : (firstH ? firstH[1].trim() : f.name.replace(/\.md$/i, ""));
+    if (d0){ $("suDate").value = d0.key; if (d0.time) $("suTime").value = d0.time; }
+    else { const n = new Date(); $("suDate").value = n.getFullYear() + "-" + String(n.getMonth()+1).padStart(2,"0") + "-" + String(n.getDate()).padStart(2,"0"); }
+    $("suCat").addEventListener("change", () => { $("suNewWrap").hidden = $("suCat").value !== "__new"; if (!$("suNewWrap").hidden) $("suNew").focus(); });
+    $("suTitle").focus();
+  } else if (panel === "merge"){
+    const others = sortFiles(files.filter(x => x !== f));
+    div.innerHTML = '<div><label for="mergeSel">Sloučit do přepisu</label><select id="mergeSel">' +
+      others.map(x => { const dx = dateOf(x); return '<option value="' + esc(x.path) + '">' + esc((dx ? dayLabel(dx) + ", " : "") + linkText(x)) + "</option>"; }).join("") + "</select></div>" +
+      '<p class="hint">Text tohoto přepisu se přidá na konec vybraného a tento přepis se smaže.</p>' +
+      '<div class="row"><button type="submit" class="primary">Sloučit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    $("mergeSel").focus();
   } else if (panel === "del"){
     div.innerHTML = '<p id="delQ"><strong>Opravdu smazat tento přepis?</strong></p>' +
       '<div class="row"><button type="submit" class="danger" id="delYes">Ano, smazat</button><button type="button" data-act="cancel">Ne</button></div>';
@@ -698,6 +730,23 @@ async function submitPanel(f){
   } else if (panel === "instr"){
     const p = $("instrIn").value.trim();
     await saveFile(f, "Pokyny", p ? "Pokyny uloženy." : "Pokyny odstraněny.", () => fmSet(f.fm, "instructions", p || null, ["pokyny"]));
+  } else if (panel === "setup"){
+    const t = $("suTitle").value.trim(), dt = $("suDate").value, tm = $("suTime").value;
+    let c = $("suCat").value;
+    if (c === "__new") c = $("suNew").value.trim();
+    if (!t){ say("Zadejte název."); $("suTitle").focus(); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)){ say("Zadejte datum."); $("suDate").focus(); return; }
+    if (!c){ say("Zadejte kategorii."); $("suNew").focus(); return; }
+    await saveFile(f, "Doplnění údajů", "Údaje doplněny.", () => {
+      fmSet(f.fm, "title", t);
+      fmSet(f.fm, "date", dt + (tm ? " " + tm : ""));
+      if (!fmGet(f.fm, "type")) fmSet(f.fm, "type", "note");
+      fmSet(f.fm, "category", c, ["kategorie"]);
+      if (!/^\s*#\s+/.test(f.body)) f.body = "# " + t + "\n\n" + f.body.replace(/^\n+/, "");
+    });
+  } else if (panel === "merge"){
+    const target = files.find(x => x.path === $("mergeSel").value);
+    if (target) await mergeInto(f, target);
   } else if (panel === "del"){
     await deleteFile(f);
   }
@@ -730,6 +779,29 @@ async function renameFile(f, newTitle, alsoFile){
     say("Přejmenováno.");
   } catch(e){
     Object.assign(f, snap); reindex(f);
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+
+async function mergeInto(src, target){
+  const snap = { fm: target.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: target.body };
+  const add = bodyWithoutTitle(src).trim(), addSum = summaryOf(src).trim();
+  target.body = target.body.replace(/\s+$/, "") + (add ? "\n\n" + add + "\n" : "\n");
+  if (addSum){ const s = summaryOf(target).trim(); fmSet(target.fm, "summary", s ? s + "\n\n" + addSum : addSum); }
+  busy = true; updateBusy(); clearErr();
+  say("Slučuji…");
+  try {
+    await commitChanges([{ path: target.path, content: serialize(target) }, { path: src.path, del: true }], "Sloučení: " + titleOf(src) + " → " + titleOf(target));
+    files = files.filter(x => x !== src);
+    reindex(target);
+    current = target.path; lsSet(LS_LAST, current);
+    busy = false; updateBusy();
+    panel = "";
+    renderAll(true);
+    say("Sloučeno.");
+  } catch(e){
+    target.fm = snap.fm; target.body = snap.body; reindex(target);
     busy = false; updateBusy();
     showErr(e.message, e.detail);
   }
@@ -803,7 +875,7 @@ $("main").addEventListener("click", ev => {
   if (act === "copy"){ copyText(f.body); return; }
   if (act === "dl"){ downloadMd(f); return; }
   if (busy) return;
-  if (act === "cancel"){ const was = panel; panel = ""; renderMain(); const t = document.querySelector('#tools button[data-act="' + was + '"]'); if (t) t.focus(); return; }
+  if (act === "cancel"){ const was = panel; if (was === "setup") setupDismissed.add(f.path); panel = ""; renderMain(); const t = document.querySelector('#tools button[data-act="' + was + '"]'); if (t) t.focus(); return; }
   if (act === "arch"){
     const now = !archOf(f);
     saveFile(f, now ? "Archivace" : "Návrat z archivu", now ? "Archivováno." : "Vráceno z archivu.", () => fmSet(f.fm, "archive", now));
@@ -829,7 +901,8 @@ $("list").addEventListener("click", ev => {
   lsSet(LS_LAST, current);
   panel = "";
   renderList();
-  renderMain(true);
+  const nf = files.find(x => x.path === current);
+  renderMain(!(nf && needsSetup(nf) && !setupDismissed.has(nf.path)));
 });
 $("q").addEventListener("input", renderList);
 $("qArch").addEventListener("change", renderList);
