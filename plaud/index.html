@@ -54,6 +54,9 @@ label{display:block;font-weight:700;margin-bottom:.2rem}
 main,aside{min-width:0}
 main{display:grid;gap:14px}
 .meta{margin:0;color:var(--muted)}
+.facts{list-style:none;margin:0;padding:0;display:grid;gap:.25rem}
+.facts label{display:inline;font-weight:700;margin:0}
+.facts select{width:auto;min-width:12rem;padding:.2rem .4rem}
 .meta strong{color:var(--fg)}
 .tag{display:inline-block;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:0 .55rem;font-size:.9rem}
 .instr{margin:0;padding:.45rem .7rem;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 6px 6px 0}
@@ -597,14 +600,19 @@ function renderMain(focusTitle){
   if (!panel && needsSetup(f) && !setupDismissed.has(f.path)) panel = "setup";
   const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = summaryOf(f);
   let h = '<h1 tabindex="-1" id="docTitle">' + esc(shownTitle(f)) + "</h1>";
-  h += '<p class="meta">' + (d ? esc(dayLabel(d)) + (timeOf(f) ? ", " + esc(timeOf(f)) : "") : "Bez data") +
-       (cat ? ' · <span class="tag">' + esc(cat) + "</span>" : "") + (arch ? " · <strong>Archivováno</strong>" : "") + "</p>";
-  if (p) h += '<p class="instr"><strong>Pokyny:</strong> ' + esc(p) + "</p>";
+  const cats = categories(), opts = cat && !cats.includes(cat) ? cats.concat([cat]) : cats;
+  h += '<ul class="facts">' +
+       "<li><strong>Datum:</strong> " + (d ? esc(dayLabel(d)) : "neuvedeno") + "</li>" +
+       "<li><strong>Čas:</strong> " + (timeOf(f) ? esc(timeOf(f)) : "neuvedeno") + "</li>" +
+       '<li><label for="catInline">Kategorie:</label> <select id="catInline"' + (busy ? " disabled" : "") + ">" +
+         (cat ? "" : '<option value="" selected>Bez kategorie</option>') +
+         opts.map(c => '<option value="' + esc(c) + '"' + (c === cat ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></li>" +
+       "<li><strong>Pokyny:</strong> " + (p ? esc(p) : "žádné") + "</li>" +
+       (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
        '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
-       '<button type="button" data-act="cat"' + dis + ' aria-pressed="' + (panel === "cat") + '">Kategorie</button>' +
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
@@ -680,14 +688,12 @@ function renderPanel(f){
       '<div><label for="suTitle">Název</label><input type="text" id="suTitle" autocomplete="off"></div>' +
       '<div class="row"><div><label for="suDate">Datum</label><input type="date" id="suDate"></div>' +
       '<div><label for="suTime">Čas (nepovinný)</label><input type="time" id="suTime"></div></div>' +
-      '<div><label for="suCat">Kategorie</label><select id="suCat">' + all.map(c => '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>").join("") + '<option value="__new">Nová kategorie…</option></select></div>' +
-      '<div id="suNewWrap" hidden><label for="suNew">Název nové kategorie</label><input type="text" id="suNew" autocomplete="off"></div>' +
+      '<div><label for="suCat">Kategorie</label><select id="suCat">' + all.map(c => '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></div>" +
       '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Později</button></div>';
     box.appendChild(div);
     $("suTitle").value = fmGet(f.fm, "title") ? titleOf(f) : (firstH ? firstH[1].trim() : f.name.replace(/\.md$/i, ""));
     if (d0){ $("suDate").value = d0.key; if (d0.time) $("suTime").value = d0.time; }
     else { const n = new Date(); $("suDate").value = n.getFullYear() + "-" + String(n.getMonth()+1).padStart(2,"0") + "-" + String(n.getDate()).padStart(2,"0"); }
-    $("suCat").addEventListener("change", () => { $("suNewWrap").hidden = $("suCat").value !== "__new"; if (!$("suNewWrap").hidden) $("suNew").focus(); });
     $("suTitle").focus();
   } else if (panel === "merge"){
     const others = sortFiles(files.filter(x => x !== f));
@@ -732,11 +738,10 @@ async function submitPanel(f){
     await saveFile(f, "Pokyny", p ? "Pokyny uloženy." : "Pokyny odstraněny.", () => fmSet(f.fm, "instructions", p || null, ["pokyny"]));
   } else if (panel === "setup"){
     const t = $("suTitle").value.trim(), dt = $("suDate").value, tm = $("suTime").value;
-    let c = $("suCat").value;
-    if (c === "__new") c = $("suNew").value.trim();
+    const c = $("suCat").value;
     if (!t){ say("Zadejte název."); $("suTitle").focus(); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)){ say("Zadejte datum."); $("suDate").focus(); return; }
-    if (!c){ say("Zadejte kategorii."); $("suNew").focus(); return; }
+    if (!c){ say("Vyberte kategorii."); $("suCat").focus(); return; }
     await saveFile(f, "Doplnění údajů", "Údaje doplněny.", () => {
       fmSet(f.fm, "title", t);
       fmSet(f.fm, "date", dt + (tm ? " " + tm : ""));
@@ -886,7 +891,14 @@ $("main").addEventListener("click", ev => {
   if (!panel){ const t = document.querySelector('#tools button[data-act="' + act + '"]'); if (t) t.focus(); }
 });
 
-$("main").addEventListener("change", ev => {
+$("main").addEventListener("change", async ev => {
+  if (ev.target.id === "catInline"){
+    const f = files.find(x => x.path === current), c = ev.target.value;
+    if (!f || !c || busy || c === catOf(f)) return;
+    await saveFile(f, "Kategorie", "Kategorie změněna na " + c + ".", () => fmSet(f.fm, "category", c, ["kategorie"]));
+    const s = $("catInline"); if (s) s.focus();
+    return;
+  }
   if (ev.target.id !== "showMeta") return;
   showMeta = ev.target.checked;
   lsSet("prepisyPlaud.showMeta", showMeta ? "1" : "0");
