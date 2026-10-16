@@ -281,6 +281,7 @@ function dateOf(f){
   return { y: +m[1], mo: +m[2], d: +m[3], time: m[4] ? m[4] + ":" + m[5] : "", key: m[1]+"-"+m[2]+"-"+m[3], sort: m[1]+m[2]+m[3]+(m[4]||"00")+(m[5]||"00") };
 }
 function catOf(f){ const c = fmGet(f.fm, ["category","kategorie"]); return c ? String(c) : ""; }
+function pinOf(f){ const a = fmGet(f.fm, "pinned"); return a === true || a === "true"; }
 function archOf(f){ const a = fmGet(f.fm, "archive"); return a === true || a === "true"; }
 function instrOf(f){ const p = fmGet(f.fm, ["instructions","pokyny"]); return p ? String(p) : ""; }
 function summaryOf(f){ const s = fmGet(f.fm, "summary"); return s ? String(s) : ""; }
@@ -522,7 +523,7 @@ const dayFmt = new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric
 function dayLabel(d){ return dayFmt.format(new Date(d.y, d.mo - 1, d.d)); }
 function linkText(f){
   const c = catOf(f), p = instrOf(f), t = timeOf(f);
-  return (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
+  return (pinOf(f) ? "📌 " : "") + (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
 }
 function categories(){ return [...new Set(files.map(catOf).filter(Boolean))].sort((a,b) => a.localeCompare(b, "cs")); }
 function sortFiles(arr){
@@ -559,21 +560,23 @@ function renderList(){
   }
   if (cat) list = list.filter(f => catOf(f) === cat);
   list = sortFiles(list);
+  list = list.filter(pinOf).concat(list.filter(f => !pinOf(f)));
+  const groupKey = f => { if (pinOf(f)) return "pin"; const d = dateOf(f); return d ? d.key : "none"; };
   const info = $("listInfo");
   if (words.length){ info.hidden = false; info.textContent = "Nalezeno: " + list.length; }
   else if (!list.length){ info.hidden = false; info.textContent = tab === "arch" ? "Archiv je prázdný." : "Žádné přepisy."; }
   else info.hidden = true;
   $("listHead").textContent = "Seznam přepisů (" + list.length + ")";
   const perDay = new Map();
-  for (const f of list){ const d = dateOf(f), k = d ? d.key : "none"; perDay.set(k, (perDay.get(k) || 0) + 1); }
+  for (const f of list){ const k = groupKey(f); perDay.set(k, (perDay.get(k) || 0) + 1); }
   const box = $("list");
   box.textContent = "";
   let lastKey = null, ul = null;
   for (const f of list){
-    const d = dateOf(f), key = d ? d.key : "none";
+    const d = dateOf(f), key = groupKey(f);
     if (key !== lastKey){
       const sec = document.createElement("div");
-      const h = document.createElement("h3"); h.textContent = (d ? dayLabel(d) : "Bez data") + " (" + perDay.get(key) + ")";
+      const h = document.createElement("h3"); h.textContent = (key === "pin" ? "Připnuté" : d ? dayLabel(d) : "Bez data") + " (" + perDay.get(key) + ")";
       ul = document.createElement("ul");
       sec.appendChild(h); sec.appendChild(ul); box.appendChild(sec);
       lastKey = key;
@@ -582,6 +585,7 @@ function renderList(){
     a.href = "#"; a.dataset.path = f.path;
     if (f.path === current) a.setAttribute("aria-current", "true");
     const c = catOf(f), p = instrOf(f), t = timeOf(f);
+    if (pinOf(f)) a.appendChild(document.createTextNode("📌 "));
     if (c){ const s = document.createElement("span"); s.className = "c"; s.textContent = c + " | "; a.appendChild(s); }
     if (p){ const s = document.createElement("span"); s.className = "p"; s.textContent = p + ": "; a.appendChild(s); }
     if (t){ const s = document.createElement("span"); s.className = "t"; s.textContent = t + " "; a.appendChild(s); }
@@ -608,12 +612,14 @@ function renderMain(focusTitle){
          (cat ? "" : '<option value="" selected>Bez kategorie</option>') +
          opts.map(c => '<option value="' + esc(c) + '"' + (c === cat ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></li>" +
        "<li><strong>Pokyny:</strong> " + (p ? esc(p) : "žádné") + "</li>" +
+       (pinOf(f) ? "<li><strong>Připnuto</strong></li>" : "") +
        (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
        '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
+       '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
        '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
        (files.length > 1 ? '<button type="button" data-act="merge"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
@@ -881,6 +887,11 @@ $("main").addEventListener("click", ev => {
   if (act === "dl"){ downloadMd(f); return; }
   if (busy) return;
   if (act === "cancel"){ const was = panel; if (was === "setup") setupDismissed.add(f.path); panel = ""; renderMain(); const t = document.querySelector('#tools button[data-act="' + was + '"]'); if (t) t.focus(); return; }
+  if (act === "pin"){
+    const now = !pinOf(f);
+    saveFile(f, now ? "Připnutí" : "Odepnutí", now ? "Připnuto." : "Odepnuto.", () => fmSet(f.fm, "pinned", now)).then(() => { const t = document.querySelector('#tools button[data-act="pin"]'); if (t) t.focus(); });
+    return;
+  }
   if (act === "arch"){
     const now = !archOf(f);
     saveFile(f, now ? "Archivace" : "Návrat z archivu", now ? "Archivováno." : "Vráceno z archivu.", () => fmSet(f.fm, "archive", now));
