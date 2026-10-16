@@ -91,7 +91,6 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
   <p class="brand">Přepisy Plaud</p>
   <div class="row">
     <button type="button" id="btnReload">Načíst znovu</button>
-    <button type="button" id="btnTpl">Šablony</button>
     <button type="button" id="btnSettings">Nastavení</button>
   </div>
 </header>
@@ -108,6 +107,11 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
     <div><label for="setGemini">Gemini API klíč (nepovinný, pro výstupy ze šablon)</label><input type="password" id="setGemini" autocomplete="off" spellcheck="false"></div>
     <div class="row"><button type="submit" class="primary">Uložit a načíst</button><button type="button" id="btnForget">Smazat token</button><button type="button" id="btnSetCancel">Zpět</button></div>
   </form>
+  <div id="setTplWrap">
+    <h2>Šablony a pravidla</h2>
+    <p class="hint">Šablony výstupů, pravidla kategorií, model a odhad ceny.</p>
+    <div class="row"><button type="button" id="btnTpl">Otevřít šablony a pravidla</button></div>
+  </div>
   <div>
     <h2>Jak získat token</h2>
     <ol>
@@ -121,7 +125,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 
 <section id="tplView" hidden>
   <h1 tabindex="-1" id="tplHead">Šablony a pravidla</h1>
-  <div class="row"><button type="button" id="btnTplBack">Zpět na přepisy</button></div>
+  <div class="row"><button type="button" id="btnTplBack">Zpět do nastavení</button><button type="button" id="btnTplHome">Zpět na přepisy</button></div>
   <section class="part">
     <h2>Moje šablony</h2>
     <div id="tplList"></div>
@@ -1171,7 +1175,8 @@ function openTpl(){
   $("tplHead").focus();
 }
 $("btnTpl").addEventListener("click", () => { if (settings.token) openTpl(); });
-$("btnTplBack").addEventListener("click", () => { closeSettings(); const t = $("docTitle") || document.querySelector("#main h1"); if (t) t.focus(); });
+$("btnTplBack").addEventListener("click", () => { $("tplView").hidden = true; openSettings(); });
+$("btnTplHome").addEventListener("click", () => { closeSettings(); const t = $("docTitle") || document.querySelector("#main h1"); if (t) t.focus(); });
 $("btnTplNew").addEventListener("click", () => { tplEdit = null; renderTplView(); $("tplName").focus(); });
 $("cfgModel").addEventListener("change", fillPrices);
 $("tplList").addEventListener("click", async ev => {
@@ -1334,6 +1339,7 @@ function openSettings(){
   $("setFolder").value = settings.folder;
   $("setGemini").value = settings.gemini || "";
   $("btnSetCancel").hidden = !settings.token;
+  $("setTplWrap").hidden = !settings.token;
   (settings.token ? $("setRepo") : $("setToken")).focus();
 }
 function closeSettings(){
