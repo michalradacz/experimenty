@@ -44,7 +44,6 @@ label{display:block;font-weight:700;margin-bottom:.2rem}
 .check label{display:inline;font-weight:400}
 .top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;max-width:84rem;margin:0 auto 10px;border-bottom:1px solid var(--line);padding-bottom:8px}
 .brand{margin:0;font-weight:700;letter-spacing:.02em}
-.brand span{color:var(--muted);font-weight:400}
 .row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
 #status{max-width:84rem;margin:0 auto 8px;min-height:1.5em;color:var(--muted)}
 #err{max-width:84rem;margin:0 auto 12px;border:1px solid var(--danger);border-radius:6px;padding:.6rem .8rem;background:var(--surface)}
@@ -73,6 +72,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 .list a[aria-current="true"]{background:var(--accent-soft);font-weight:700}
 .list .t{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .list .p{color:var(--accent);font-weight:700}
+.list .c{color:var(--muted)}
 .hint{color:var(--muted);margin:0;font-size:.95rem}
 #settings{max-width:40rem;margin:0 auto;display:grid;gap:14px}
 #settings ol{margin:0;padding-left:1.3rem}
@@ -80,7 +80,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 </style>
 
 <header class="top">
-  <p class="brand">Přepisy Plaud <span id="repoName"></span></p>
+  <p class="brand">Přepisy Plaud</p>
   <div class="row">
     <button type="button" id="btnReload">Načíst znovu</button>
     <button type="button" id="btnSettings">Nastavení</button>
@@ -112,7 +112,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 <div class="layout" id="app" hidden>
   <main id="main"></main>
   <aside id="side">
-    <h2>Seznam přepisů</h2>
+    <h2 id="listHead">Seznam přepisů</h2>
     <div><label for="q">Hledat</label><input type="search" id="q" autocomplete="off"></div>
     <div class="check"><input type="checkbox" id="qArch"> <label for="qArch">Včetně archivu</label></div>
     <div><label for="catFilter">Kategorie</label><select id="catFilter"></select></div>
@@ -257,6 +257,18 @@ function serialize(f){
 
 /* ---------- model ---------- */
 function titleOf(f){ return String(fmGet(f.fm, "title") || f.name.replace(/\.md$/i, "")); }
+/* title shown to the user: leading "10-16 " or "2026-10-16 " date removed */
+function shownTitle(f){
+  const t = titleOf(f).replace(/^\s*(\d{4}-)?\d{1,2}-\d{1,2}\s+/, "").trim();
+  return t && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(t) ? t : "Bez názvu";
+}
+/* start time: from frontmatter date, or from a title that is just a date and time */
+function timeOf(f){
+  const d = dateOf(f);
+  if (d && d.time) return d.time;
+  const m = /^\s*(\d{4}-)?\d{1,2}-\d{1,2}\s+(\d{1,2}):(\d{2})(:\d{2})?\s*$/.exec(titleOf(f));
+  return m ? m[2].padStart(2, "0") + ":" + m[3] : "";
+}
 function dateOf(f){
   const d = fmGet(f.fm, "date");
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(d || ""));
@@ -354,7 +366,6 @@ async function loadAll(){
   try {
     const info = await gh(repoPath());
     branch = info.default_branch;
-    $("repoName").textContent = settings.repo + " / " + (settings.folder || "");
     const tree = await gh(repoPath() + "/git/trees/" + encodeURIComponent(branch) + "?recursive=1");
     const pre = folderPrefix();
     const blobs = tree.tree.filter(t => t.type === "blob" && t.path.startsWith(pre) && /\.md$/i.test(t.path) && !t.path.slice(pre.length).includes("/"));
@@ -478,8 +489,8 @@ function renderMd(md){
 const dayFmt = new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 function dayLabel(d){ return dayFmt.format(new Date(d.y, d.mo - 1, d.d)); }
 function linkText(f){
-  const d = dateOf(f), p = instrOf(f);
-  return (p ? p + ": " : "") + (d && d.time ? d.time + " " : "") + titleOf(f);
+  const c = catOf(f), p = instrOf(f), t = timeOf(f);
+  return (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
 }
 function categories(){ return [...new Set(files.map(catOf).filter(Boolean))].sort((a,b) => a.localeCompare(b, "cs")); }
 function sortFiles(arr){
@@ -520,6 +531,9 @@ function renderList(){
   if (words.length){ info.hidden = false; info.textContent = "Nalezeno: " + list.length; }
   else if (!list.length){ info.hidden = false; info.textContent = tab === "arch" ? "Archiv je prázdný." : "Žádné přepisy."; }
   else info.hidden = true;
+  $("listHead").textContent = "Seznam přepisů (" + list.length + ")";
+  const perDay = new Map();
+  for (const f of list){ const d = dateOf(f), k = d ? d.key : "none"; perDay.set(k, (perDay.get(k) || 0) + 1); }
   const box = $("list");
   box.textContent = "";
   let lastKey = null, ul = null;
@@ -527,7 +541,7 @@ function renderList(){
     const d = dateOf(f), key = d ? d.key : "none";
     if (key !== lastKey){
       const sec = document.createElement("div");
-      const h = document.createElement("h3"); h.textContent = d ? dayLabel(d) : "Bez data";
+      const h = document.createElement("h3"); h.textContent = (d ? dayLabel(d) : "Bez data") + " (" + perDay.get(key) + ")";
       ul = document.createElement("ul");
       sec.appendChild(h); sec.appendChild(ul); box.appendChild(sec);
       lastKey = key;
@@ -535,10 +549,11 @@ function renderList(){
     const li = document.createElement("li"), a = document.createElement("a");
     a.href = "#"; a.dataset.path = f.path;
     if (f.path === current) a.setAttribute("aria-current", "true");
-    const p = instrOf(f);
+    const c = catOf(f), p = instrOf(f), t = timeOf(f);
+    if (c){ const s = document.createElement("span"); s.className = "c"; s.textContent = c + " | "; a.appendChild(s); }
     if (p){ const s = document.createElement("span"); s.className = "p"; s.textContent = p + ": "; a.appendChild(s); }
-    if (d && d.time){ const s = document.createElement("span"); s.className = "t"; s.textContent = d.time + " "; a.appendChild(s); }
-    a.appendChild(document.createTextNode(titleOf(f)));
+    if (t){ const s = document.createElement("span"); s.className = "t"; s.textContent = t + " "; a.appendChild(s); }
+    a.appendChild(document.createTextNode(shownTitle(f)));
     li.appendChild(a); ul.appendChild(li);
   }
 }
@@ -551,8 +566,8 @@ function renderMain(focusTitle){
     return;
   }
   const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = summaryOf(f);
-  let h = '<h1 tabindex="-1" id="docTitle">' + esc(titleOf(f)) + "</h1>";
-  h += '<p class="meta">' + (d ? esc(dayLabel(d)) + (d.time ? ", " + esc(d.time) : "") : "Bez data") +
+  let h = '<h1 tabindex="-1" id="docTitle">' + esc(shownTitle(f)) + "</h1>";
+  h += '<p class="meta">' + (d ? esc(dayLabel(d)) + (timeOf(f) ? ", " + esc(timeOf(f)) : "") : "Bez data") +
        (cat ? ' · <span class="tag">' + esc(cat) + "</span>" : "") + (arch ? " · <strong>Archivováno</strong>" : "") + "</p>";
   if (p) h += '<p class="instr"><strong>Pokyny:</strong> ' + esc(p) + "</p>";
   const dis = busy ? " disabled" : "";
