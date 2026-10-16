@@ -54,6 +54,10 @@ label{display:block;font-weight:700;margin-bottom:.2rem}
 main,aside{min-width:0}
 main{display:grid;gap:14px}
 .meta{margin:0;color:var(--muted)}
+.prev{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;font-family:var(--font-mono);font-size:.85rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.5rem}
+#tplView{max-width:52rem;margin:0 auto;display:grid;gap:14px}
+.tpls{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.tpls li{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
 .facts{list-style:none;margin:0;padding:0;display:grid;gap:.25rem}
 .facts label{display:inline;font-weight:700;margin:0}
 .facts select{width:auto;min-width:12rem;padding:.2rem .4rem}
@@ -87,6 +91,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
   <p class="brand">Přepisy Plaud</p>
   <div class="row">
     <button type="button" id="btnReload">Načíst znovu</button>
+    <button type="button" id="btnTpl">Šablony</button>
     <button type="button" id="btnSettings">Nastavení</button>
   </div>
 </header>
@@ -100,6 +105,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
     <div><label for="setToken">GitHub token</label><input type="password" id="setToken" autocomplete="off" spellcheck="false"></div>
     <div><label for="setRepo">Repozitář</label><input type="text" id="setRepo" spellcheck="false"></div>
     <div><label for="setFolder">Složka s přepisy</label><input type="text" id="setFolder" spellcheck="false"></div>
+    <div><label for="setGemini">Gemini API klíč (nepovinný, pro výstupy ze šablon)</label><input type="password" id="setGemini" autocomplete="off" spellcheck="false"></div>
     <div class="row"><button type="submit" class="primary">Uložit a načíst</button><button type="button" id="btnForget">Smazat token</button><button type="button" id="btnSetCancel">Zpět</button></div>
   </form>
   <div>
@@ -111,6 +117,41 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
       <li>Token zkopírujte a vložte sem.</li>
     </ol>
   </div>
+</section>
+
+<section id="tplView" hidden>
+  <h1 tabindex="-1" id="tplHead">Šablony výstupů</h1>
+  <div class="row"><button type="button" id="btnTplBack">Zpět na přepisy</button></div>
+  <section class="part">
+    <h2>Moje šablony</h2>
+    <div id="tplList"></div>
+  </section>
+  <section class="part">
+    <h2 id="tplFormHead">Nová šablona</h2>
+    <form id="tplForm" class="panel">
+      <div><label for="tplName">Název</label><input type="text" id="tplName" autocomplete="off"></div>
+      <div><label for="tplPrompt">Prompt</label><textarea id="tplPrompt"></textarea></div>
+      <p class="hint">V promptu můžete použít {{prepis}}, {{shrnuti}}, {{nazev}}, {{datum}}, {{kategorie}} a {{pokyny}}. Když {{prepis}} v promptu chybí, přepis se připojí na konec.</p>
+      <div class="check"><input type="checkbox" id="tplClean" checked> <label for="tplClean">Posílat přepis bez časů a mluvčích</label></div>
+      <div class="row"><button type="submit" class="primary">Uložit šablonu</button><button type="button" id="btnTplNew">Zrušit úpravy</button></div>
+    </form>
+  </section>
+  <section class="part">
+    <h2>Model a odhad ceny</h2>
+    <form id="cfgForm" class="panel">
+      <div><label for="cfgModel">Model</label><select id="cfgModel"></select></div>
+      <div class="row">
+        <div><label for="cfgIn">Cena vstupu (USD za milion tokenů)</label><input type="text" id="cfgIn" inputmode="decimal"></div>
+        <div><label for="cfgOut">Cena výstupu (USD za milion tokenů)</label><input type="text" id="cfgOut" inputmode="decimal"></div>
+      </div>
+      <div class="row">
+        <div><label for="cfgRate">Kurz (Kč za 1 USD)</label><input type="text" id="cfgRate" inputmode="decimal"></div>
+        <div><label for="cfgOutEst">Odhad délky výstupu (tokeny)</label><input type="text" id="cfgOutEst" inputmode="numeric"></div>
+      </div>
+      <p class="hint">Ceny a kurz se nikde nezjišťují, odhad počítá jen s těmito hodnotami.</p>
+      <div class="row"><button type="submit" class="primary">Uložit nastavení</button></div>
+    </form>
+  </section>
 </section>
 
 <div class="layout" id="app" hidden>
@@ -137,7 +178,28 @@ const DEF_REPO = "michalradacz/mojedata";
 const DEF_FOLDER = "plaud";
 const $ = id => document.getElementById(id);
 
-let settings = { token: "", repo: DEF_REPO, folder: DEF_FOLDER };
+let settings = { token: "", repo: DEF_REPO, folder: DEF_FOLDER, gemini: "" };
+let outputs = [];          // generated outputs from vystupy/
+let view = "orig";         // detail tab: "orig" or output path
+let tplEdit = null;        // id of template being edited
+const DEFAULT_CONFIG = {
+  version: 1,
+  nastaveni: {
+    model: "gemini-3.8-flash",
+    kurzUsdCzk: 21.73,
+    odhadVystupuTokeny: 2000,
+    ceny: {
+      "gemini-3.8-flash": { vstup: 0.75, vystup: 3.75 },
+      "gemini-3.6-flash": { vstup: 0.75, vystup: 3.75 },
+      "gemini-3.5-flash-lite": { vstup: 0.30, vystup: 2.50 },
+      "gemini-3.1-flash-lite": { vstup: 0.25, vystup: 1.50 },
+      "gemini-3.1-pro-preview": { vstup: 2.00, vystup: 12.00 },
+      "gemini-4-argon": { vstup: 2.00, vystup: 10.00 }
+    }
+  },
+  sablony: []
+};
+let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 let branch = "";
 let files = [];            // {path, name, fm, body, index}
 const blobCache = new Map(); // sha -> text
@@ -318,7 +380,19 @@ function safeFileName(t){
 /* a file added by hand without title or date: user fills them in on first open */
 function needsSetup(f){ return !fmGet(f.fm, "title") || !dateOf(f); }
 const setupDismissed = new Set();
-function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].join(" ")); }
+function idOf(f){ const v = fmGet(f.fm, "id"); return v ? String(v) : ""; }
+function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function outputsFor(f){
+  const id = idOf(f);
+  if (!id) return [];
+  return outputs.filter(o => String(fmGet(o.fm, "source") || "") === id)
+    .sort((a,b) => String(fmGet(a.fm, "created") || "").localeCompare(String(fmGet(b.fm, "created") || "")));
+}
+function outLabel(o){
+  const c = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(fmGet(o.fm, "created") || ""));
+  return String(fmGet(o.fm, "template") || "Výstup") + (c ? " (" + (+c[3]) + ". " + (+c[2]) + ". " + c[4] + ":" + c[5] + ")" : "");
+}
+function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].concat(outputsFor(f).map(o => o.body)).join(" ")); }
 
 function detectCategory(text){
   const t = text.slice(0, 512);
@@ -362,6 +436,8 @@ function ghErrText(st, msg){
 }
 const repoPath = () => "/repos/" + settings.repo.split("/").map(encodeURIComponent).join("/");
 const folderPrefix = () => { const f = settings.folder.replace(/^\/+|\/+$/g, ""); return f ? f + "/" : ""; };
+const outPrefix = () => folderPrefix() + "vystupy/";
+const configPath = () => folderPrefix() + "plaud.json";
 
 async function commitChanges(changes, message){
   for (let attempt = 0; attempt < 2; attempt++){
@@ -401,20 +477,39 @@ async function loadAll(){
     const tree = await gh(repoPath() + "/git/trees/" + encodeURIComponent(branch) + "?recursive=1");
     const pre = folderPrefix();
     const blobs = tree.tree.filter(t => t.type === "blob" && t.path.startsWith(pre) && /\.md$/i.test(t.path) && !t.path.slice(pre.length).includes("/"));
-    let done = 0;
-    const loaded = [];
-    await pool(blobs, 8, async b => {
-      let text = blobCache.get(b.sha);
+    const opre = outPrefix();
+    const oblobs = tree.tree.filter(t => t.type === "blob" && t.path.startsWith(opre) && /\.md$/i.test(t.path) && !t.path.slice(opre.length).includes("/"));
+    const cfgBlob = tree.tree.find(t => t.type === "blob" && t.path === configPath());
+    const readBlob = async sha => {
+      let text = blobCache.get(sha);
       if (text === undefined){
-        const bl = await gh(repoPath() + "/git/blobs/" + b.sha);
+        const bl = await gh(repoPath() + "/git/blobs/" + sha);
         text = b64ToText(bl.content);
-        blobCache.set(b.sha, text);
+        blobCache.set(sha, text);
       }
-      const doc = parseDoc(text);
-      loaded.push({ path: b.path, name: b.path.slice(pre.length), fm: doc.fm, body: doc.body, index: "" });
+      return text;
+    };
+    let done = 0;
+    const all = blobs.length + oblobs.length;
+    const loaded = [], loadedOut = [];
+    await pool(blobs.concat(oblobs), 8, async b => {
+      const doc = parseDoc(await readBlob(b.sha));
+      const isOut = b.path.startsWith(opre);
+      (isOut ? loadedOut : loaded).push({ path: b.path, name: b.path.slice(isOut ? opre.length : pre.length), fm: doc.fm, body: doc.body, index: "" });
       done++;
-      if (done % 10 === 0) say("Načítám přepisy… " + done + " z " + blobs.length);
+      if (done % 10 === 0) say("Načítám přepisy… " + done + " z " + all);
     });
+    config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    if (cfgBlob){
+      try {
+        const c = JSON.parse(await readBlob(cfgBlob.sha));
+        config = Object.assign({}, config, c);
+        config.nastaveni = Object.assign({}, DEFAULT_CONFIG.nastaveni, c.nastaveni || {});
+        config.nastaveni.ceny = Object.assign({}, DEFAULT_CONFIG.nastaveni.ceny, (c.nastaveni || {}).ceny || {});
+        if (!Array.isArray(config.sablony)) config.sablony = [];
+      } catch(e){ showErr("Soubor plaud.json se nepodařilo přečíst, používám výchozí nastavení.", String(e)); }
+    }
+    outputs = loadedOut;
     files = loaded;
     files.forEach(reindex);
     busy = false; updateBusy();
@@ -436,20 +531,21 @@ async function autoFix(){
   const backup = new Map();
   for (const f of files){
     if (needsSetup(f)) continue;
-    const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body);
-    if (!needCat && !old) continue;
+    const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body), needId = !idOf(f);
+    if (!needCat && !old && !needId) continue;
     backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
+    if (needId) fmSet(f.fm, "id", newId());
     if (old) migrateOld(f);
     if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
     changed.push(f);
   }
   if (!changed.length) return;
   busy = true; updateBusy();
-  say("Ukládám kategorie u " + changed.length + " přepisů…");
+  say("Doplňuji údaje u " + changed.length + " přepisů…");
   try {
-    await commitChanges(changed.map(f => ({ path: f.path, content: serialize(f) })), "Doplnění kategorií (" + changed.length + ")");
+    await commitChanges(changed.map(f => ({ path: f.path, content: serialize(f) })), "Doplnění kategorií a identifikátorů (" + changed.length + ")");
     changed.forEach(reindex);
-    say("Kategorie doplněna u " + changed.length + " přepisů.");
+    say("Údaje doplněny u " + changed.length + " přepisů.");
   } catch(e){
     for (const [f, b] of backup){ f.fm = b.fm; f.body = b.body; reindex(f); }
     showErr("Kategorie se nepodařilo uložit. " + e.message, e.detail);
@@ -523,7 +619,7 @@ const dayFmt = new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric
 function dayLabel(d){ return dayFmt.format(new Date(d.y, d.mo - 1, d.d)); }
 function linkText(f){
   const c = catOf(f), p = instrOf(f), t = timeOf(f);
-  return (pinOf(f) ? "📌 " : "") + (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
+  return (pinOf(f) ? "📌 " : "") + (outputsFor(f).length ? "🤖 " : "") + (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
 }
 function categories(){ return [...new Set(files.map(catOf).filter(Boolean))].sort((a,b) => a.localeCompare(b, "cs")); }
 function sortFiles(arr){
@@ -586,6 +682,7 @@ function renderList(){
     if (f.path === current) a.setAttribute("aria-current", "true");
     const c = catOf(f), p = instrOf(f), t = timeOf(f);
     if (pinOf(f)) a.appendChild(document.createTextNode("📌 "));
+    if (outputsFor(f).length) a.appendChild(document.createTextNode("🤖 "));
     if (c){ const s = document.createElement("span"); s.className = "c"; s.textContent = c + " | "; a.appendChild(s); }
     if (p){ const s = document.createElement("span"); s.className = "p"; s.textContent = p + ": "; a.appendChild(s); }
     if (t){ const s = document.createElement("span"); s.className = "t"; s.textContent = t + " "; a.appendChild(s); }
@@ -616,6 +713,7 @@ function renderMain(focusTitle){
        (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
+       '<button type="button" data-act="gen"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
        '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
@@ -627,7 +725,24 @@ function renderMain(focusTitle){
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
        '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
   h += '<div id="panel"></div>';
-  if (panel !== "edit"){
+  const outs = outputsFor(f);
+  if (view !== "orig" && !outs.some(o => o.path === view)) view = "orig";
+  if (outs.length && panel !== "edit"){
+    h += '<div class="row" id="viewTabs"><button type="button" data-view="orig" aria-pressed="' + (view === "orig") + '">Přepis</button>' +
+      outs.map(o => '<button type="button" data-view="' + esc(o.path) + '" aria-pressed="' + (view === o.path) + '">' + esc(outLabel(o)) + "</button>").join("") + "</div>";
+  }
+  const o = view !== "orig" ? outs.find(x => x.path === view) : null;
+  if (o && panel !== "edit"){
+    const tin = +fmGet(o.fm, "tokens_in") || 0, tout = +fmGet(o.fm, "tokens_out") || 0, kc = fmGet(o.fm, "cost_czk");
+    h += '<section class="part"><h2 tabindex="-1" id="outHead">' + esc(String(fmGet(o.fm, "template") || "Výstup")) + "</h2>" +
+      '<ul class="facts"><li><strong>Vytvořeno:</strong> ' + esc(String(fmGet(o.fm, "created") || "neuvedeno")) + "</li>" +
+      "<li><strong>Model:</strong> " + esc(String(fmGet(o.fm, "model") || "neuvedeno")) + "</li>" +
+      "<li><strong>Tokeny:</strong> vstup " + tin.toLocaleString("cs-CZ") + ", výstup " + tout.toLocaleString("cs-CZ") + "</li>" +
+      (kc !== undefined && kc !== "" ? "<li><strong>Cena:</strong> přibližně " + esc(fmtKc(+kc)) + "</li>" : "") + "</ul>" +
+      '<div class="row"><button type="button" data-oact="copy">Zkopírovat výstup</button><button type="button" data-oact="dl">Uložit výstup jako MD</button>' +
+      '<button type="button" data-oact="del" class="danger"' + dis + ">Smazat výstup</button></div>" +
+      '<div class="doc">' + renderMd(o.body) + "</div></section>";
+  } else if (panel !== "edit"){
     if (sum) h += '<section class="part"><h2>Shrnutí</h2><div class="doc">' + renderMd(sum) + "</div></section>";
     const bt = bodyWithoutTitle(f), hdrs = hasHeaders(bt);
     h += '<section class="part"><h2>Přepis</h2>' +
@@ -701,6 +816,30 @@ function renderPanel(f){
     if (d0){ $("suDate").value = d0.key; if (d0.time) $("suTime").value = d0.time; }
     else { const n = new Date(); $("suDate").value = n.getFullYear() + "-" + String(n.getMonth()+1).padStart(2,"0") + "-" + String(n.getDate()).padStart(2,"0"); }
     $("suTitle").focus();
+  } else if (panel === "gen"){
+    const tpls = config.sablony;
+    if (!settings.gemini){
+      div.innerHTML = '<p>Pro vytváření výstupů je potřeba Gemini API klíč.</p><div class="row"><button type="button" data-act="opensettings">Otevřít nastavení</button><button type="button" data-act="cancel">Zavřít</button></div>';
+      box.appendChild(div); div.querySelector("button").focus();
+    } else if (!tpls.length){
+      div.innerHTML = '<p>Zatím nemáte žádnou šablonu.</p><div class="row"><button type="button" data-act="opentpl">Založit šablonu</button><button type="button" data-act="cancel">Zavřít</button></div>';
+      box.appendChild(div); div.querySelector("button").focus();
+    } else {
+      div.innerHTML = '<div><label for="genTpl">Šablona</label><select id="genTpl">' + tpls.map(t => '<option value="' + esc(t.id) + '">' + esc(t.nazev) + "</option>").join("") + "</select></div>" +
+        '<p id="genEst"></p>' +
+        '<details><summary>Text, který se odešle</summary><pre id="genPrev" class="prev"></pre></details>' +
+        '<div class="row"><button type="submit" class="primary" id="genGo">Odeslat</button><button type="button" data-act="cancel">Zrušit</button></div>';
+      box.appendChild(div);
+      const upd = () => {
+        const t = tpls.find(x => x.id === $("genTpl").value);
+        const text = buildPrompt(t, f), est = estimate(text);
+        $("genEst").textContent = "Odhad: vstup asi " + est.tin.toLocaleString("cs-CZ") + " tokenů, výstup asi " + est.tout.toLocaleString("cs-CZ") + " tokenů, cena asi " + fmtKc(est.kc) + " (model " + config.nastaveni.model + ").";
+        $("genPrev").textContent = text;
+      };
+      $("genTpl").addEventListener("change", upd);
+      upd();
+      $("genTpl").focus();
+    }
   } else if (panel === "merge"){
     const others = sortFiles(files.filter(x => x !== f));
     div.innerHTML = '<div><label for="mergeSel">Sloučit do přepisu</label><select id="mergeSel">' +
@@ -753,8 +892,12 @@ async function submitPanel(f){
       fmSet(f.fm, "date", dt + (tm ? " " + tm : ""));
       if (!fmGet(f.fm, "type")) fmSet(f.fm, "type", "note");
       fmSet(f.fm, "category", c, ["kategorie"]);
+      if (!idOf(f)) fmSet(f.fm, "id", newId());
       if (!/^\s*#\s+/.test(f.body)) f.body = "# " + t + "\n\n" + f.body.replace(/^\n+/, "");
     });
+  } else if (panel === "gen"){
+    const t = config.sablony.find(x => x.id === $("genTpl").value);
+    if (t) await generateOutput(f, t);
   } else if (panel === "merge"){
     const target = files.find(x => x.path === $("mergeSel").value);
     if (target) await mergeInto(f, target);
@@ -803,7 +946,13 @@ async function mergeInto(src, target){
   busy = true; updateBusy(); clearErr();
   say("Slučuji…");
   try {
-    await commitChanges([{ path: target.path, content: serialize(target) }, { path: src.path, del: true }], "Sloučení: " + titleOf(src) + " → " + titleOf(target));
+    const moved = outputsFor(src);
+    if (moved.length && !idOf(target)) fmSet(target.fm, "id", newId());
+    const outSnap = moved.map(o => ({ o, fm: o.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })) }));
+    moved.forEach(o => { fmSet(o.fm, "source", idOf(target)); fmSet(o.fm, "source_title", titleOf(target)); });
+    try {
+      await commitChanges([{ path: target.path, content: serialize(target) }, { path: src.path, del: true }].concat(moved.map(o => ({ path: o.path, content: serialize(o) }))), "Sloučení: " + titleOf(src) + " → " + titleOf(target));
+    } catch(err){ outSnap.forEach(s => { s.o.fm = s.fm; }); throw err; }
     files = files.filter(x => x !== src);
     reindex(target);
     current = target.path; lsSet(LS_LAST, current);
@@ -822,7 +971,9 @@ async function deleteFile(f){
   busy = true; updateBusy(); clearErr();
   say("Mažu…");
   try {
-    await commitChanges([{ path: f.path, del: true }], "Smazání: " + titleOf(f));
+    const outs = outputsFor(f);
+    await commitChanges([{ path: f.path, del: true }].concat(outs.map(o => ({ path: o.path, del: true }))), "Smazání: " + titleOf(f));
+    outputs = outputs.filter(o => !outs.includes(o));
     const ordered = sortFiles(files.filter(x => archOf(x) === archOf(f)));
     const idx = ordered.indexOf(f);
     const next = ordered[idx + 1] || ordered[idx - 1] || null;
@@ -848,6 +999,198 @@ function updateBusy(){
   $("btnReload").disabled = busy;
   document.querySelectorAll("#tools button[data-act]:not([data-act=copy]):not([data-act=dl]), #panelForm button").forEach(b => b.disabled = busy);
 }
+
+/* ---------- AI outputs ---------- */
+function fmtKc(v){ return (isFinite(v) ? v : 0).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " Kč"; }
+function priceOf(model){ return config.nastaveni.ceny[model] || { vstup: 0, vystup: 0 }; }
+/* local estimate only: Czech text has roughly 3 characters per token */
+function estimate(text){
+  const n = config.nastaveni, pr = priceOf(n.model);
+  const tin = Math.ceil(text.length / 3), tout = Math.max(0, +n.odhadVystupuTokeny || 0);
+  return { tin, tout, kc: (tin * pr.vstup + tout * pr.vystup) / 1e6 * (+n.kurzUsdCzk || 0) };
+}
+function buildPrompt(t, f){
+  const bt = bodyWithoutTitle(f).trim();
+  const prepis = t.bezCasu !== false && hasHeaders(bt) ? cleanTranscript(bt).trim() : bt;
+  const d = dateOf(f);
+  const vars = { prepis, shrnuti: summaryOf(f).trim(), nazev: shownTitle(f), datum: d ? dayLabel(d) + (timeOf(f) ? ", " + timeOf(f) : "") : "", kategorie: catOf(f), pokyny: instrOf(f) };
+  let s = String(t.prompt || "");
+  const hasPrepis = /\{\{\s*prepis\s*\}\}/i.test(s);
+  s = s.replace(/\{\{\s*(prepis|shrnuti|nazev|datum|kategorie|pokyny)\s*\}\}/gi, (all, k) => vars[k.toLowerCase()]);
+  if (!hasPrepis) s = s.replace(/\s+$/, "") + "\n\n---\n\n" + prepis;
+  return s;
+}
+async function callGemini(text){
+  const model = config.nastaveni.model;
+  let r;
+  try {
+    r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": settings.gemini },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }] })
+    });
+  } catch(e){ const err = new Error("Nepodařilo se spojit s Gemini."); err.detail = String(e); throw err; }
+  let data = null; try { data = await r.json(); } catch(e){}
+  if (!r.ok){
+    const msg = data && data.error ? data.error.message : "";
+    const t = r.status === 400 && /api key/i.test(msg) ? "Gemini API klíč je neplatný. Zkontrolujte ho v Nastavení." :
+              r.status === 403 ? "Gemini API klíč nemá přístup k modelu " + model + "." :
+              r.status === 404 ? "Model " + model + " neexistuje. Zkontrolujte ho v Šablonách." :
+              r.status === 429 ? "Překročen limit Gemini API. Zkuste to později." : "Gemini vrátil chybu " + r.status + ".";
+    const err = new Error(t); err.detail = r.status + "\n" + msg; throw err;
+  }
+  const c = data && data.candidates && data.candidates[0];
+  const out = c && c.content && c.content.parts ? c.content.parts.filter(p => !p.thought && p.text).map(p => p.text).join("") : "";
+  if (!out.trim()){ const err = new Error("Gemini nevrátil žádný text."); err.detail = JSON.stringify(data).slice(0, 2000); throw err; }
+  const u = data.usageMetadata || {};
+  return { text: out.trim() + "\n", tin: u.promptTokenCount || 0, tout: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0), model };
+}
+function nowStamp(){
+  const n = new Date(), p = x => String(x).padStart(2, "0");
+  return { show: n.getFullYear() + "-" + p(n.getMonth()+1) + "-" + p(n.getDate()) + " " + p(n.getHours()) + ":" + p(n.getMinutes()),
+           file: n.getFullYear() + p(n.getMonth()+1) + p(n.getDate()) + "-" + p(n.getHours()) + p(n.getMinutes()) + p(n.getSeconds()) };
+}
+function slug(s){ return norm(s).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "vystup"; }
+async function generateOutput(f, t){
+  busy = true; updateBusy(); clearErr();
+  say("Generuji výstup, může to trvat i minutu…");
+  try {
+    const changes = [];
+    if (!idOf(f)){ fmSet(f.fm, "id", newId()); changes.push({ path: f.path, content: serialize(f) }); }
+    const res = await callGemini(buildPrompt(t, f));
+    const pr = priceOf(res.model), kc = (res.tin * pr.vstup + res.tout * pr.vystup) / 1e6 * (+config.nastaveni.kurzUsdCzk || 0);
+    const st = nowStamp();
+    const o = { path: outPrefix() + idOf(f) + "-" + slug(t.nazev) + "-" + st.file + ".md", name: "", fm: [], body: res.text, index: "" };
+    o.name = o.path.slice(outPrefix().length);
+    fmSet(o.fm, "title", t.nazev + " – " + titleOf(f));
+    fmSet(o.fm, "type", "output");
+    fmSet(o.fm, "source", idOf(f));
+    fmSet(o.fm, "source_title", titleOf(f));
+    fmSet(o.fm, "template", t.nazev);
+    fmSet(o.fm, "template_id", t.id);
+    fmSet(o.fm, "model", res.model);
+    fmSet(o.fm, "created", st.show);
+    fmSet(o.fm, "tokens_in", String(res.tin));
+    fmSet(o.fm, "tokens_out", String(res.tout));
+    fmSet(o.fm, "cost_czk", kc.toFixed(2));
+    changes.push({ path: o.path, content: serialize(o) });
+    await commitChanges(changes, "Výstup: " + t.nazev + " – " + titleOf(f));
+    outputs.push(o);
+    reindex(f);
+    busy = false; updateBusy();
+    panel = ""; view = o.path;
+    renderAll();
+    const hd = $("outHead"); if (hd) hd.focus();
+    say("Výstup vytvořen, cena asi " + fmtKc(kc) + ".");
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+async function deleteOutput(o){
+  busy = true; updateBusy(); clearErr();
+  say("Mažu výstup…");
+  try {
+    await commitChanges([{ path: o.path, del: true }], "Smazání výstupu: " + String(fmGet(o.fm, "title") || o.name));
+    outputs = outputs.filter(x => x !== o);
+    const f = files.find(x => x.path === current); if (f) reindex(f);
+    busy = false; updateBusy();
+    view = "orig";
+    renderAll();
+    const t = document.querySelector('#viewTabs button[data-view="orig"]') || $("docTitle"); if (t) t.focus();
+    say("Výstup smazán.");
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+
+/* ---------- templates view ---------- */
+async function saveConfig(message, okText){
+  busy = true; updateBusy(); clearErr();
+  say("Ukládám…");
+  try {
+    await commitChanges([{ path: configPath(), content: JSON.stringify(config, null, 2) + "\n" }], message);
+    busy = false; updateBusy();
+    say(okText);
+    return true;
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+    return false;
+  }
+}
+function renderTplView(){
+  const box = $("tplList");
+  if (!config.sablony.length){ box.innerHTML = '<p class="hint">Zatím žádné šablony.</p>'; }
+  else box.innerHTML = '<ul class="tpls">' + config.sablony.map(t =>
+    "<li><strong>" + esc(t.nazev) + '</strong><button type="button" data-tedit="' + esc(t.id) + '">Upravit</button><button type="button" class="danger" data-tdel="' + esc(t.id) + '">Smazat</button></li>').join("") + "</ul>";
+  const t = tplEdit ? config.sablony.find(x => x.id === tplEdit) : null;
+  $("tplFormHead").textContent = t ? "Úprava šablony " + t.nazev : "Nová šablona";
+  $("tplName").value = t ? t.nazev : "";
+  $("tplPrompt").value = t ? t.prompt : "";
+  $("tplClean").checked = t ? t.bezCasu !== false : true;
+  const n = config.nastaveni, sel = $("cfgModel");
+  sel.innerHTML = Object.keys(n.ceny).map(m => '<option value="' + esc(m) + '"' + (m === n.model ? " selected" : "") + ">" + esc(m) + "</option>").join("");
+  fillPrices();
+  $("cfgRate").value = String(n.kurzUsdCzk).replace(".", ",");
+  $("cfgOutEst").value = String(n.odhadVystupuTokeny);
+}
+function fillPrices(){
+  const pr = priceOf($("cfgModel").value);
+  $("cfgIn").value = String(pr.vstup).replace(".", ",");
+  $("cfgOut").value = String(pr.vystup).replace(".", ",");
+}
+function num(v){ return parseFloat(String(v).replace(/\s/g, "").replace(",", ".")); }
+function openTpl(){
+  $("app").hidden = true; $("settings").hidden = true; $("tplView").hidden = false;
+  tplEdit = null;
+  renderTplView();
+  $("tplHead").focus();
+}
+$("btnTpl").addEventListener("click", () => { if (settings.token) openTpl(); });
+$("btnTplBack").addEventListener("click", () => { closeSettings(); const t = $("docTitle") || document.querySelector("#main h1"); if (t) t.focus(); });
+$("btnTplNew").addEventListener("click", () => { tplEdit = null; renderTplView(); $("tplName").focus(); });
+$("cfgModel").addEventListener("change", fillPrices);
+$("tplList").addEventListener("click", async ev => {
+  const e1 = ev.target.closest("button[data-tedit]"), d1 = ev.target.closest("button[data-tdel]");
+  if (busy) return;
+  if (e1){ tplEdit = e1.dataset.tedit; renderTplView(); $("tplName").focus(); return; }
+  if (d1){
+    const t = config.sablony.find(x => x.id === d1.dataset.tdel);
+    if (!t) return;
+    const before = config.sablony.slice();
+    config.sablony = config.sablony.filter(x => x !== t);
+    if (tplEdit === t.id) tplEdit = null;
+    if (!(await saveConfig("Šablona smazána: " + t.nazev, "Šablona smazána."))) config.sablony = before;
+    renderTplView();
+    $("tplHead").focus();
+  }
+});
+$("tplForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (busy) return;
+  const nazev = $("tplName").value.trim(), prompt = $("tplPrompt").value.trim();
+  if (!nazev){ say("Zadejte název šablony."); $("tplName").focus(); return; }
+  if (!prompt){ say("Zadejte prompt."); $("tplPrompt").focus(); return; }
+  const before = config.sablony.map(x => Object.assign({}, x));
+  const t = tplEdit ? config.sablony.find(x => x.id === tplEdit) : null;
+  if (t){ t.nazev = nazev; t.prompt = prompt; t.bezCasu = $("tplClean").checked; }
+  else config.sablony.push({ id: newId(), nazev, prompt, bezCasu: $("tplClean").checked });
+  if (await saveConfig((t ? "Úprava šablony: " : "Nová šablona: ") + nazev, "Šablona uložena.")){ tplEdit = null; renderTplView(); $("tplHead").focus(); }
+  else config.sablony = before;
+});
+$("cfgForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (busy) return;
+  const n = config.nastaveni, m = $("cfgModel").value;
+  const vin = num($("cfgIn").value), vout = num($("cfgOut").value), rate = num($("cfgRate").value), est = parseInt($("cfgOutEst").value, 10);
+  if (![vin, vout, rate].every(x => isFinite(x) && x >= 0) || !(est >= 0)){ say("Zkontrolujte čísla v nastavení."); $("cfgIn").focus(); return; }
+  const before = JSON.stringify(n);
+  n.model = m; n.ceny[m] = { vstup: vin, vystup: vout }; n.kurzUsdCzk = rate; n.odhadVystupuTokeny = est;
+  if (!(await saveConfig("Nastavení výstupů", "Nastavení uloženo."))) config.nastaveni = JSON.parse(before);
+  renderTplView();
+});
 
 /* ---------- actions ---------- */
 async function copyText(text){
@@ -878,10 +1221,28 @@ async function downloadMd(f){
 }
 
 $("main").addEventListener("click", ev => {
+  const vt = ev.target.closest("button[data-view]");
+  if (vt){
+    view = vt.dataset.view; panel = "";
+    renderMain();
+    const t = document.querySelector('#viewTabs button[aria-pressed="true"]'); if (t) t.focus();
+    return;
+  }
+  const ob = ev.target.closest("button[data-oact]");
+  if (ob){
+    const o = outputs.find(x => x.path === view);
+    if (!o) return;
+    if (ob.dataset.oact === "copy"){ copyText(o.body); return; }
+    if (ob.dataset.oact === "dl"){ downloadMd(o); return; }
+    if (ob.dataset.oact === "del" && !busy){ deleteOutput(o); return; }
+    return;
+  }
   const b = ev.target.closest("button[data-act]");
   if (!b) return;
   const f = files.find(x => x.path === current);
   if (!f) return;
+  if (b.dataset.act === "opensettings"){ panel = ""; openSettings(); $("setGemini").focus(); return; }
+  if (b.dataset.act === "opentpl"){ panel = ""; openTpl(); return; }
   const act = b.dataset.act;
   if (act === "copy"){ copyText(f.body); return; }
   if (act === "dl"){ downloadMd(f); return; }
@@ -922,7 +1283,7 @@ $("list").addEventListener("click", ev => {
   ev.preventDefault();
   current = a.dataset.path;
   lsSet(LS_LAST, current);
-  panel = "";
+  panel = ""; view = "orig";
   renderList();
   const nf = files.find(x => x.path === current);
   renderMain(!(nf && needsSetup(nf) && !setupDismissed.has(nf.path)));
@@ -941,11 +1302,13 @@ function openSettings(){
   $("setToken").value = settings.token;
   $("setRepo").value = settings.repo;
   $("setFolder").value = settings.folder;
+  $("setGemini").value = settings.gemini || "";
   $("btnSetCancel").hidden = !settings.token;
   (settings.token ? $("setRepo") : $("setToken")).focus();
 }
 function closeSettings(){
   $("settings").hidden = true;
+  $("tplView").hidden = true;
   $("app").hidden = false;
 }
 $("btnSettings").addEventListener("click", openSettings);
@@ -956,7 +1319,7 @@ $("setForm").addEventListener("submit", ev => {
   const tok = $("setToken").value.trim(), repo = $("setRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, ""), folder = $("setFolder").value.trim();
   if (!tok){ say("Zadejte token."); $("setToken").focus(); return; }
   if (!/^[^/\s]+\/[^/\s]+$/.test(repo)){ say("Repozitář zadejte ve tvaru vlastník/název."); $("setRepo").focus(); return; }
-  settings = { token: tok, repo, folder };
+  settings = { token: tok, repo, folder, gemini: $("setGemini").value.trim() };
   saveSettings();
   blobCache.clear();
   closeSettings();
