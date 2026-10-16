@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px/1.4 system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Přepisy Plaud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<style>
+/* Layout: two columns, open transcript on the left, list of transcripts on the right; stacks to one column on phones */
+:root{
+  --bg:#f6f7f4; --surface:#ffffff; --fg:#1d2420; --muted:#56605a; --line:#cfd6d0;
+  --accent:#1f6f5c; --accent-fg:#ffffff; --accent-soft:#e1efe9; --danger:#a3312a; --focus:#0b5cad;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121614; --surface:#1a201d; --fg:#e7ece8; --muted:#a3ada6; --line:#34403a;
+  --accent:#6cc4a8; --accent-fg:#0d1512; --accent-soft:#1f3029; --danger:#f08a80; --focus:#7db6ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --surface:#1a201d; --fg:#e7ece8; --muted:#a3ada6; --line:#34403a;
+  --accent:#6cc4a8; --accent-fg:#0d1512; --accent-soft:#1f3029; --danger:#f08a80; --focus:#7db6ff; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:1.0625rem;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 32px}
+h1,h2,h3{text-wrap:balance;line-height:1.25;margin:0}
+h1{font-size:1.6rem}
+h2{font-size:1.2rem}
+h3{font-size:1rem;color:var(--muted);text-transform:none}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:.35rem .8rem;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.danger{color:var(--danger);border-color:var(--danger)}
+button[disabled]{opacity:.55;cursor:default}
+button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);font-weight:700}
+input[type=text],input[type=search],input[type=password],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:.4rem .55rem;width:100%;box-sizing:border-box}
+textarea{min-height:14rem;line-height:1.5;resize:vertical}
+label{display:block;font-weight:700;margin-bottom:.2rem}
+.check label{display:inline;font-weight:400}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;max-width:84rem;margin:0 auto 10px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.brand{margin:0;font-weight:700;letter-spacing:.02em}
+.brand span{color:var(--muted);font-weight:400}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+#status{max-width:84rem;margin:0 auto 8px;min-height:1.5em;color:var(--muted)}
+#err{max-width:84rem;margin:0 auto 12px;border:1px solid var(--danger);border-radius:6px;padding:.6rem .8rem;background:var(--surface)}
+#err p{margin:.2rem 0}
+#err pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--font-mono);font-size:.85rem;margin:.3rem 0 0}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);gap:24px;max-width:84rem;margin:0 auto;align-items:start}
+@media (max-width:760px){.layout{grid-template-columns:minmax(0,1fr)}}
+main,aside{min-width:0}
+main{display:grid;gap:14px}
+.meta{margin:0;color:var(--muted)}
+.meta strong{color:var(--fg)}
+.tag{display:inline-block;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:0 .55rem;font-size:.9rem}
+.instr{margin:0;padding:.45rem .7rem;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 6px 6px 0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.8rem;display:grid;gap:.7rem}
+.doc{max-width:46rem;display:grid;gap:.15rem}
+.doc p{margin:.25rem 0}
+.doc h2,.doc h3,.doc h4{margin-top:.8rem}
+.doc ul,.doc ol{margin:.25rem 0;padding-left:1.4rem}
+.ts{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-right:.5rem}
+section.part{display:grid;gap:.4rem}
+aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px}
+.list{display:grid;gap:12px}
+.list ul{list-style:none;margin:.3rem 0 0;padding:0;display:grid;gap:.15rem}
+.list a{display:block;text-decoration:none;color:var(--fg);padding:.2rem .35rem;border-radius:4px}
+.list a:hover{background:var(--accent-soft)}
+.list a[aria-current="true"]{background:var(--accent-soft);font-weight:700}
+.list .t{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.list .p{color:var(--accent);font-weight:700}
+.hint{color:var(--muted);margin:0;font-size:.95rem}
+#settings{max-width:40rem;margin:0 auto;display:grid;gap:14px}
+#settings ol{margin:0;padding-left:1.3rem}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="top">
+  <p class="brand">Přepisy Plaud <span id="repoName"></span></p>
+  <div class="row">
+    <button type="button" id="btnReload">Načíst znovu</button>
+    <button type="button" id="btnSettings">Nastavení</button>
+  </div>
+</header>
+<p id="status" aria-live="polite"></p>
+<div id="err" hidden></div>
+
+<section id="settings" hidden>
+  <h1>Nastavení</h1>
+  <p class="hint">Token se uloží jen v tomto prohlížeči.</p>
+  <form id="setForm" class="panel">
+    <div><label for="setToken">GitHub token</label><input type="password" id="setToken" autocomplete="off" spellcheck="false"></div>
+    <div><label for="setRepo">Repozitář</label><input type="text" id="setRepo" spellcheck="false"></div>
+    <div><label for="setFolder">Složka s přepisy</label><input type="text" id="setFolder" spellcheck="false"></div>
+    <div class="row"><button type="submit" class="primary">Uložit a načíst</button><button type="button" id="btnForget">Smazat token</button><button type="button" id="btnSetCancel">Zpět</button></div>
+  </form>
+  <div>
+    <h2>Jak získat token</h2>
+    <ol>
+      <li>Na GitHubu otevřete Settings, Developer settings, Personal access tokens, Fine-grained tokens a zvolte Generate new token.</li>
+      <li>V části Repository access vyberte Only select repositories a zvolte repozitář s přepisy.</li>
+      <li>V Permissions nastavte Contents na Read and write.</li>
+      <li>Token zkopírujte a vložte sem.</li>
+    </ol>
+  </div>
+</section>
+
+<div class="layout" id="app" hidden>
+  <main id="main"></main>
+  <aside id="side">
+    <h2>Seznam přepisů</h2>
+    <div><label for="q">Hledat</label><input type="search" id="q" autocomplete="off"></div>
+    <div class="check"><input type="checkbox" id="qArch"> <label for="qArch">Včetně archivu</label></div>
+    <div><label for="catFilter">Kategorie</label><select id="catFilter"></select></div>
+    <div class="row" id="tabs">
+      <button type="button" id="tabAkt" aria-pressed="true">Aktuální</button>
+      <button type="button" id="tabArch" aria-pressed="false">Archiv</button>
+    </div>
+    <p class="hint" id="listInfo" hidden></p>
+    <div class="list" id="list"></div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const LS_KEY = "prepisyPlaud.settings";
+const LS_LAST = "prepisyPlaud.last";
+const DEF_REPO = "michalradacz/mojedata";
+const DEF_FOLDER = "plaud";
+const $ = id => document.getElementById(id);
+
+let settings = { token: "", repo: DEF_REPO, folder: DEF_FOLDER };
+let branch = "";
+let files = [];            // {path, name, fm, body, index}
+const blobCache = new Map(); // sha -> text
+let current = null;        // path
+let tab = "akt";
+let panel = "";            // "", "edit", "cat", "instr", "del"
+let busy = false;
+
+/* ---------- storage ---------- */
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k,v); } catch(e){} }
+function loadSettings(){
+  const raw = lsGet(LS_KEY);
+  if (!raw) return;
+  try { const s = JSON.parse(raw); settings = Object.assign(settings, s); } catch(e){}
+}
+function saveSettings(){ lsSet(LS_KEY, JSON.stringify(settings)); }
+
+/* ---------- messages ---------- */
+let statusTimer = 0;
+function say(t){
+  const s = $("status");
+  s.textContent = t;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { if (s.textContent === t) s.textContent = ""; }, 8000);
+}
+function showErr(title, detail){
+  const e = $("err");
+  e.hidden = false;
+  e.textContent = "";
+  const p = document.createElement("p"); p.textContent = title; e.appendChild(p);
+  if (detail){ const pre = document.createElement("pre"); pre.textContent = detail; e.appendChild(pre); }
+  say("Chyba: " + title);
+}
+function clearErr(){ $("err").hidden = true; $("err").textContent = ""; }
+
+/* ---------- text helpers ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function norm(s){ return String(s || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, ""); }
+function capFirst(s){ return s ? s.charAt(0).toLocaleUpperCase("cs") + s.slice(1) : s; }
+function b64ToText(b64){
+  const bin = atob(b64.replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+/* ---------- frontmatter ---------- */
+function parseScalar(v){
+  v = v.trim();
+  if (v === "") return "";
+  if (v.startsWith('"') && v.endsWith('"') && v.length >= 2){
+    try { return JSON.parse(v); } catch(e){ return v.slice(1,-1); }
+  }
+  if (v.startsWith("'") && v.endsWith("'") && v.length >= 2) return v.slice(1,-1).replace(/''/g, "'");
+  if (/^(true|yes)$/i.test(v)) return true;
+  if (/^(false|no)$/i.test(v)) return false;
+  return v;
+}
+function parseDoc(raw){
+  raw = raw.replace(/\r\n?/g, "\n");
+  if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+  const fm = [];
+  if (!raw.startsWith("---\n")) return { fm, body: raw };
+  const m = /\n---[ \t]*(\n|$)/.exec(raw.slice(3));
+  if (!m) return { fm, body: raw };
+  const fmText = raw.slice(4, 3 + m.index);
+  const body = raw.slice(3 + m.index + m[0].length).replace(/^\n+/, "");
+  const lines = fmText.split("\n");
+  for (let i = 0; i < lines.length; i++){
+    const line = lines[i];
+    const km = /^([A-Za-z_][\w-]*)[ \t]*:(?:[ \t]+(.*)|[ \t]*)$/.exec(line);
+    if (!km){
+      if (fm.length) fm[fm.length-1].raw.push(line);
+      else fm.push({ key: "", value: "", raw: [line] });
+      continue;
+    }
+    const key = km[1], rest = (km[2] || "").trim();
+    const entry = { key, value: "", raw: [line] };
+    if (/^[|>][+-]?$/.test(rest)){
+      const block = [];
+      while (i + 1 < lines.length && (/^\s/.test(lines[i+1]) || lines[i+1] === "")){
+        i++; block.push(lines[i]); entry.raw.push(lines[i]);
+      }
+      while (block.length && block[block.length-1].trim() === "") block.pop();
+      const ind = Math.min(...block.filter(l => l.trim()).map(l => l.match(/^\s*/)[0].length), 1e9);
+      const out = block.map(l => l.slice(Math.min(ind, l.match(/^\s*/)[0].length)));
+      entry.value = rest.startsWith(">") ? out.join(" ").replace(/\s+/g, " ").trim() : out.join("\n");
+    } else {
+      entry.value = parseScalar(rest);
+    }
+    fm.push(entry);
+  }
+  return { fm, body };
+}
+function fmFind(fm, keys){ keys = [].concat(keys).map(k => k.toLowerCase()); return fm.find(e => keys.includes(e.key.toLowerCase())); }
+function fmGet(fm, keys){ const e = fmFind(fm, keys); return e ? e.value : undefined; }
+function fmSet(fm, key, value, aliases){
+  const e = fmFind(fm, [key].concat(aliases || []));
+  if (value === null || value === undefined || value === ""){
+    if (e) fm.splice(fm.indexOf(e), 1);
+    return;
+  }
+  if (e){ e.value = value; e.raw = null; return; }
+  const ne = { key, value, raw: null };
+  const sum = fmFind(fm, "summary");
+  if (sum) fm.splice(fm.indexOf(sum), 0, ne); else fm.push(ne);
+}
+function fmEntryText(e){
+  if (e.raw) return e.raw.join("\n");
+  const v = e.value;
+  if (typeof v === "boolean") return e.key + ": " + v;
+  const s = String(v);
+  if (s.includes("\n")) return e.key + ": |\n" + s.split("\n").map(l => l ? "  " + l : "").join("\n");
+  return e.key + ": " + JSON.stringify(s);
+}
+function serialize(f){
+  const fmText = f.fm.map(fmEntryText).join("\n");
+  return "---\n" + fmText + "\n---\n\n" + f.body.replace(/^\n+/, "");
+}
+
+/* ---------- model ---------- */
+function titleOf(f){ return String(fmGet(f.fm, "title") || f.name.replace(/\.md$/i, "")); }
+function dateOf(f){
+  const d = fmGet(f.fm, "date");
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(d || ""));
+  if (!m) return null;
+  return { y: +m[1], mo: +m[2], d: +m[3], time: m[4] ? m[4] + ":" + m[5] : "", key: m[1]+"-"+m[2]+"-"+m[3], sort: m[1]+m[2]+m[3]+(m[4]||"00")+(m[5]||"00") };
+}
+function catOf(f){ const c = fmGet(f.fm, ["category","kategorie"]); return c ? String(c) : ""; }
+function archOf(f){ const a = fmGet(f.fm, "archive"); return a === true || a === "true"; }
+function instrOf(f){ const p = fmGet(f.fm, ["instructions","pokyny"]); return p ? String(p) : ""; }
+function summaryOf(f){ const s = fmGet(f.fm, "summary"); return s ? String(s) : ""; }
+function bodyWithoutTitle(f){
+  const t = titleOf(f);
+  return f.body.replace(/^\s*#\s+(.*)\n?/, (all, h) => h.trim() === t.trim() ? "" : all);
+}
+function transcriptText(f){
+  return bodyWithoutTitle(f).split("\n").filter(l => !/^\s*\d{1,2}:\d{2}(:\d{2})?\s*$/.test(l)).join(" ").replace(/\s+/g, " ").trim();
+}
+function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].join(" ")); }
+
+function detectCategory(text){
+  const t = text.slice(0, 512);
+  const k = /(?<!\p{L})kategori\p{L}*\s*[:\-–]?\s*(\p{L}[\p{L}\d_-]*)/iu.exec(t);
+  if (k) return capFirst(k[1].toLocaleLowerCase("cs"));
+  if (/(?<!\p{L})(úkol|uděl)/iu.test(t)) return "Úkol";
+  if (/(?<!\p{L})poznámk/iu.test(t)) return "Poznámka";
+  if (/(?<!\p{L})schůz/iu.test(t)) return "Schůzka";
+  return "Nezařazeno";
+}
+/* old format: body with "## Shrnutí" and "## Přepis" sections -> summary into frontmatter */
+function migrateOld(f){
+  const m = /^##\s*Shrnutí\s*\n([\s\S]*?)^##\s*Přepis\s*\n?/m.exec(f.body);
+  if (!m) return false;
+  const sum = m[1].trim();
+  f.body = (f.body.slice(0, m.index) + f.body.slice(m.index + m[0].length)).replace(/\n{3,}/g, "\n\n");
+  if (sum && !summaryOf(f)) fmSet(f.fm, "summary", sum);
+  return true;
+}
+
+/* ---------- GitHub ---------- */
+async function gh(path, opts){
+  opts = opts || {};
+  const headers = { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + settings.token, "X-GitHub-Api-Version": "2022-11-28" };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  let r;
+  try { r = await fetch("https://api.github.com" + path, { method: opts.method || "GET", headers, body: opts.body, cache: "no-store" }); }
+  catch(e){ const err = new Error("Nepodařilo se spojit s GitHubem."); err.detail = String(e); throw err; }
+  if (!r.ok){
+    let msg = ""; try { msg = (await r.json()).message || ""; } catch(e){}
+    const err = new Error(ghErrText(r.status, msg)); err.status = r.status; err.detail = r.status + " " + path + (msg ? "\n" + msg : ""); throw err;
+  }
+  return r.status === 204 ? null : r.json();
+}
+function ghErrText(st, msg){
+  if (st === 401) return "GitHub token je neplatný nebo vypršel. Zadejte nový v Nastavení.";
+  if (st === 403) return "Token nemá potřebná oprávnění (Contents: Read and write) nebo byl překročen limit GitHubu.";
+  if (st === 404) return "Repozitář, větev nebo složka nebyla nalezena. Zkontrolujte Nastavení.";
+  if (st === 409 || st === 422) return "Na GitHubu se mezitím něco změnilo. Zkuste akci znovu.";
+  return "GitHub vrátil chybu " + st + (msg ? ": " + msg : "");
+}
+const repoPath = () => "/repos/" + settings.repo.split("/").map(encodeURIComponent).join("/");
+const folderPrefix = () => { const f = settings.folder.replace(/^\/+|\/+$/g, ""); return f ? f + "/" : ""; };
+
+async function commitChanges(changes, message){
+  for (let attempt = 0; attempt < 2; attempt++){
+    try {
+      const ref = await gh(repoPath() + "/git/ref/heads/" + encodeURIComponent(branch));
+      const head = ref.object.sha;
+      const c = await gh(repoPath() + "/git/commits/" + head);
+      const tree = await gh(repoPath() + "/git/trees", { method: "POST", body: JSON.stringify({
+        base_tree: c.tree.sha,
+        tree: changes.map(ch => ch.del ? { path: ch.path, mode: "100644", type: "blob", sha: null } : { path: ch.path, mode: "100644", type: "blob", content: ch.content })
+      })});
+      const nc = await gh(repoPath() + "/git/commits", { method: "POST", body: JSON.stringify({ message, tree: tree.sha, parents: [head] }) });
+      await gh(repoPath() + "/git/refs/heads/" + encodeURIComponent(branch), { method: "PATCH", body: JSON.stringify({ sha: nc.sha }) });
+      return;
+    } catch(e){
+      if (attempt === 0 && (e.status === 409 || e.status === 422)) continue;
+      throw e;
+    }
+  }
+}
+
+async function pool(items, n, fn){
+  let i = 0;
+  const workers = Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length){ const k = i++; await fn(items[k], k); }
+  });
+  await Promise.all(workers);
+}
+
+async function loadAll(){
+  clearErr();
+  busy = true; updateBusy();
+  say("Načítám přepisy…");
+  try {
+    const info = await gh(repoPath());
+    branch = info.default_branch;
+    $("repoName").textContent = settings.repo + " / " + (settings.folder || "");
+    const tree = await gh(repoPath() + "/git/trees/" + encodeURIComponent(branch) + "?recursive=1");
+    const pre = folderPrefix();
+    const blobs = tree.tree.filter(t => t.type === "blob" && t.path.startsWith(pre) && /\.md$/i.test(t.path) && !t.path.slice(pre.length).includes("/"));
+    let done = 0;
+    const loaded = [];
+    await pool(blobs, 8, async b => {
+      let text = blobCache.get(b.sha);
+      if (text === undefined){
+        const bl = await gh(repoPath() + "/git/blobs/" + b.sha);
+        text = b64ToText(bl.content);
+        blobCache.set(b.sha, text);
+      }
+      const doc = parseDoc(text);
+      loaded.push({ path: b.path, name: b.path.slice(pre.length), fm: doc.fm, body: doc.body, index: "" });
+      done++;
+      if (done % 10 === 0) say("Načítám přepisy… " + done + " z " + blobs.length);
+    });
+    files = loaded;
+    files.forEach(reindex);
+    busy = false; updateBusy();
+    if (!files.some(f => f.path === current)) current = lsGet(LS_LAST);
+    if (!files.some(f => f.path === current)) current = null;
+    renderAll();
+    say("Načteno " + files.length + " přepisů.");
+    await autoFix();
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail || String(e.stack || e));
+    renderAll();
+  }
+}
+
+/* one commit: missing categories + old-format conversion */
+async function autoFix(){
+  const changed = [];
+  const backup = new Map();
+  for (const f of files){
+    const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body);
+    if (!needCat && !old) continue;
+    backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
+    if (old) migrateOld(f);
+    if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
+    changed.push(f);
+  }
+  if (!changed.length) return;
+  busy = true; updateBusy();
+  say("Ukládám kategorie u " + changed.length + " přepisů…");
+  try {
+    await commitChanges(changed.map(f => ({ path: f.path, content: serialize(f) })), "Doplnění kategorií (" + changed.length + ")");
+    changed.forEach(reindex);
+    say("Kategorie doplněna u " + changed.length + " přepisů.");
+  } catch(e){
+    for (const [f, b] of backup){ f.fm = b.fm; f.body = b.body; reindex(f); }
+    showErr("Kategorie se nepodařilo uložit. " + e.message, e.detail);
+  }
+  busy = false; updateBusy();
+  renderAll();
+}
+
+/* ---------- save one file ---------- */
+async function saveFile(f, message, okText, mutate){
+  const snap = { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body };
+  mutate();
+  busy = true; updateBusy(); clearErr();
+  say("Ukládám…");
+  try {
+    await commitChanges([{ path: f.path, content: serialize(f) }], message + ": " + titleOf(f));
+    reindex(f);
+    busy = false; updateBusy();
+    panel = "";
+    renderAll(true);
+    say(okText);
+  } catch(e){
+    f.fm = snap.fm; f.body = snap.body; reindex(f);
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+
+/* ---------- markdown rendering ---------- */
+function inline(s){
+  s = esc(s);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+function renderMd(md){
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  let out = "", list = "";
+  const closeList = () => { if (list){ out += "</" + list + ">"; list = ""; } };
+  for (let i = 0; i < lines.length; i++){
+    let line = lines[i];
+    if (!line.trim()){ closeList(); continue; }
+    const ts = /^\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*$/.exec(line);
+    if (ts){
+      closeList();
+      let txt = "";
+      if (i + 1 < lines.length && lines[i+1].trim() && !/^\s*\d{1,2}:\d{2}(:\d{2})?\s*$/.test(lines[i+1])){ txt = lines[++i]; }
+      out += '<p><span class="ts">' + esc(ts[1]) + "</span>" + inline(txt) + "</p>";
+      continue;
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h){ closeList(); const lv = Math.min(6, h[1].length + 1); out += "<h" + lv + ">" + inline(h[2]) + "</h" + lv + ">"; continue; }
+    const ul = /^\s*[-*+]\s+(.*)$/.exec(line), ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ul || ol){
+      const want = ul ? "ul" : "ol";
+      if (list !== want){ closeList(); out += "<" + want + ">"; list = want; }
+      out += "<li>" + inline((ul || ol)[1]) + "</li>";
+      continue;
+    }
+    closeList();
+    out += "<p>" + inline(line) + "</p>";
+  }
+  closeList();
+  return out;
+}
+
+/* ---------- rendering ---------- */
+const dayFmt = new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+function dayLabel(d){ return dayFmt.format(new Date(d.y, d.mo - 1, d.d)); }
+function linkText(f){
+  const d = dateOf(f), p = instrOf(f);
+  return (p ? p + ": " : "") + (d && d.time ? d.time + " " : "") + titleOf(f);
+}
+function categories(){ return [...new Set(files.map(catOf).filter(Boolean))].sort((a,b) => a.localeCompare(b, "cs")); }
+function sortFiles(arr){
+  return arr.slice().sort((a,b) => {
+    const da = dateOf(a), db = dateOf(b);
+    if (da && db) return db.sort.localeCompare(da.sort) || titleOf(a).localeCompare(titleOf(b), "cs");
+    if (da) return -1; if (db) return 1;
+    return titleOf(a).localeCompare(titleOf(b), "cs");
+  });
+}
+
+function renderCatFilter(){
+  const sel = $("catFilter"), keep = sel.value;
+  sel.textContent = "";
+  const o = document.createElement("option"); o.value = ""; o.textContent = "Všechny"; sel.appendChild(o);
+  for (const c of categories()){ const x = document.createElement("option"); x.value = c; x.textContent = c; sel.appendChild(x); }
+  sel.value = categories().includes(keep) ? keep : "";
+}
+
+function renderList(){
+  const q = $("q").value.trim(), words = norm(q).split(/\s+/).filter(Boolean);
+  const cat = $("catFilter").value;
+  const nAkt = files.filter(f => !archOf(f)).length, nArch = files.length - nAkt;
+  $("tabAkt").textContent = "Aktuální (" + nAkt + ")";
+  $("tabArch").textContent = "Archiv (" + nArch + ")";
+  $("tabAkt").setAttribute("aria-pressed", tab === "akt");
+  $("tabArch").setAttribute("aria-pressed", tab === "arch");
+  let list;
+  if (words.length){
+    const inclArch = $("qArch").checked;
+    list = files.filter(f => (inclArch || !archOf(f)) && words.every(w => f.index.includes(w)));
+  } else {
+    list = files.filter(f => tab === "arch" ? archOf(f) : !archOf(f));
+  }
+  if (cat) list = list.filter(f => catOf(f) === cat);
+  list = sortFiles(list);
+  const info = $("listInfo");
+  if (words.length){ info.hidden = false; info.textContent = "Nalezeno: " + list.length; }
+  else if (!list.length){ info.hidden = false; info.textContent = tab === "arch" ? "Archiv je prázdný." : "Žádné přepisy."; }
+  else info.hidden = true;
+  const box = $("list");
+  box.textContent = "";
+  let lastKey = null, ul = null;
+  for (const f of list){
+    const d = dateOf(f), key = d ? d.key : "none";
+    if (key !== lastKey){
+      const sec = document.createElement("div");
+      const h = document.createElement("h3"); h.textContent = d ? dayLabel(d) : "Bez data";
+      ul = document.createElement("ul");
+      sec.appendChild(h); sec.appendChild(ul); box.appendChild(sec);
+      lastKey = key;
+    }
+    const li = document.createElement("li"), a = document.createElement("a");
+    a.href = "#"; a.dataset.path = f.path;
+    if (f.path === current) a.setAttribute("aria-current", "true");
+    const p = instrOf(f);
+    if (p){ const s = document.createElement("span"); s.className = "p"; s.textContent = p + ": "; a.appendChild(s); }
+    if (d && d.time){ const s = document.createElement("span"); s.className = "t"; s.textContent = d.time + " "; a.appendChild(s); }
+    a.appendChild(document.createTextNode(titleOf(f)));
+    li.appendChild(a); ul.appendChild(li);
+  }
+}
+
+function renderMain(focusTitle){
+  const m = $("main");
+  const f = files.find(x => x.path === current);
+  if (!f){
+    m.innerHTML = '<h1 tabindex="-1">Přepisy</h1><p class="hint">' + (files.length ? "Vyberte přepis v seznamu." : "Ve složce zatím nejsou žádné přepisy.") + "</p>";
+    return;
+  }
+  const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = summaryOf(f);
+  let h = '<h1 tabindex="-1" id="docTitle">' + esc(titleOf(f)) + "</h1>";
+  h += '<p class="meta">' + (d ? esc(dayLabel(d)) + (d.time ? ", " + esc(d.time) : "") : "Bez data") +
+       (cat ? ' · <span class="tag">' + esc(cat) + "</span>" : "") + (arch ? " · <strong>Archivováno</strong>" : "") + "</p>";
+  if (p) h += '<p class="instr"><strong>Pokyny:</strong> ' + esc(p) + "</p>";
+  const dis = busy ? " disabled" : "";
+  h += '<div class="row" id="tools">' +
+       '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
+       '<button type="button" data-act="cat"' + dis + ' aria-pressed="' + (panel === "cat") + '">Kategorie</button>' +
+       '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
+       '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
+       '<button type="button" data-act="copy">Zkopírovat obsah</button>' +
+       '<button type="button" data-act="dl">Uložit jako MD</button>' +
+       '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
+  h += '<div id="panel"></div>';
+  if (panel !== "edit"){
+    if (sum) h += '<section class="part"><h2>Shrnutí</h2><div class="doc">' + renderMd(sum) + "</div></section>";
+    h += '<section class="part"><h2>Přepis</h2><div class="doc">' + renderMd(bodyWithoutTitle(f)) + "</div></section>";
+  }
+  m.innerHTML = h;
+  renderPanel(f);
+  if (focusTitle){ const t = $("docTitle"); if (t) t.focus(); }
+}
+
+function renderPanel(f){
+  const box = $("panel");
+  box.textContent = "";
+  if (!panel) return;
+  const div = document.createElement("form");
+  div.className = "panel";
+  div.id = "panelForm";
+  if (panel === "edit"){
+    div.innerHTML = '<h2>Editace</h2>' +
+      '<div><label for="edSum">Shrnutí</label><textarea id="edSum" style="min-height:7rem"></textarea></div>' +
+      '<div><label for="edBody">Obsah</label><textarea id="edBody"></textarea></div>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    $("edSum").value = summaryOf(f);
+    $("edBody").value = f.body;
+    $("edBody").focus();
+  } else if (panel === "cat"){
+    const cats = categories(), cur = catOf(f);
+    let opts = cats.map(c => '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>").join("");
+    opts += '<option value="__new">Nová kategorie…</option>';
+    div.innerHTML = '<div><label for="catSel">Kategorie</label><select id="catSel">' + opts + "</select></div>" +
+      '<div id="catNewWrap" hidden><label for="catNew">Název nové kategorie</label><input type="text" id="catNew" autocomplete="off"></div>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    $("catSel").addEventListener("change", () => { $("catNewWrap").hidden = $("catSel").value !== "__new"; if (!$("catNewWrap").hidden) $("catNew").focus(); });
+    $("catSel").focus();
+  } else if (panel === "instr"){
+    div.innerHTML = '<div><label for="instrIn">Pokyny</label><input type="text" id="instrIn" autocomplete="off"></div>' +
+      '<p class="hint">Prázdné pole pokyny odstraní.</p>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    $("instrIn").value = instrOf(f);
+    $("instrIn").focus();
+  } else if (panel === "del"){
+    div.innerHTML = '<p id="delQ"><strong>Opravdu smazat tento přepis?</strong></p>' +
+      '<div class="row"><button type="submit" class="danger" id="delYes">Ano, smazat</button><button type="button" data-act="cancel">Ne</button></div>';
+    box.appendChild(div);
+    $("delYes").focus();
+  }
+  div.addEventListener("submit", ev => { ev.preventDefault(); submitPanel(f); });
+}
+
+async function submitPanel(f){
+  if (busy) return;
+  if (panel === "edit"){
+    const sum = $("edSum").value.replace(/\s+$/, ""), body = $("edBody").value.replace(/\r\n?/g, "\n");
+    await saveFile(f, "Úprava", "Uloženo.", () => { f.body = body; fmSet(f.fm, "summary", sum); });
+  } else if (panel === "cat"){
+    let c = $("catSel").value;
+    if (c === "__new") c = $("catNew").value.trim();
+    if (!c){ say("Zadejte název kategorie."); $("catNew").focus(); return; }
+    await saveFile(f, "Kategorie", "Kategorie změněna na " + c + ".", () => fmSet(f.fm, "category", c, ["kategorie"]));
+    renderCatFilter(); renderList();
+  } else if (panel === "instr"){
+    const p = $("instrIn").value.trim();
+    await saveFile(f, "Pokyny", p ? "Pokyny uloženy." : "Pokyny odstraněny.", () => fmSet(f.fm, "instructions", p || null, ["pokyny"]));
+  } else if (panel === "del"){
+    await deleteFile(f);
+  }
+}
+
+async function deleteFile(f){
+  busy = true; updateBusy(); clearErr();
+  say("Mažu…");
+  try {
+    await commitChanges([{ path: f.path, del: true }], "Smazání: " + titleOf(f));
+    const ordered = sortFiles(files.filter(x => archOf(x) === archOf(f)));
+    const idx = ordered.indexOf(f);
+    const next = ordered[idx + 1] || ordered[idx - 1] || null;
+    files = files.filter(x => x !== f);
+    current = next ? next.path : null;
+    lsSet(LS_LAST, current);
+    busy = false; updateBusy();
+    panel = "";
+    renderAll(true);
+    say("Smazáno.");
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+
+function renderAll(focusTitle){
+  renderCatFilter();
+  renderList();
+  renderMain(focusTitle);
+}
+function updateBusy(){
+  $("btnReload").disabled = busy;
+  document.querySelectorAll("#tools button[data-act]:not([data-act=copy]):not([data-act=dl]), #panelForm button").forEach(b => b.disabled = busy);
+}
+
+/* ---------- actions ---------- */
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); say("Obsah zkopírován."); return; } catch(e){}
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "absolute"; ta.style.left = "-9999px";
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch(e){}
+  ta.remove();
+  say(ok ? "Obsah zkopírován." : "Kopírování se nepodařilo.");
+}
+async function downloadMd(f){
+  const text = serialize(f), name = f.name;
+  let dl = null;
+  if (window.claude && typeof window.claude.use === "function"){
+    try { dl = await window.claude.use("downloads"); } catch(e){ dl = null; }
+  }
+  if (dl){
+    try { await dl.save({ filename: name, data: text }); say("Soubor uložen."); }
+    catch(e){ if (e && e.code === "declined") say("Ukládání zrušeno."); else showErr("Soubor se nepodařilo uložit.", e && (e.code + " " + e.message)); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  say("Soubor uložen.");
+}
+
+$("main").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b) return;
+  const f = files.find(x => x.path === current);
+  if (!f) return;
+  const act = b.dataset.act;
+  if (act === "copy"){ copyText(f.body); return; }
+  if (act === "dl"){ downloadMd(f); return; }
+  if (busy) return;
+  if (act === "cancel"){ const was = panel; panel = ""; renderMain(); const t = document.querySelector('#tools button[data-act="' + was + '"]'); if (t) t.focus(); return; }
+  if (act === "arch"){
+    const now = !archOf(f);
+    saveFile(f, now ? "Archivace" : "Návrat z archivu", now ? "Archivováno." : "Vráceno z archivu.", () => fmSet(f.fm, "archive", now));
+    return;
+  }
+  panel = panel === act ? "" : act;
+  renderMain();
+  if (!panel){ const t = document.querySelector('#tools button[data-act="' + act + '"]'); if (t) t.focus(); }
+});
+
+$("list").addEventListener("click", ev => {
+  const a = ev.target.closest("a[data-path]");
+  if (!a) return;
+  ev.preventDefault();
+  current = a.dataset.path;
+  lsSet(LS_LAST, current);
+  panel = "";
+  renderList();
+  renderMain(true);
+});
+$("q").addEventListener("input", renderList);
+$("qArch").addEventListener("change", renderList);
+$("catFilter").addEventListener("change", renderList);
+$("tabAkt").addEventListener("click", () => { tab = "akt"; renderList(); });
+$("tabArch").addEventListener("click", () => { tab = "arch"; renderList(); });
+$("btnReload").addEventListener("click", () => { if (!busy) loadAll(); });
+
+/* ---------- settings ---------- */
+function openSettings(){
+  $("app").hidden = true;
+  $("settings").hidden = false;
+  $("setToken").value = settings.token;
+  $("setRepo").value = settings.repo;
+  $("setFolder").value = settings.folder;
+  $("btnSetCancel").hidden = !settings.token;
+  (settings.token ? $("setRepo") : $("setToken")).focus();
+}
+function closeSettings(){
+  $("settings").hidden = true;
+  $("app").hidden = false;
+}
+$("btnSettings").addEventListener("click", openSettings);
+$("btnSetCancel").addEventListener("click", () => { closeSettings(); const t = $("docTitle") || document.querySelector("#main h1"); if (t) t.focus(); });
+$("btnForget").addEventListener("click", () => { settings.token = ""; saveSettings(); $("setToken").value = ""; $("btnSetCancel").hidden = true; say("Token smazán."); $("setToken").focus(); });
+$("setForm").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const tok = $("setToken").value.trim(), repo = $("setRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, ""), folder = $("setFolder").value.trim();
+  if (!tok){ say("Zadejte token."); $("setToken").focus(); return; }
+  if (!/^[^/\s]+\/[^/\s]+$/.test(repo)){ say("Repozitář zadejte ve tvaru vlastník/název."); $("setRepo").focus(); return; }
+  settings = { token: tok, repo, folder };
+  saveSettings();
+  blobCache.clear();
+  closeSettings();
+  loadAll();
+});
+
+/* ---------- start ---------- */
+loadSettings();
+if (!settings.token) openSettings();
+else { $("app").hidden = false; loadAll(); }
+</script>
+
+</body>
+</html>

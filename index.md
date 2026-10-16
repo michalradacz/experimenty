@@ -11,4 +11,4 @@
 - [DOCX2critic](https://michalrada.cz/experimenty/docxcritic) je utilita pro převod DOCX s revizemi do Markdown s critic revizemi aby se s tím dalo pracovat
 - [Mronfluence](https://michalrada.cz/experimenty/mronfluence) je přístupná alternativa ke Confluence
 - [Mronenote](https://michalrada.cz/experimenty/mronenote) je přístupný OneNote poznámkový blok
-
+- [Přepisy Plaud](https://michalrada.cz/experimenty/plaud) je přístupná správa přepisů nahrávek z Plaudu uložených jako markdown v GitHubu
