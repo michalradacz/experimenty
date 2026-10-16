@@ -83,6 +83,9 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 .list .t{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .list .p{color:var(--accent);font-weight:700}
 .list .c{color:var(--muted)}
+.list li.sel{display:flex;gap:.4rem;align-items:center}
+.list li.sel input{flex:none;width:1.1rem;height:1.1rem}
+.list li.sel a{flex:1;min-width:0}
 .hint{color:var(--muted);margin:0;font-size:.95rem}
 #settings{max-width:40rem;margin:0 auto;display:grid;gap:14px}
 #settings ol{margin:0;padding-left:1.3rem}
@@ -198,6 +201,24 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
       <button type="button" id="tabAkt" aria-pressed="true">Aktuální</button>
       <button type="button" id="tabArch" aria-pressed="false">Archiv</button>
     </div>
+    <div class="check"><input type="checkbox" id="bulkMode"> <label for="bulkMode">Hromadné operace</label></div>
+    <div id="bulkBar" class="panel" hidden>
+      <p id="bulkCount" class="hint">Vybráno: 0</p>
+      <div class="row"><button type="button" id="bulkAll">Vybrat vše</button><button type="button" id="bulkNone">Zrušit výběr</button></div>
+      <div><label for="bulkCat">Kategorie</label><select id="bulkCat"></select></div>
+      <div class="row">
+        <button type="button" id="bulkCatGo">Nastavit kategorii</button>
+        <button type="button" id="bulkArch">Archivovat</button>
+        <button type="button" id="bulkUnarch">Vrátit z archivu</button>
+        <button type="button" id="bulkPin">Připnout</button>
+        <button type="button" id="bulkUnpin">Odepnout</button>
+        <button type="button" id="bulkDel" class="danger">Smazat</button>
+      </div>
+      <div id="bulkConfirm" hidden>
+        <p id="bulkConfirmText"></p>
+        <div class="row"><button type="button" id="bulkDelYes" class="danger">Ano, smazat</button><button type="button" id="bulkDelNo">Ne</button></div>
+      </div>
+    </div>
     <p class="hint" id="listInfo" hidden></p>
     <div class="list" id="list"></div>
   </aside>
@@ -242,6 +263,9 @@ let tab = "akt";
 let panel = "";            // "", "edit", "cat", "instr", "del"
 let busy = false;
 let showMeta = lsGet("prepisyPlaud.showMeta") !== "0";
+let bulk = false;
+const selected = new Set();
+let visiblePaths = [];
 
 /* ---------- storage ---------- */
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
@@ -709,6 +733,7 @@ function renderList(){
   else if (!list.length){ info.hidden = false; info.textContent = tab === "arch" ? "Archiv je prázdný." : "Žádné přepisy."; }
   else info.hidden = true;
   $("listHead").textContent = "Seznam přepisů (" + list.length + ")";
+  visiblePaths = list.map(f => f.path);
   const perDay = new Map();
   for (const f of list){ const k = groupKey(f); perDay.set(k, (perDay.get(k) || 0) + 1); }
   const box = $("list");
@@ -724,6 +749,13 @@ function renderList(){
       lastKey = key;
     }
     const li = document.createElement("li"), a = document.createElement("a");
+    if (bulk){
+      li.className = "sel";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.dataset.sel = f.path; cb.checked = selected.has(f.path);
+      cb.setAttribute("aria-label", "Vybrat: " + linkText(f));
+      li.appendChild(cb);
+    }
     a.href = "#"; a.dataset.path = f.path;
     if (f.path === current) a.setAttribute("aria-current", "true");
     const c = catOf(f), p = instrOf(f), t = timeOf(f);
@@ -735,6 +767,7 @@ function renderList(){
     a.appendChild(document.createTextNode(shownTitle(f)));
     li.appendChild(a); ul.appendChild(li);
   }
+  updateBulkBar();
 }
 
 function renderMain(focusTitle){
@@ -1041,7 +1074,20 @@ function renderAll(focusTitle){
   renderList();
   renderMain(focusTitle);
 }
+function updateBulkBar(){
+  $("bulkBar").hidden = !bulk;
+  if (!bulk) return;
+  for (const p of [...selected]) if (!files.some(f => f.path === p)) selected.delete(p);
+  $("bulkCount").textContent = "Vybráno: " + selected.size;
+  const sel = $("bulkCat"), keep = sel.value;
+  sel.innerHTML = categories().map(c => '<option value="' + esc(c) + '">' + esc(c) + "</option>").join("");
+  if (categories().includes(keep)) sel.value = keep;
+  const none = busy || !selected.size;
+  ["bulkCatGo","bulkArch","bulkUnarch","bulkPin","bulkUnpin","bulkDel"].forEach(id => $(id).disabled = none);
+  $("bulkAll").disabled = busy; $("bulkNone").disabled = busy || !selected.size;
+}
 function updateBusy(){
+  if (bulk) updateBulkBar();
   $("btnReload").disabled = busy;
   document.querySelectorAll("#tools button[data-act]:not([data-act=copy]):not([data-act=dl]), #panelForm button").forEach(b => b.disabled = busy);
 }
@@ -1247,6 +1293,71 @@ $("cfgForm").addEventListener("submit", async ev => {
   if (!(await saveConfig("Nastavení výstupů", "Nastavení uloženo."))) config.nastaveni = JSON.parse(before);
   renderTplView();
 });
+
+/* ---------- bulk operations ---------- */
+async function bulkApply(mutate, message, okText){
+  const targets = files.filter(f => selected.has(f.path));
+  if (!targets.length || busy) return;
+  const snaps = targets.map(f => ({ f, fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })) }));
+  targets.forEach(mutate);
+  busy = true; updateBusy(); clearErr();
+  say("Ukládám " + targets.length + " přepisů…");
+  try {
+    await commitChanges(targets.map(f => ({ path: f.path, content: serialize(f) })), message + " (" + targets.length + ")");
+    targets.forEach(reindex);
+    busy = false; updateBusy();
+    renderAll();
+    say(okText + " (" + targets.length + ").");
+  } catch(e){
+    snaps.forEach(s => { s.f.fm = s.fm; reindex(s.f); });
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+async function bulkDelete(){
+  const targets = files.filter(f => selected.has(f.path));
+  if (!targets.length || busy) return;
+  const outs = targets.flatMap(outputsFor);
+  busy = true; updateBusy(); clearErr();
+  say("Mažu " + targets.length + " přepisů…");
+  try {
+    await commitChanges(targets.map(f => ({ path: f.path, del: true })).concat(outs.map(o => ({ path: o.path, del: true }))), "Hromadné smazání (" + targets.length + ")");
+    files = files.filter(f => !selected.has(f.path));
+    outputs = outputs.filter(o => !outs.includes(o));
+    if (selected.has(current)){ current = null; lsSet(LS_LAST, null); view = "orig"; panel = ""; }
+    selected.clear();
+    busy = false; updateBusy();
+    $("bulkConfirm").hidden = true;
+    renderAll();
+    $("bulkCount").focus();
+    say("Smazáno (" + targets.length + ").");
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+}
+$("bulkCount").tabIndex = -1;
+$("bulkMode").addEventListener("change", () => { bulk = $("bulkMode").checked; if (!bulk){ selected.clear(); $("bulkConfirm").hidden = true; } renderList(); });
+$("list").addEventListener("change", ev => {
+  const cb = ev.target.closest("input[data-sel]");
+  if (!cb) return;
+  if (cb.checked) selected.add(cb.dataset.sel); else selected.delete(cb.dataset.sel);
+  updateBulkBar();
+});
+$("bulkAll").addEventListener("click", () => { visiblePaths.forEach(p => selected.add(p)); renderList(); say("Vybráno " + selected.size + "."); });
+$("bulkNone").addEventListener("click", () => { selected.clear(); $("bulkConfirm").hidden = true; renderList(); say("Výběr zrušen."); $("bulkAll").focus(); });
+$("bulkCatGo").addEventListener("click", () => { const c = $("bulkCat").value; if (c) bulkApply(f => fmSet(f.fm, "category", c, ["kategorie"]), "Hromadně kategorie " + c, "Kategorie nastavena na " + c); });
+$("bulkArch").addEventListener("click", () => bulkApply(f => fmSet(f.fm, "archive", true), "Hromadná archivace", "Archivováno"));
+$("bulkUnarch").addEventListener("click", () => bulkApply(f => fmSet(f.fm, "archive", false), "Hromadný návrat z archivu", "Vráceno z archivu"));
+$("bulkPin").addEventListener("click", () => bulkApply(f => fmSet(f.fm, "pinned", true), "Hromadné připnutí", "Připnuto"));
+$("bulkUnpin").addEventListener("click", () => bulkApply(f => fmSet(f.fm, "pinned", false), "Hromadné odepnutí", "Odepnuto"));
+$("bulkDel").addEventListener("click", () => {
+  $("bulkConfirmText").textContent = "Opravdu smazat vybrané přepisy (" + selected.size + ") včetně jejich výstupů?";
+  $("bulkConfirm").hidden = false;
+  $("bulkDelYes").focus();
+});
+$("bulkDelNo").addEventListener("click", () => { $("bulkConfirm").hidden = true; $("bulkDel").focus(); });
+$("bulkDelYes").addEventListener("click", bulkDelete);
 
 /* ---------- new record ---------- */
 function openNew(){
