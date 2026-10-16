@@ -55,6 +55,8 @@ main,aside{min-width:0}
 main{display:grid;gap:14px}
 .meta{margin:0;color:var(--muted)}
 .prev{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;font-family:var(--font-mono);font-size:.85rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.5rem}
+#newView{max-width:52rem;margin:0 auto;display:grid;gap:14px}
+#newBody{min-height:20rem}
 #tplView{max-width:52rem;margin:0 auto;display:grid;gap:14px}
 .tpls{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
 .tpls li{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
@@ -107,6 +109,11 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
     <div><label for="setGemini">Gemini API klíč (nepovinný, pro výstupy ze šablon)</label><input type="password" id="setGemini" autocomplete="off" spellcheck="false"></div>
     <div class="row"><button type="submit" class="primary">Uložit a načíst</button><button type="button" id="btnForget">Smazat token</button><button type="button" id="btnSetCancel">Zpět</button></div>
   </form>
+  <div id="setNewWrap">
+    <h2>Nový záznam</h2>
+    <p class="hint">Ruční záznam se uloží do složky jako běžný přepis.</p>
+    <div class="row"><button type="button" id="btnNewRec">Vytvořit nový záznam</button></div>
+  </div>
   <div id="setTplWrap">
     <h2>Šablony a pravidla</h2>
     <p class="hint">Šablony výstupů, pravidla kategorií, model a odhad ceny.</p>
@@ -121,6 +128,20 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
       <li>Token zkopírujte a vložte sem.</li>
     </ol>
   </div>
+</section>
+
+<section id="newView" hidden>
+  <h1 tabindex="-1" id="newHead">Nový záznam</h1>
+  <form id="newForm" class="panel">
+    <div><label for="newTitle">Název</label><input type="text" id="newTitle" autocomplete="off"></div>
+    <div class="row">
+      <div><label for="newDate">Datum</label><input type="date" id="newDate"></div>
+      <div><label for="newTime">Čas (nepovinný)</label><input type="time" id="newTime"></div>
+    </div>
+    <div><label for="newBody">Obsah</label><textarea id="newBody"></textarea></div>
+    <p class="hint">Kategorie se přidělí podle pravidel, „Kategorie něco“ na začátku obsahu má přednost. Změnit ji jde v detailu.</p>
+    <div class="row"><button type="submit" class="primary">Uložit</button><button type="button" id="btnNewCancel">Zrušit</button></div>
+  </form>
 </section>
 
 <section id="tplView" hidden>
@@ -1227,6 +1248,54 @@ $("cfgForm").addEventListener("submit", async ev => {
   renderTplView();
 });
 
+/* ---------- new record ---------- */
+function openNew(){
+  $("app").hidden = true; $("settings").hidden = true; $("tplView").hidden = true; $("newView").hidden = false;
+  const n = new Date(), p2 = x => String(x).padStart(2, "0");
+  $("newTitle").value = "";
+  $("newDate").value = n.getFullYear() + "-" + p2(n.getMonth()+1) + "-" + p2(n.getDate());
+  $("newTime").value = p2(n.getHours()) + ":" + p2(n.getMinutes());
+  $("newBody").value = "";
+  $("newHead").focus();
+}
+$("btnNewRec").addEventListener("click", () => { if (settings.token) openNew(); });
+$("btnNewCancel").addEventListener("click", () => { $("newView").hidden = true; openSettings(); });
+$("newForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (busy) return;
+  const t = $("newTitle").value.trim(), dt = $("newDate").value, tm = $("newTime").value;
+  const body = $("newBody").value.replace(/\r\n?/g, "\n").trim();
+  if (!t){ say("Zadejte název."); $("newTitle").focus(); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)){ say("Zadejte datum."); $("newDate").focus(); return; }
+  if (!body){ say("Vložte obsah."); $("newBody").focus(); return; }
+  const pre = folderPrefix(), base = safeFileName(t);
+  const taken = p => files.some(x => x.path.toLowerCase() === p.toLowerCase());
+  let path = pre + base + ".md";
+  for (let n = 2; taken(path); n++) path = pre + base + " (" + n + ").md";
+  const f = { path, name: path.slice(pre.length), fm: [], body: "# " + t + "\n\n" + body + "\n", index: "" };
+  fmSet(f.fm, "title", t);
+  fmSet(f.fm, "date", dt + (tm ? " " + tm : ""));
+  fmSet(f.fm, "type", "note");
+  fmSet(f.fm, "id", newId());
+  fmSet(f.fm, "category", detectCategory(body));
+  busy = true; updateBusy(); clearErr();
+  say("Ukládám…");
+  try {
+    await commitChanges([{ path, content: serialize(f) }], "Nový záznam: " + t);
+    files.push(f);
+    reindex(f);
+    current = path; lsSet(LS_LAST, current);
+    busy = false; updateBusy();
+    panel = ""; view = "orig"; tab = "akt";
+    closeSettings();
+    renderAll(true);
+    say("Záznam uložen, kategorie " + catOf(f) + ".");
+  } catch(e){
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
+  }
+});
+
 /* ---------- actions ---------- */
 async function copyText(text){
   try { await navigator.clipboard.writeText(text); say("Obsah zkopírován."); return; } catch(e){}
@@ -1340,11 +1409,13 @@ function openSettings(){
   $("setGemini").value = settings.gemini || "";
   $("btnSetCancel").hidden = !settings.token;
   $("setTplWrap").hidden = !settings.token;
+  $("setNewWrap").hidden = !settings.token;
   (settings.token ? $("setRepo") : $("setToken")).focus();
 }
 function closeSettings(){
   $("settings").hidden = true;
   $("tplView").hidden = true;
+  $("newView").hidden = true;
   $("app").hidden = false;
 }
 $("btnSettings").addEventListener("click", openSettings);
