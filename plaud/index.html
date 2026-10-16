@@ -288,17 +288,15 @@ function bodyWithoutTitle(f){
 /* Plaud utterance header: "00:00:31" or "Speaker 1 00:00:31" on its own line */
 const HDR = /^\s*(?:(.*?\S)\s+)?(\d{1,2}:\d{2}:\d{2})\s*$/;
 function hasHeaders(md){ return md.split("\n").some(l => HDR.test(l)); }
-/* remove timestamps and speakers; consecutive utterances of one speaker form one paragraph */
+/* remove timestamps and speakers; every utterance stays its own paragraph */
 function cleanTranscript(md){
   const out = [];
-  let para = [], lastSpk = null, inUtt = false;
+  let para = [], inUtt = false;
   const flush = () => { if (para.length){ out.push(para.join(" "), ""); para = []; } };
   for (const line of md.split("\n")){
     const m = HDR.exec(line);
     if (m){
-      const spk = m[1] || "";
-      if (!spk || spk !== lastSpk) flush();
-      lastSpk = spk; inUtt = true;
+      flush(); inUtt = true;
       continue;
     }
     if (!line.trim()){ if (!inUtt) out.push(""); continue; }
@@ -646,7 +644,7 @@ function renderPanel(f){
     $("renTitle").focus();
   } else if (panel === "clean"){
     div.innerHTML = '<p><strong>Natrvalo odstranit z přepisu časové značky a mluvčí?</strong></p>' +
-      '<p class="hint">Repliky jednoho mluvčího se spojí do odstavce. Původní podoba zůstane jen v historii GitHubu.</p>' +
+      '<p class="hint">Každá replika zůstane samostatným odstavcem. Původní podoba zůstane jen v historii GitHubu.</p>' +
       '<div class="row"><button type="submit" class="primary" id="cleanYes">Ano, vyčistit</button><button type="button" data-act="cancel">Ne</button></div>';
     box.appendChild(div);
     $("cleanYes").focus();
