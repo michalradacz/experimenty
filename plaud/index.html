@@ -120,7 +120,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 </section>
 
 <section id="tplView" hidden>
-  <h1 tabindex="-1" id="tplHead">Šablony výstupů</h1>
+  <h1 tabindex="-1" id="tplHead">Šablony a pravidla</h1>
   <div class="row"><button type="button" id="btnTplBack">Zpět na přepisy</button></div>
   <section class="part">
     <h2>Moje šablony</h2>
@@ -134,6 +134,14 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
       <p class="hint">V promptu můžete použít {{prepis}}, {{shrnuti}}, {{nazev}}, {{datum}}, {{kategorie}} a {{pokyny}}. Když {{prepis}} v promptu chybí, přepis se připojí na konec.</p>
       <div class="check"><input type="checkbox" id="tplClean" checked> <label for="tplClean">Posílat přepis bez časů a mluvčích</label></div>
       <div class="row"><button type="submit" class="primary">Uložit šablonu</button><button type="button" id="btnTplNew">Zrušit úpravy</button></div>
+    </form>
+  </section>
+  <section class="part">
+    <h2>Pravidla kategorií</h2>
+    <form id="rulesForm" class="panel">
+      <div><label for="rulesText">Pravidla, na každém řádku slovo | kategorie</label><textarea id="rulesText" spellcheck="false"></textarea></div>
+      <p class="hint">Prohledává se prvních 512 znaků přepisu. Slovo stačí napsat jako začátek, třeba „schůz“ najde schůzka i schůzce. Velikost písmen ani diakritika nehrají roli. Platí první řádek, který sedí, takže pořadí řádků určuje přednost. Řádky začínající # se ignorují. Když v přepisu zazní „Kategorie něco“, má to vždy přednost. Když nesedí nic, přepis dostane kategorii Nezařazeno. Pravidla se použijí jen u přepisů, které kategorii ještě nemají.</p>
+      <div class="row"><button type="submit" class="primary">Uložit pravidla</button></div>
     </form>
   </section>
   <section class="part">
@@ -188,6 +196,7 @@ const DEFAULT_CONFIG = {
     model: "gemini-3.8-flash",
     kurzUsdCzk: 21.73,
     odhadVystupuTokeny: 2000,
+    pravidlaKategorii: "úkol | Úkol\nuděl | Úkol\npoznámk | Poznámka\nschůz | Schůzka",
     ceny: {
       "gemini-3.8-flash": { vstup: 0.75, vystup: 3.75 },
       "gemini-3.6-flash": { vstup: 0.75, vystup: 3.75 },
@@ -394,13 +403,25 @@ function outLabel(o){
 }
 function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].concat(outputsFor(f).map(o => o.body)).join(" ")); }
 
+/* rules "slovo | kategorie", one per line, first matching line wins;
+   a word matches the start of any word in the text, ignoring case and diacritics */
+function parseRules(src){
+  return String(src || "").split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#") && l.includes("|"))
+    .map(l => { const i = l.indexOf("|"); return { slovo: l.slice(0, i).trim(), kategorie: l.slice(i + 1).trim() }; })
+    .filter(r => r.slovo && r.kategorie);
+}
 function detectCategory(text){
   const t = text.slice(0, 512);
   const k = /(?<!\p{L})kategori\p{L}*\s*[:\-–]?\s*(\p{L}[\p{L}\d_-]*)/iu.exec(t);
   if (k) return capFirst(k[1].toLocaleLowerCase("cs"));
-  if (/(?<!\p{L})(úkol|uděl)/iu.test(t)) return "Úkol";
-  if (/(?<!\p{L})poznámk/iu.test(t)) return "Poznámka";
-  if (/(?<!\p{L})schůz/iu.test(t)) return "Schůzka";
+  const words = norm(t).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  for (const r of parseRules(config.nastaveni.pravidlaKategorii)){
+    const parts = norm(r.slovo).split(/\s+/).filter(Boolean);
+    if (!parts.length) continue;
+    const hit = parts.length === 1 ? words.some(w => w.startsWith(parts[0]))
+      : words.some((w, i) => parts.every((p, j) => words[i + j] && (j === parts.length - 1 ? words[i + j].startsWith(p) : words[i + j] === p)));
+    if (hit) return r.kategorie;
+  }
   return "Nezařazeno";
 }
 /* old format: body with "## Shrnutí" and "## Přepis" sections -> summary into frontmatter */
@@ -1135,6 +1156,7 @@ function renderTplView(){
   fillPrices();
   $("cfgRate").value = String(n.kurzUsdCzk).replace(".", ",");
   $("cfgOutEst").value = String(n.odhadVystupuTokeny);
+  $("rulesText").value = n.pravidlaKategorii || "";
 }
 function fillPrices(){
   const pr = priceOf($("cfgModel").value);
@@ -1179,6 +1201,14 @@ $("tplForm").addEventListener("submit", async ev => {
   else config.sablony.push({ id: newId(), nazev, prompt, bezCasu: $("tplClean").checked });
   if (await saveConfig((t ? "Úprava šablony: " : "Nová šablona: ") + nazev, "Šablona uložena.")){ tplEdit = null; renderTplView(); $("tplHead").focus(); }
   else config.sablony = before;
+});
+$("rulesForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (busy) return;
+  const before = config.nastaveni.pravidlaKategorii;
+  config.nastaveni.pravidlaKategorii = $("rulesText").value.replace(/\r\n?/g, "\n").trim();
+  if (!(await saveConfig("Pravidla kategorií", "Pravidla uložena (" + parseRules(config.nastaveni.pravidlaKategorii).length + ")."))) config.nastaveni.pravidlaKategorii = before;
+  $("rulesText").focus();
 });
 $("cfgForm").addEventListener("submit", async ev => {
   ev.preventDefault();
