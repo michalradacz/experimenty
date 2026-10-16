@@ -62,6 +62,7 @@ main{display:grid;gap:14px}
 .doc p{margin:.25rem 0}
 .doc h2,.doc h3,.doc h4{margin-top:.8rem}
 .doc ul,.doc ol{margin:.25rem 0;padding-left:1.4rem}
+.spk{font-weight:700}
 .ts{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-right:.5rem}
 section.part{display:grid;gap:.4rem}
 aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px}
@@ -141,6 +142,7 @@ let current = null;        // path
 let tab = "akt";
 let panel = "";            // "", "edit", "cat", "instr", "del"
 let busy = false;
+let showMeta = lsGet("prepisyPlaud.showMeta") !== "0";
 
 /* ---------- storage ---------- */
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
@@ -283,8 +285,33 @@ function bodyWithoutTitle(f){
   const t = titleOf(f);
   return f.body.replace(/^\s*#\s+(.*)\n?/, (all, h) => h.trim() === t.trim() ? "" : all);
 }
+/* Plaud utterance header: "00:00:31" or "Speaker 1 00:00:31" on its own line */
+const HDR = /^\s*(?:(.*?\S)\s+)?(\d{1,2}:\d{2}:\d{2})\s*$/;
+function hasHeaders(md){ return md.split("\n").some(l => HDR.test(l)); }
+/* remove timestamps and speakers; consecutive utterances of one speaker form one paragraph */
+function cleanTranscript(md){
+  const out = [];
+  let para = [], lastSpk = null, inUtt = false;
+  const flush = () => { if (para.length){ out.push(para.join(" "), ""); para = []; } };
+  for (const line of md.split("\n")){
+    const m = HDR.exec(line);
+    if (m){
+      const spk = m[1] || "";
+      if (!spk || spk !== lastSpk) flush();
+      lastSpk = spk; inUtt = true;
+      continue;
+    }
+    if (!line.trim()){ if (!inUtt) out.push(""); continue; }
+    if (inUtt) para.push(line.trim()); else out.push(line);
+  }
+  flush();
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+}
 function transcriptText(f){
-  return bodyWithoutTitle(f).split("\n").filter(l => !/^\s*\d{1,2}:\d{2}(:\d{2})?\s*$/.test(l)).join(" ").replace(/\s+/g, " ").trim();
+  return bodyWithoutTitle(f).split("\n").filter(l => !HDR.test(l)).join(" ").replace(/\s+/g, " ").trim();
+}
+function safeFileName(t){
+  return t.replace(/[\/\\:*?"<>|]+/g, " -").replace(/\s+/g, " ").trim().replace(/^\.+/, "").slice(0, 150) || "Bez názvu";
 }
 function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].join(" ")); }
 
@@ -461,12 +488,12 @@ function renderMd(md){
   for (let i = 0; i < lines.length; i++){
     let line = lines[i];
     if (!line.trim()){ closeList(); continue; }
-    const ts = /^\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*$/.exec(line);
+    const ts = HDR.exec(line);
     if (ts){
       closeList();
       let txt = "";
-      if (i + 1 < lines.length && lines[i+1].trim() && !/^\s*\d{1,2}:\d{2}(:\d{2})?\s*$/.test(lines[i+1])){ txt = lines[++i]; }
-      out += '<p><span class="ts">' + esc(ts[1]) + "</span>" + inline(txt) + "</p>";
+      if (i + 1 < lines.length && lines[i+1].trim() && !HDR.test(lines[i+1])){ txt = lines[++i]; }
+      out += '<p><span class="ts">' + esc(ts[2]) + "</span>" + (ts[1] ? '<span class="spk">' + esc(ts[1]) + ":</span> " : "") + inline(txt) + "</p>";
       continue;
     }
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -573,16 +600,21 @@ function renderMain(focusTitle){
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
        '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
+       '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
        '<button type="button" data-act="cat"' + dis + ' aria-pressed="' + (panel === "cat") + '">Kategorie</button>' +
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
+       (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
        '<button type="button" data-act="copy">Zkopírovat obsah</button>' +
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
        '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
   h += '<div id="panel"></div>';
   if (panel !== "edit"){
     if (sum) h += '<section class="part"><h2>Shrnutí</h2><div class="doc">' + renderMd(sum) + "</div></section>";
-    h += '<section class="part"><h2>Přepis</h2><div class="doc">' + renderMd(bodyWithoutTitle(f)) + "</div></section>";
+    const bt = bodyWithoutTitle(f), hdrs = hasHeaders(bt);
+    h += '<section class="part"><h2>Přepis</h2>' +
+      (hdrs ? '<div class="check"><input type="checkbox" id="showMeta"' + (showMeta ? " checked" : "") + '> <label for="showMeta">Zobrazit časy a mluvčí</label></div>' : "") +
+      '<div class="doc">' + renderMd(hdrs && !showMeta ? cleanTranscript(bt) : bt) + "</div></section>";
   }
   m.innerHTML = h;
   renderPanel(f);
@@ -605,6 +637,19 @@ function renderPanel(f){
     $("edSum").value = summaryOf(f);
     $("edBody").value = f.body;
     $("edBody").focus();
+  } else if (panel === "ren"){
+    div.innerHTML = '<div><label for="renTitle">Název</label><input type="text" id="renTitle" autocomplete="off"></div>' +
+      '<div class="check"><input type="checkbox" id="renFile" checked> <label for="renFile">Přejmenovat i soubor</label></div>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    $("renTitle").value = titleOf(f);
+    $("renTitle").focus();
+  } else if (panel === "clean"){
+    div.innerHTML = '<p><strong>Natrvalo odstranit z přepisu časové značky a mluvčí?</strong></p>' +
+      '<p class="hint">Repliky jednoho mluvčího se spojí do odstavce. Původní podoba zůstane jen v historii GitHubu.</p>' +
+      '<div class="row"><button type="submit" class="primary" id="cleanYes">Ano, vyčistit</button><button type="button" data-act="cancel">Ne</button></div>';
+    box.appendChild(div);
+    $("cleanYes").focus();
   } else if (panel === "cat"){
     const cats = categories(), cur = catOf(f);
     let opts = cats.map(c => '<option value="' + esc(c) + '"' + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>").join("");
@@ -636,6 +681,16 @@ async function submitPanel(f){
   if (panel === "edit"){
     const sum = $("edSum").value.replace(/\s+$/, ""), body = $("edBody").value.replace(/\r\n?/g, "\n");
     await saveFile(f, "Úprava", "Uloženo.", () => { f.body = body; fmSet(f.fm, "summary", sum); });
+  } else if (panel === "ren"){
+    const t = $("renTitle").value.trim();
+    if (!t){ say("Zadejte název."); $("renTitle").focus(); return; }
+    await renameFile(f, t, $("renFile").checked);
+  } else if (panel === "clean"){
+    await saveFile(f, "Vyčištění přepisu", "Časy a mluvčí odstraněny.", () => {
+      const m = /^\s*#\s+.*\n?/.exec(f.body);
+      const head = m && bodyWithoutTitle(f) !== f.body ? m[0].trim() + "\n\n" : "";
+      f.body = head + cleanTranscript(head ? f.body.slice(m[0].length) : f.body);
+    });
   } else if (panel === "cat"){
     let c = $("catSel").value;
     if (c === "__new") c = $("catNew").value.trim();
@@ -647,6 +702,38 @@ async function submitPanel(f){
     await saveFile(f, "Pokyny", p ? "Pokyny uloženy." : "Pokyny odstraněny.", () => fmSet(f.fm, "instructions", p || null, ["pokyny"]));
   } else if (panel === "del"){
     await deleteFile(f);
+  }
+}
+
+async function renameFile(f, newTitle, alsoFile){
+  const snap = { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body, path: f.path, name: f.name };
+  const oldTitle = titleOf(f);
+  let newPath = f.path;
+  if (alsoFile){
+    const pre = folderPrefix(), base = safeFileName(newTitle);
+    const taken = p => files.some(x => x !== f && x.path.toLowerCase() === p.toLowerCase());
+    newPath = pre + base + ".md";
+    for (let n = 2; taken(newPath); n++) newPath = pre + base + " (" + n + ").md";
+  }
+  fmSet(f.fm, "title", newTitle);
+  f.body = f.body.replace(/^(\s*#\s+)(.*)$/m, (all, hash, t) => t.trim() === oldTitle.trim() ? hash + newTitle : all);
+  busy = true; updateBusy(); clearErr();
+  say("Ukládám…");
+  try {
+    const changes = [{ path: newPath, content: serialize(f) }];
+    if (newPath !== f.path) changes.push({ path: f.path, del: true });
+    await commitChanges(changes, "Přejmenování: " + oldTitle + " → " + newTitle);
+    f.path = newPath; f.name = newPath.slice(folderPrefix().length);
+    current = f.path; lsSet(LS_LAST, current);
+    reindex(f);
+    busy = false; updateBusy();
+    panel = "";
+    renderAll(true);
+    say("Přejmenováno.");
+  } catch(e){
+    Object.assign(f, snap); reindex(f);
+    busy = false; updateBusy();
+    showErr(e.message, e.detail);
   }
 }
 
@@ -729,6 +816,13 @@ $("main").addEventListener("click", ev => {
   if (!panel){ const t = document.querySelector('#tools button[data-act="' + act + '"]'); if (t) t.focus(); }
 });
 
+$("main").addEventListener("change", ev => {
+  if (ev.target.id !== "showMeta") return;
+  showMeta = ev.target.checked;
+  lsSet("prepisyPlaud.showMeta", showMeta ? "1" : "0");
+  renderMain();
+  const c = $("showMeta"); if (c) c.focus();
+});
 $("list").addEventListener("click", ev => {
   const a = ev.target.closest("a[data-path]");
   if (!a) return;
