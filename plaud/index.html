@@ -848,7 +848,7 @@ function renderMain(focusTitle){
   h += '<ul class="facts">' +
        "<li><strong>Datum:</strong> " + (d ? esc(dayLabel(d)) : "neuvedeno") + "</li>" +
        "<li><strong>Čas:</strong> " + (timeOf(f) ? esc(timeOf(f)) : "neuvedeno") + "</li>" +
-       '<li><label for="catInline">Kategorie:</label> <select id="catInline"' + (busy ? " disabled" : "") + ">" +
+       '<li><label for="catInline">Kategorie:</label> <select id="catInline" aria-keyshortcuts="T"' + (busy ? " disabled" : "") + ">" +
          (cat ? "" : '<option value="" selected>Bez kategorie</option>') +
          opts.map(c => '<option value="' + esc(c) + '"' + (c === cat ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></li>" +
        "<li><strong>Tagy:</strong> " + (tagsOf(f).length ? esc(tagsOf(f).join(", ")) : "žádné") + "</li>" +
@@ -857,16 +857,16 @@ function renderMain(focusTitle){
        (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
-       '<button type="button" data-act="gen"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
-       '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
-       '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
-       '<button type="button" data-act="tags"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
-       '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
+       '<button type="button" data-act="gen" aria-keyshortcuts="V"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
+       '<button type="button" data-act="edit" aria-keyshortcuts="E"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
+       '<button type="button" data-act="ren" aria-keyshortcuts="N"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
+       '<button type="button" data-act="tags" aria-keyshortcuts="L"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
+       '<button type="button" data-act="instr" aria-keyshortcuts="P"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
-       '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
+       '<button type="button" data-act="arch" aria-keyshortcuts="A"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
        (files.length > 1 ? '<button type="button" data-act="merge"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
-       '<button type="button" data-act="copy">Zkopírovat obsah</button>' +
+       '<button type="button" data-act="copy" aria-keyshortcuts="C">Zkopírovat obsah</button>' +
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
        '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
   h += '<div id="panel"></div>';
@@ -1438,6 +1438,33 @@ $("bulkDel").addEventListener("click", () => {
 });
 $("bulkDelNo").addEventListener("click", () => { $("bulkConfirm").hidden = true; $("bulkDel").focus(); });
 $("bulkDelYes").addEventListener("click", bulkDelete);
+
+/* ---------- keyboard shortcuts ---------- */
+const SHORTCUTS = { v: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy" };
+document.addEventListener("keydown", ev => {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
+  const t = ev.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if ($("app").hidden) return;
+  const k = ev.key.toLowerCase();
+  const f = files.find(x => x.path === current);
+  if (!f) return;
+  if (k === "t"){ const s = $("catInline"); if (s && !s.disabled){ ev.preventDefault(); s.focus(); } return; }
+  if (k === "x"){
+    ev.preventDefault();
+    if (!bulk){ bulk = true; $("bulkMode").checked = true; }
+    if (selected.has(f.path)) selected.delete(f.path); else selected.add(f.path);
+    renderList();
+    say((selected.has(f.path) ? "Vybráno" : "Odebráno z výběru") + ", celkem " + selected.size + ".");
+    return;
+  }
+  const act = SHORTCUTS[k];
+  if (!act) return;
+  const b = document.querySelector('#tools button[data-act="' + act + '"]');
+  if (!b || b.disabled) return;
+  ev.preventDefault();
+  b.click();
+});
 
 /* ---------- new record ---------- */
 function openNew(){
