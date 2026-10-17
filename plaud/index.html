@@ -456,6 +456,15 @@ function cleanTranscript(md){
 function transcriptText(f){
   return bodyWithoutTitle(f).split("\n").filter(l => !HDR.test(l)).join(" ").replace(/\s+/g, " ").trim();
 }
+/* Plaud names short recordings only by date and time */
+const DATE_TITLE = /^\s*(\d{4}-)?\d{1,2}-\d{1,2}\s+(\d{1,2}):(\d{2})(:\d{2})?\s*$/;
+function titleFromText(f){
+  const t = transcriptText(f).replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  if (t.length <= 128) return t.replace(/[\s.,;:!?–-]+$/, "");
+  const cut = t.slice(0, 128), sp = cut.lastIndexOf(" ");
+  return (sp > 60 ? cut.slice(0, sp) : cut).replace(/[\s.,;:!?–-]+$/, "") + "…";
+}
 function safeFileName(t){
   return t.replace(/[\/\\:*?"<>|]+/g, " -").replace(/\s+/g, " ").trim().replace(/^\.+/, "").slice(0, 150) || "Bez názvu";
 }
@@ -643,10 +652,17 @@ async function autoFix(){
     if (needsSetup(f)) continue;
     const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body), needId = !idOf(f);
     const rt = rawTagsOf(f), needTags = rt.length > 0 && JSON.stringify(rt) !== JSON.stringify(tagsOf(f));
-    if (!needCat && !old && !needId && !needTags) continue;
+    const needTitle = DATE_TITLE.test(titleOf(f)) && !!titleFromText(f);
+    if (!needCat && !old && !needId && !needTags && !needTitle) continue;
     backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
     if (needId) fmSet(f.fm, "id", newId());
     if (needTags) fmSet(f.fm, "tags", tagsOf(f), ["tagy"]);
+    if (needTitle){
+      const oldT = titleOf(f), m = DATE_TITLE.exec(oldT), d = dateOf(f), nt = titleFromText(f);
+      if (d && !d.time && m) fmSet(f.fm, "date", d.key + " " + m[2].padStart(2, "0") + ":" + m[3]);
+      fmSet(f.fm, "title", nt);
+      f.body = f.body.replace(/^(\s*#\s+)(.*)$/m, (all, hash, t) => t.trim() === oldT.trim() ? hash + nt : all);
+    }
     if (old) migrateOld(f);
     if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
     changed.push(f);
@@ -655,7 +671,7 @@ async function autoFix(){
   busy = true; updateBusy();
   say("Doplňuji údaje u " + changed.length + " přepisů…");
   try {
-    await commitChanges(changed.map(f => ({ path: f.path, content: serialize(f) })), "Doplnění kategorií a identifikátorů (" + changed.length + ")");
+    await commitChanges(changed.map(f => ({ path: f.path, content: serialize(f) })), "Doplnění údajů (" + changed.length + ")");
     changed.forEach(reindex);
     say("Údaje doplněny u " + changed.length + " přepisů.");
   } catch(e){
