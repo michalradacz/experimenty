@@ -158,6 +158,7 @@ legend{font-weight:700;padding:0 .3rem}
     <li><strong>A</strong> Archivovat nebo vrátit z archivu</li>
     <li><strong>S</strong> Sloučit s</li>
     <li><strong>G</strong> Vytvořit výstup</li>
+    <li><strong>D</strong> Smazat (se zeptá na potvrzení)</li>
     <li><strong>X</strong> Přepnout výběr přepisu pro hromadné operace</li>
     <li><strong>?</strong> Tato nápověda</li>
   </ul>
@@ -895,7 +896,7 @@ function renderMain(focusTitle){
        (files.length > 1 ? '<button type="button" data-act="merge" aria-keyshortcuts="S"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
        '<button type="button" data-act="copy" aria-keyshortcuts="C">Zkopírovat obsah</button>' +
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
-       '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
+       '<button type="button" data-act="del" aria-keyshortcuts="D" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
   h += '<div id="panel"></div>';
   const outs = outputsFor(f);
   if (view !== "orig" && !outs.some(o => o.path === view)) view = "orig";
@@ -1482,7 +1483,7 @@ function closeHelp(){
 }
 $("helpClose").addEventListener("click", closeHelp);
 $("helpDlg").addEventListener("close", () => { if (helpReturn && helpReturn.focus) helpReturn.focus(); });
-const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy", s: "merge" };
+const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy", s: "merge", d: "del" };
 document.addEventListener("keydown", ev => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
   const t = ev.target;
