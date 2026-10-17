@@ -474,7 +474,11 @@ function outLabel(o){
   const c = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(fmGet(o.fm, "created") || ""));
   return String(fmGet(o.fm, "template") || "Výstup") + (c ? " (" + (+c[3]) + ". " + (+c[2]) + ". " + c[4] + ":" + c[5] + ")" : "");
 }
-function tagsOf(f){
+/* tags are always lowercase, unique and sorted by Czech alphabet */
+const csCmp = (a, b) => a.localeCompare(b, "cs");
+function normTags(arr){ return [...new Set(arr.map(x => String(x).trim().toLocaleLowerCase("cs")).filter(Boolean))].sort(csCmp); }
+function tagsOf(f){ return normTags(rawTagsOf(f)); }
+function rawTagsOf(f){
   const e = fmFind(f.fm, ["tags", "tagy"]);
   if (!e) return [];
   let v = e.value;
@@ -483,9 +487,9 @@ function tagsOf(f){
     if (items.length) v = items;
   }
   if (!Array.isArray(v)) v = String(v || "").split(",");
-  return [...new Set(v.map(x => String(x).trim()).filter(Boolean))];
+  return v.map(x => String(x).trim()).filter(Boolean);
 }
-function allTags(){ return [...new Set(files.flatMap(tagsOf))].sort((a,b) => a.localeCompare(b, "cs")); }
+function allTags(){ return [...new Set(files.flatMap(tagsOf))].sort(csCmp); }
 function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].concat(tagsOf(f)).concat(outputsFor(f).map(o => o.body)).join(" ")); }
 
 /* rules "slovo | kategorie", one per line, first matching line wins;
@@ -638,9 +642,11 @@ async function autoFix(){
   for (const f of files){
     if (needsSetup(f)) continue;
     const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body), needId = !idOf(f);
-    if (!needCat && !old && !needId) continue;
+    const rt = rawTagsOf(f), needTags = rt.length > 0 && JSON.stringify(rt) !== JSON.stringify(tagsOf(f));
+    if (!needCat && !old && !needId && !needTags) continue;
     backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
     if (needId) fmSet(f.fm, "id", newId());
+    if (needTags) fmSet(f.fm, "tags", tagsOf(f), ["tagy"]);
     if (old) migrateOld(f);
     if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
     changed.push(f);
@@ -1016,7 +1022,7 @@ async function submitPanel(f){
   } else if (panel === "tags"){
     const chosen = [...document.querySelectorAll("#panel input[data-tag]")].filter(x => x.checked).map(x => x.dataset.tag);
     const added = $("tagNew").value.split(",").map(x => x.trim()).filter(Boolean);
-    const tags = [...new Set(chosen.concat(added))];
+    const tags = normTags(chosen.concat(added));
     await saveFile(f, "Tagy", tags.length ? "Tagy uloženy: " + tags.join(", ") + "." : "Tagy odstraněny.", () => fmSet(f.fm, "tags", tags.length ? tags : null, ["tagy"]));
   } else if (panel === "setup"){
     const t = $("suTitle").value.trim(), dt = $("suDate").value, tm = $("suTime").value;
