@@ -152,8 +152,8 @@ legend{font-weight:700;padding:0 .3rem}
     <li><strong>E</strong> Editovat</li>
     <li><strong>N</strong> Přejmenovat</li>
     <li><strong>C</strong> Zkopírovat obsah</li>
-    <li><strong>L</strong> Tagy</li>
-    <li><strong>T</strong> Kategorie</li>
+    <li><strong>L</strong> nebo <strong>T</strong> Tagy</li>
+    <li><strong>K</strong> Kategorie</li>
     <li><strong>P</strong> Pokyny</li>
     <li><strong>A</strong> Archivovat nebo vrátit z archivu</li>
     <li><strong>S</strong> Sloučit s</li>
@@ -876,7 +876,7 @@ function renderMain(focusTitle){
   h += '<ul class="facts">' +
        "<li><strong>Datum:</strong> " + (d ? esc(dayLabel(d)) : "neuvedeno") + "</li>" +
        "<li><strong>Čas:</strong> " + (timeOf(f) ? esc(timeOf(f)) : "neuvedeno") + "</li>" +
-       '<li><label for="catInline">Kategorie:</label> <select id="catInline" aria-keyshortcuts="T"' + (busy ? " disabled" : "") + ">" +
+       '<li><label for="catInline">Kategorie:</label> <select id="catInline" aria-keyshortcuts="K"' + (busy ? " disabled" : "") + ">" +
          (cat ? "" : '<option value="" selected>Bez kategorie</option>') +
          opts.map(c => '<option value="' + esc(c) + '"' + (c === cat ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></li>" +
        "<li><strong>Tagy:</strong> " + (tagsOf(f).length ? esc(tagsOf(f).join(", ")) : "žádné") + "</li>" +
@@ -888,7 +888,7 @@ function renderMain(focusTitle){
        '<button type="button" data-act="gen" aria-keyshortcuts="G"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
        '<button type="button" data-act="edit" aria-keyshortcuts="E"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren" aria-keyshortcuts="N"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
-       '<button type="button" data-act="tags" aria-keyshortcuts="L"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
+       '<button type="button" data-act="tags" aria-keyshortcuts="L T"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
        '<button type="button" data-act="instr" aria-keyshortcuts="P"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
        '<button type="button" data-act="arch" aria-keyshortcuts="A"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
@@ -1483,7 +1483,7 @@ function closeHelp(){
 }
 $("helpClose").addEventListener("click", closeHelp);
 $("helpDlg").addEventListener("close", () => { if (helpReturn && helpReturn.focus) helpReturn.focus(); });
-const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy", s: "merge", d: "del" };
+const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", t: "tags", p: "instr", a: "arch", c: "copy", s: "merge", d: "del" };
 document.addEventListener("keydown", ev => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
   const t = ev.target;
@@ -1493,7 +1493,7 @@ document.addEventListener("keydown", ev => {
   const k = ev.key.toLowerCase();
   const f = files.find(x => x.path === current);
   if (!f) return;
-  if (k === "t"){ const s = $("catInline"); if (s && !s.disabled){ ev.preventDefault(); s.focus(); } return; }
+  if (k === "k"){ const s = $("catInline"); if (s && !s.disabled){ ev.preventDefault(); s.focus(); } return; }
   if (k === "x"){
     ev.preventDefault();
     if (!bulk){ bulk = true; $("bulkMode").checked = true; }
