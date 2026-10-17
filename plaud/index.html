@@ -129,6 +129,11 @@ legend{font-weight:700;padding:0 .3rem}
     <p class="hint">Šablony výstupů, pravidla kategorií, model a odhad ceny.</p>
     <div class="row"><button type="button" id="btnTpl">Otevřít šablony a pravidla</button></div>
   </div>
+  <div id="setKeys">
+    <h2>Klávesové zkratky</h2>
+    <p class="hint">Platí v detailu přepisu, mimo textová pole.</p>
+    <ul class="facts" id="setKeysList"></ul>
+  </div>
   <div>
     <h2>Jak získat token</h2>
     <ol>
@@ -1463,6 +1468,7 @@ $("bulkDelYes").addEventListener("click", bulkDelete);
 
 /* ---------- keyboard shortcuts ---------- */
 let helpReturn = null;
+$("setKeysList").innerHTML = document.querySelector("#helpDlg .facts").innerHTML;
 function openHelp(){
   const d = $("helpDlg");
   if (d.open) return;
