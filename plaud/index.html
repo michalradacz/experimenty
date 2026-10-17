@@ -55,6 +55,9 @@ main,aside{min-width:0}
 main{display:grid;gap:14px}
 .meta{margin:0;color:var(--muted)}
 .prev{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;font-family:var(--font-mono);font-size:.85rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.5rem}
+#helpDlg{max-width:30rem;width:calc(100% - 32px);background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:1rem}
+#helpDlg::backdrop{background:rgba(0,0,0,.4)}
+#helpDlg .facts{margin:.6rem 0}
 #newView{max-width:52rem;margin:0 auto;display:grid;gap:14px}
 #newBody{min-height:20rem}
 #tplView{max-width:52rem;margin:0 auto;display:grid;gap:14px}
@@ -136,6 +139,25 @@ legend{font-weight:700;padding:0 .3rem}
     </ol>
   </div>
 </section>
+
+<dialog id="helpDlg" aria-labelledby="helpHead">
+  <h2 id="helpHead">Klávesové zkratky</h2>
+  <p class="hint">Platí v detailu přepisu, mimo textová pole.</p>
+  <ul class="facts">
+    <li><strong>E</strong> Editovat</li>
+    <li><strong>N</strong> Přejmenovat</li>
+    <li><strong>C</strong> Zkopírovat obsah</li>
+    <li><strong>L</strong> Tagy</li>
+    <li><strong>T</strong> Kategorie</li>
+    <li><strong>P</strong> Pokyny</li>
+    <li><strong>A</strong> Archivovat nebo vrátit z archivu</li>
+    <li><strong>S</strong> Sloučit s</li>
+    <li><strong>G</strong> Vytvořit výstup</li>
+    <li><strong>X</strong> Přepnout výběr přepisu pro hromadné operace</li>
+    <li><strong>?</strong> Tato nápověda</li>
+  </ul>
+  <div class="row"><button type="button" id="helpClose">Zavřít</button></div>
+</dialog>
 
 <section id="newView" hidden>
   <h1 tabindex="-1" id="newHead">Nový záznam</h1>
@@ -857,7 +879,7 @@ function renderMain(focusTitle){
        (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
   const dis = busy ? " disabled" : "";
   h += '<div class="row" id="tools">' +
-       '<button type="button" data-act="gen" aria-keyshortcuts="V"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
+       '<button type="button" data-act="gen" aria-keyshortcuts="G"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
        '<button type="button" data-act="edit" aria-keyshortcuts="E"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren" aria-keyshortcuts="N"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
        '<button type="button" data-act="tags" aria-keyshortcuts="L"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
@@ -865,7 +887,7 @@ function renderMain(focusTitle){
        '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
        '<button type="button" data-act="arch" aria-keyshortcuts="A"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
-       (files.length > 1 ? '<button type="button" data-act="merge"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
+       (files.length > 1 ? '<button type="button" data-act="merge" aria-keyshortcuts="S"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
        '<button type="button" data-act="copy" aria-keyshortcuts="C">Zkopírovat obsah</button>' +
        '<button type="button" data-act="dl">Uložit jako MD</button>' +
        '<button type="button" data-act="del" class="danger"' + dis + ' aria-pressed="' + (panel === "del") + '">Smazat</button></div>';
@@ -1440,12 +1462,27 @@ $("bulkDelNo").addEventListener("click", () => { $("bulkConfirm").hidden = true;
 $("bulkDelYes").addEventListener("click", bulkDelete);
 
 /* ---------- keyboard shortcuts ---------- */
-const SHORTCUTS = { v: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy" };
+let helpReturn = null;
+function openHelp(){
+  const d = $("helpDlg");
+  if (d.open) return;
+  helpReturn = document.activeElement;
+  if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+  $("helpClose").focus();
+}
+function closeHelp(){
+  const d = $("helpDlg");
+  if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+}
+$("helpClose").addEventListener("click", closeHelp);
+$("helpDlg").addEventListener("close", () => { if (helpReturn && helpReturn.focus) helpReturn.focus(); });
+const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", p: "instr", a: "arch", c: "copy", s: "merge" };
 document.addEventListener("keydown", ev => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
   const t = ev.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   if ($("app").hidden) return;
+  if (ev.key === "?"){ ev.preventDefault(); openHelp(); return; }
   const k = ev.key.toLowerCase();
   const f = files.find(x => x.path === current);
   if (!f) return;
