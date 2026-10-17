@@ -83,6 +83,10 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
 .list .t{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .list .p{color:var(--accent);font-weight:700}
 .list .c{color:var(--muted)}
+.list .tg{color:var(--muted)}
+fieldset{border:1px solid var(--line);border-radius:6px;padding:.5rem .7rem;margin:0}
+legend{font-weight:700;padding:0 .3rem}
+.tagbox{display:flex;flex-wrap:wrap;gap:.3rem 1rem}
 .list li.sel{display:flex;gap:.4rem;align-items:center}
 .list li.sel input{flex:none;width:1.1rem;height:1.1rem}
 .list li.sel a{flex:1;min-width:0}
@@ -197,6 +201,7 @@ aside{display:grid;gap:12px;background:var(--surface);border:1px solid var(--lin
     <div><label for="q">Hledat</label><input type="search" id="q" autocomplete="off"></div>
     <div class="check"><input type="checkbox" id="qArch"> <label for="qArch">Včetně archivu</label></div>
     <div><label for="catFilter">Kategorie</label><select id="catFilter"></select></div>
+    <div><label for="tagFilter">Tag</label><select id="tagFilter"></select></div>
     <div class="row" id="tabs">
       <button type="button" id="tabAkt" aria-pressed="true">Aktuální</button>
       <button type="button" id="tabArch" aria-pressed="false">Archiv</button>
@@ -262,7 +267,7 @@ let current = null;        // path
 let tab = "akt";
 let panel = "";            // "", "edit", "cat", "instr", "del"
 let busy = false;
-let showMeta = lsGet("prepisyPlaud.showMeta") !== "0";
+let showMeta = lsGet("prepisyPlaud.showMeta") === "1";
 let bulk = false;
 const selected = new Set();
 let visiblePaths = [];
@@ -314,6 +319,10 @@ function parseScalar(v){
     try { return JSON.parse(v); } catch(e){ return v.slice(1,-1); }
   }
   if (v.startsWith("'") && v.endsWith("'") && v.length >= 2) return v.slice(1,-1).replace(/''/g, "'");
+  if (v.startsWith("[") && v.endsWith("]")){
+    try { const a = JSON.parse(v); if (Array.isArray(a)) return a.map(String); } catch(e){}
+    return v.slice(1, -1).split(",").map(x => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }
   if (/^(true|yes)$/i.test(v)) return true;
   if (/^(false|no)$/i.test(v)) return false;
   return v;
@@ -371,6 +380,7 @@ function fmEntryText(e){
   if (e.raw) return e.raw.join("\n");
   const v = e.value;
   if (typeof v === "boolean") return e.key + ": " + v;
+  if (Array.isArray(v)) return e.key + ": " + JSON.stringify(v);
   const s = String(v);
   if (s.includes("\n")) return e.key + ": |\n" + s.split("\n").map(l => l ? "  " + l : "").join("\n");
   return e.key + ": " + JSON.stringify(s);
@@ -464,7 +474,19 @@ function outLabel(o){
   const c = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(fmGet(o.fm, "created") || ""));
   return String(fmGet(o.fm, "template") || "Výstup") + (c ? " (" + (+c[3]) + ". " + (+c[2]) + ". " + c[4] + ":" + c[5] + ")" : "");
 }
-function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].concat(outputsFor(f).map(o => o.body)).join(" ")); }
+function tagsOf(f){
+  const e = fmFind(f.fm, ["tags", "tagy"]);
+  if (!e) return [];
+  let v = e.value;
+  if (!Array.isArray(v) && e.raw){
+    const items = e.raw.slice(1).map(l => /^\s*-\s+(.*)$/.exec(l)).filter(Boolean).map(m => parseScalar(m[1]));
+    if (items.length) v = items;
+  }
+  if (!Array.isArray(v)) v = String(v || "").split(",");
+  return [...new Set(v.map(x => String(x).trim()).filter(Boolean))];
+}
+function allTags(){ return [...new Set(files.flatMap(tagsOf))].sort((a,b) => a.localeCompare(b, "cs")); }
+function reindex(f){ f.index = norm([titleOf(f), summaryOf(f), f.body, catOf(f), instrOf(f)].concat(tagsOf(f)).concat(outputsFor(f).map(o => o.body)).join(" ")); }
 
 /* rules "slovo | kategorie", one per line, first matching line wins;
    a word matches the start of any word in the text, ignoring case and diacritics */
@@ -703,7 +725,7 @@ const dayFmt = new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric
 function dayLabel(d){ return dayFmt.format(new Date(d.y, d.mo - 1, d.d)); }
 function linkText(f){
   const c = catOf(f), p = instrOf(f), t = timeOf(f);
-  return (pinOf(f) ? "📌 " : "") + (outputsFor(f).length ? "🤖 " : "") + (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f);
+  return (pinOf(f) ? "📌 " : "") + (outputsFor(f).length ? "🤖 " : "") + (c ? c + " | " : "") + (p ? p + ": " : "") + (t ? t + " " : "") + shownTitle(f) + (tagsOf(f).length ? " (" + tagsOf(f).join(", ") + ")" : "");
 }
 function categories(){ return [...new Set(files.map(catOf).filter(Boolean))].sort((a,b) => a.localeCompare(b, "cs")); }
 function sortFiles(arr){
@@ -721,6 +743,9 @@ function renderCatFilter(){
   const o = document.createElement("option"); o.value = ""; o.textContent = "Všechny"; sel.appendChild(o);
   for (const c of categories()){ const x = document.createElement("option"); x.value = c; x.textContent = c; sel.appendChild(x); }
   sel.value = categories().includes(keep) ? keep : "";
+  const ts = $("tagFilter"), tkeep = ts.value, tags = allTags();
+  ts.innerHTML = '<option value="">Všechny</option>' + tags.map(t => '<option value="' + esc(t) + '">' + esc(t) + "</option>").join("");
+  ts.value = tags.includes(tkeep) ? tkeep : "";
 }
 
 function renderList(){
@@ -739,6 +764,8 @@ function renderList(){
     list = files.filter(f => tab === "arch" ? archOf(f) : !archOf(f));
   }
   if (cat) list = list.filter(f => catOf(f) === cat);
+  const tagF = $("tagFilter").value;
+  if (tagF) list = list.filter(f => tagsOf(f).includes(tagF));
   list = sortFiles(list);
   list = list.filter(pinOf).concat(list.filter(f => !pinOf(f)));
   const groupKey = f => { if (pinOf(f)) return "pin"; const d = dateOf(f); return d ? d.key : "none"; };
@@ -779,6 +806,7 @@ function renderList(){
     if (p){ const s = document.createElement("span"); s.className = "p"; s.textContent = p + ": "; a.appendChild(s); }
     if (t){ const s = document.createElement("span"); s.className = "t"; s.textContent = t + " "; a.appendChild(s); }
     a.appendChild(document.createTextNode(shownTitle(f)));
+    if (tagsOf(f).length){ const s = document.createElement("span"); s.className = "tg"; s.textContent = " (" + tagsOf(f).join(", ") + ")"; a.appendChild(s); }
     li.appendChild(a); ul.appendChild(li);
   }
   updateBulkBar();
@@ -801,6 +829,7 @@ function renderMain(focusTitle){
        '<li><label for="catInline">Kategorie:</label> <select id="catInline"' + (busy ? " disabled" : "") + ">" +
          (cat ? "" : '<option value="" selected>Bez kategorie</option>') +
          opts.map(c => '<option value="' + esc(c) + '"' + (c === cat ? " selected" : "") + ">" + esc(c) + "</option>").join("") + "</select></li>" +
+       "<li><strong>Tagy:</strong> " + (tagsOf(f).length ? esc(tagsOf(f).join(", ")) : "žádné") + "</li>" +
        "<li><strong>Pokyny:</strong> " + (p ? esc(p) : "žádné") + "</li>" +
        (pinOf(f) ? "<li><strong>Připnuto</strong></li>" : "") +
        (arch ? "<li><strong>Archivováno</strong></li>" : "") + "</ul>";
@@ -809,6 +838,7 @@ function renderMain(focusTitle){
        '<button type="button" data-act="gen"' + dis + ' aria-pressed="' + (panel === "gen") + '">🤖 Vytvořit výstup</button>' +
        '<button type="button" data-act="edit"' + dis + ' aria-pressed="' + (panel === "edit") + '">Editovat</button>' +
        '<button type="button" data-act="ren"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
+       '<button type="button" data-act="tags"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
        '<button type="button" data-act="instr"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
        '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
        '<button type="button" data-act="arch"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
@@ -893,6 +923,15 @@ function renderPanel(f){
     box.appendChild(div);
     $("instrIn").value = instrOf(f);
     $("instrIn").focus();
+  } else if (panel === "tags"){
+    const cur = tagsOf(f), all = allTags();
+    div.innerHTML = '<fieldset><legend>Tagy</legend>' +
+      (all.length ? '<div class="tagbox">' + all.map((t, i) => '<div class="check"><input type="checkbox" id="tg' + i + '" data-tag="' + esc(t) + '"' + (cur.includes(t) ? " checked" : "") + '> <label for="tg' + i + '">' + esc(t) + "</label></div>").join("") + "</div>" : '<p class="hint">Zatím žádné tagy.</p>') +
+      "</fieldset>" +
+      '<div><label for="tagNew">Nové tagy (oddělte čárkou)</label><input type="text" id="tagNew" autocomplete="off"></div>' +
+      '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
+    box.appendChild(div);
+    (div.querySelector("input[data-tag]") || $("tagNew")).focus();
   } else if (panel === "setup"){
     const cats = categories(), det = detectCategory(transcriptText(f)), cur = catOf(f) || det;
     const all = cats.includes(cur) ? cats : cats.concat([cur]).sort((a,b) => a.localeCompare(b, "cs"));
@@ -974,6 +1013,11 @@ async function submitPanel(f){
   } else if (panel === "instr"){
     const p = $("instrIn").value.trim();
     await saveFile(f, "Pokyny", p ? "Pokyny uloženy." : "Pokyny odstraněny.", () => fmSet(f.fm, "instructions", p || null, ["pokyny"]));
+  } else if (panel === "tags"){
+    const chosen = [...document.querySelectorAll("#panel input[data-tag]")].filter(x => x.checked).map(x => x.dataset.tag);
+    const added = $("tagNew").value.split(",").map(x => x.trim()).filter(Boolean);
+    const tags = [...new Set(chosen.concat(added))];
+    await saveFile(f, "Tagy", tags.length ? "Tagy uloženy: " + tags.join(", ") + "." : "Tagy odstraněny.", () => fmSet(f.fm, "tags", tags.length ? tags : null, ["tagy"]));
   } else if (panel === "setup"){
     const t = $("suTitle").value.trim(), dt = $("suDate").value, tm = $("suTime").value;
     const c = $("suCat").value;
@@ -1520,6 +1564,7 @@ $("list").addEventListener("click", ev => {
 $("q").addEventListener("input", renderList);
 $("qArch").addEventListener("change", renderList);
 $("catFilter").addEventListener("change", renderList);
+$("tagFilter").addEventListener("change", renderList);
 $("tabAkt").addEventListener("click", () => { tab = "akt"; renderList(); });
 $("tabArch").addEventListener("click", () => { tab = "arch"; renderList(); });
 $("btnReload").addEventListener("click", () => { if (!busy) loadAll(); });
