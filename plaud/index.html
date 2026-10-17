@@ -405,6 +405,20 @@ function pinOf(f){ const a = fmGet(f.fm, "pinned"); return a === true || a === "
 function archOf(f){ const a = fmGet(f.fm, "archive"); return a === true || a === "true"; }
 function instrOf(f){ const p = fmGet(f.fm, ["instructions","pokyny"]); return p ? String(p) : ""; }
 function summaryOf(f){ const s = fmGet(f.fm, "summary"); return s ? String(s) : ""; }
+/* Plaud sends no real summary for short recordings: either a placeholder text,
+   or (when summary generation failed) just the polished transcript again */
+function realSummary(f){
+  const s = summaryOf(f).trim();
+  if (!s) return "";
+  if (/no summary is needed|original audio transcription is as follows|transcript is (too )?(brief|short)/i.test(s.slice(0, 300))) return "";
+  const sw = norm(s).split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2);
+  const tset = new Set(norm(transcriptText(f)).split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2));
+  if (sw.length >= 20 && tset.size){
+    const hit = sw.filter(w => tset.has(w)).length / sw.length;
+    if (hit > 0.85 && sw.length > 0.5 * tset.size) return "";
+  }
+  return s;
+}
 function bodyWithoutTitle(f){
   const t = titleOf(f);
   return f.body.replace(/^\s*#\s+(.*)\n?/, (all, h) => h.trim() === t.trim() ? "" : all);
@@ -778,7 +792,7 @@ function renderMain(focusTitle){
     return;
   }
   if (!panel && needsSetup(f) && !setupDismissed.has(f.path)) panel = "setup";
-  const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = summaryOf(f);
+  const d = dateOf(f), cat = catOf(f), p = instrOf(f), arch = archOf(f), sum = realSummary(f);
   let h = '<h1 tabindex="-1" id="docTitle">' + esc(shownTitle(f)) + "</h1>";
   const cats = categories(), opts = cat && !cats.includes(cat) ? cats.concat([cat]) : cats;
   h += '<ul class="facts">' +
@@ -1105,7 +1119,7 @@ function buildPrompt(t, f){
   const bt = bodyWithoutTitle(f).trim();
   const prepis = t.bezCasu !== false && hasHeaders(bt) ? cleanTranscript(bt).trim() : bt;
   const d = dateOf(f);
-  const vars = { prepis, shrnuti: summaryOf(f).trim(), nazev: shownTitle(f), datum: d ? dayLabel(d) + (timeOf(f) ? ", " + timeOf(f) : "") : "", kategorie: catOf(f), pokyny: instrOf(f) };
+  const vars = { prepis, shrnuti: realSummary(f), nazev: shownTitle(f), datum: d ? dayLabel(d) + (timeOf(f) ? ", " + timeOf(f) : "") : "", kategorie: catOf(f), pokyny: instrOf(f) };
   let s = String(t.prompt || "");
   const hasPrepis = /\{\{\s*prepis\s*\}\}/i.test(s);
   s = s.replace(/\{\{\s*(prepis|shrnuti|nazev|datum|kategorie|pokyny)\s*\}\}/gi, (all, k) => vars[k.toLowerCase()]);
