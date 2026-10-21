@@ -174,7 +174,7 @@ legend{font-weight:700;padding:0 .3rem}
       <div><label for="newTime">Čas (nepovinný)</label><input type="time" id="newTime"></div>
     </div>
     <div><label for="newBody">Obsah</label><textarea id="newBody"></textarea></div>
-    <p class="hint">Kategorie se přidělí podle pravidel, „Kategorie něco“ na začátku obsahu má přednost. Změnit ji jde v detailu.</p>
+    <p class="hint">Kategorie se přidělí podle pravidel, „Kategorie něco“ na začátku obsahu má přednost a z textu přepisu se pak odstraní. Změnit ji jde v detailu.</p>
     <div class="row"><button type="submit" class="primary">Uložit</button><button type="button" id="btnNewCancel">Zrušit</button></div>
   </form>
 </section>
@@ -446,7 +446,7 @@ function summaryOf(f){ const s = fmGet(f.fm, "summary"); return s ? String(s) : 
 /* Plaud sends no real summary for short recordings: either a placeholder text,
    or (when summary generation failed) just the polished transcript again */
 function realSummary(f){
-  const s = summaryOf(f).trim();
+  const s = stripPlaudLinks(summaryOf(f));
   if (!s) return "";
   if (/no summary is needed|original audio transcription is as follows|transcript is (too )?(brief|short)/i.test(s.slice(0, 300))) return "";
   const sw = norm(s).split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2);
@@ -483,6 +483,28 @@ function cleanTranscript(md){
 }
 function transcriptText(f){
   return bodyWithoutTitle(f).split("\n").filter(l => !HDR.test(l)).join(" ").replace(/\s+/g, " ").trim();
+}
+/* "Kategorie něco" spoken at the very start only sets the category; it is removed from the text */
+const CAT_LEAD = /^(\s*)kategori\p{L}*\s*[:\-–]?\s*\p{L}[\p{L}\d_-]*[\s,.;:!?–-]*/iu;
+function capFirst2(t){ return t ? t.charAt(0).toLocaleUpperCase("cs") + t.slice(1) : t; }
+function stripCatLead(body){
+  const lines = body.split("\n");
+  for (let i = 0; i < lines.length; i++){
+    const l = lines[i];
+    if (!l.trim() || HDR.test(l) || /^\s*#\s/.test(l)) continue;
+    const m = CAT_LEAD.exec(l);
+    if (!m) return null;
+    lines[i] = m[1] + capFirst2(l.slice(m[0].length));
+    return lines.join("\n");
+  }
+  return null;
+}
+/* Plaud internal links (source citations, highlight cards, images) do not work outside Plaud */
+const PLAUD_LINK = /!?\[([^\]]*)\]\(plaud:\/\/[^)]*\)/;
+function stripPlaudLinks(s){
+  return String(s || "").replace(/^[ \t]*!?\[\]\(plaud:\/\/[^)]*\)[ \t]*\n?/gm, "")
+    .replace(/[ \t]*!?\[([^\]]*)\]\(plaud:\/\/[^)]*\)/g, (a, t) => t ? " " + t : "")
+    .replace(/[ \t]+$/gm, "").trim();
 }
 /* Plaud names short recordings only by date and time */
 const DATE_TITLE = /^\s*(\d{4}-)?\d{1,2}-\d{1,2}\s+(\d{1,2}):(\d{2})(:\d{2})?\s*$/;
@@ -681,18 +703,29 @@ async function autoFix(){
     const needCat = !catOf(f), old = /^##\s*Shrnutí\s*$/m.test(f.body), needId = !idOf(f);
     const rt = rawTagsOf(f), needTags = rt.length > 0 && JSON.stringify(rt) !== JSON.stringify(tagsOf(f));
     const needTitle = DATE_TITLE.test(titleOf(f)) && !!titleFromText(f);
-    if (!needCat && !old && !needId && !needTags && !needTitle) continue;
+    const lead = stripCatLead(f.body), needLinks = PLAUD_LINK.test(summaryOf(f));
+    if (!needCat && !old && !needId && !needTags && !needTitle && lead === null && !needLinks) continue;
     backup.set(f, { fm: f.fm.map(e => Object.assign({}, e, { raw: e.raw ? e.raw.slice() : null })), body: f.body });
     if (needId) fmSet(f.fm, "id", newId());
     if (needTags) fmSet(f.fm, "tags", tagsOf(f), ["tagy"]);
+    if (old) migrateOld(f);
+    if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
+    if (needLinks) fmSet(f.fm, "summary", stripPlaudLinks(summaryOf(f)));
+    if (lead !== null){
+      f.body = lead;
+      const oldT = titleOf(f), mt = CAT_LEAD.exec(oldT);
+      if (mt && oldT.slice(mt[0].length).trim()){
+        const nt = capFirst2(oldT.slice(mt[0].length));
+        fmSet(f.fm, "title", nt);
+        f.body = f.body.replace(/^(\s*#\s+)(.*)$/m, (all, hash, t) => t.trim() === oldT.trim() ? hash + nt : all);
+      }
+    }
     if (needTitle){
       const oldT = titleOf(f), m = DATE_TITLE.exec(oldT), d = dateOf(f), nt = titleFromText(f);
       if (d && !d.time && m) fmSet(f.fm, "date", d.key + " " + m[2].padStart(2, "0") + ":" + m[3]);
       fmSet(f.fm, "title", nt);
       f.body = f.body.replace(/^(\s*#\s+)(.*)$/m, (all, hash, t) => t.trim() === oldT.trim() ? hash + nt : all);
     }
-    if (old) migrateOld(f);
-    if (needCat) fmSet(f.fm, "category", detectCategory(transcriptText(f)), ["kategorie"]);
     changed.push(f);
   }
   if (!changed.length) return;
@@ -704,7 +737,7 @@ async function autoFix(){
     say("Údaje doplněny u " + changed.length + " přepisů.");
   } catch(e){
     for (const [f, b] of backup){ f.fm = b.fm; f.body = b.body; reindex(f); }
-    showErr("Kategorie se nepodařilo uložit. " + e.message, e.detail);
+    showErr("Údaje se nepodařilo uložit. " + e.message, e.detail);
   }
   busy = false; updateBusy();
   renderAll();
