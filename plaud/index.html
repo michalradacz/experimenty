@@ -461,6 +461,11 @@ function bodyWithoutTitle(f){
   const t = titleOf(f);
   return f.body.replace(/^\s*#\s+(.*)\n?/, (all, h) => h.trim() === t.trim() ? "" : all);
 }
+/* leading "# heading" of the body is kept in the file but left out of editing and copying */
+function splitHead(body){
+  const m = /^\s*#\s+.*(\n|$)/.exec(body);
+  return m ? { head: m[0].trim(), rest: body.slice(m[0].length).replace(/^\s*\n/, "") } : { head: "", rest: body };
+}
 /* Plaud utterance header: "00:00:31" or "Speaker 1 00:00:31" on its own line */
 const HDR = /^\s*(?:(.*?\S)\s+)?(\d{1,2}:\d{2}:\d{2})\s*$/;
 function hasHeaders(md){ return md.split("\n").some(l => HDR.test(l)); }
@@ -468,7 +473,17 @@ function hasHeaders(md){ return md.split("\n").some(l => HDR.test(l)); }
 function cleanTranscript(md){
   const out = [];
   let para = [], inUtt = false;
-  const flush = () => { if (para.length){ out.push(para.join(" "), ""); para = []; } };
+  /* a segment ending with a comma continues in the next one: join and lowercase its first letter (not acronyms) */
+  const flush = () => {
+    if (!para.length) return;
+    let t = para.join(" ");
+    const pi = out.length - 2;
+    if (pi >= 0 && out[pi + 1] === "" && /,\s*$/.test(out[pi]) && out[pi].trim()){
+      if (/^\p{Lu}(?!\p{Lu})/u.test(t)) t = t.charAt(0).toLocaleLowerCase("cs") + t.slice(1);
+      out[pi] = out[pi].replace(/\s+$/, "") + " " + t;
+    } else out.push(t, "");
+    para = [];
+  };
   for (const line of md.split("\n")){
     const m = HDR.exec(line);
     if (m){
@@ -974,7 +989,7 @@ function renderPanel(f){
       '<div class="row"><button type="submit" class="primary">Uložit</button><button type="button" data-act="cancel">Zrušit</button></div>';
     box.appendChild(div);
     $("edSum").value = summaryOf(f);
-    $("edBody").value = f.body;
+    $("edBody").value = splitHead(f.body).rest;
     $("edBody").focus();
   } else if (panel === "ren"){
     div.innerHTML = '<div><label for="renTitle">Název</label><input type="text" id="renTitle" autocomplete="off"></div>' +
@@ -1076,7 +1091,7 @@ async function submitPanel(f){
   if (busy) return;
   if (panel === "edit"){
     const sum = $("edSum").value.replace(/\s+$/, ""), body = $("edBody").value.replace(/\r\n?/g, "\n");
-    await saveFile(f, "Úprava", "Uloženo.", () => { f.body = body; fmSet(f.fm, "summary", sum); });
+    await saveFile(f, "Úprava", "Uloženo.", () => { const hd = splitHead(f.body).head; f.body = (hd ? hd + "\n\n" : "") + body.replace(/^\s*\n/, ""); fmSet(f.fm, "summary", sum); });
   } else if (panel === "ren"){
     const t = $("renTitle").value.trim();
     if (!t){ say("Zadejte název."); $("renTitle").focus(); return; }
@@ -1643,7 +1658,7 @@ $("main").addEventListener("click", ev => {
   if (b.dataset.act === "opensettings"){ panel = ""; openSettings(); $("setGemini").focus(); return; }
   if (b.dataset.act === "opentpl"){ panel = ""; openTpl(); return; }
   const act = b.dataset.act;
-  if (act === "copy"){ copyText(f.body); return; }
+  if (act === "copy"){ copyText(splitHead(f.body).rest.trim() + "\n"); return; }
   if (act === "dl"){ downloadMd(f); return; }
   if (busy) return;
   if (act === "cancel"){ const was = panel; if (was === "setup") setupDismissed.add(f.path); panel = ""; renderMain(); const t = document.querySelector('#tools button[data-act="' + was + '"]'); if (t) t.focus(); return; }
