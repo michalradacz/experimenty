@@ -229,6 +229,7 @@ legend{font-weight:700;padding:0 .3rem}
   <aside id="side">
     <h2 id="listHead">Seznam přepisů</h2>
     <div><label for="q">Hledat</label><input type="search" id="q" autocomplete="off"></div>
+    <div class="check"><input type="checkbox" id="hideDel" checked> <label for="hideDel">Skrýt kategorii Smazat</label></div>
     <div class="check"><input type="checkbox" id="qArch"> <label for="qArch">Včetně archivu</label></div>
     <div><label for="catFilter">Kategorie</label><select id="catFilter"></select></div>
     <div><label for="tagFilter">Tag</label><select id="tagFilter"></select></div>
@@ -851,7 +852,10 @@ function renderCatFilter(){
 function renderList(){
   const q = $("q").value.trim(), words = norm(q).split(/\s+/).filter(Boolean);
   const cat = $("catFilter").value;
-  const nAkt = files.filter(f => !archOf(f)).length, nArch = files.length - nAkt;
+  /* category "Smazat" is hidden unless the switch is off or that category is chosen in the filter */
+  const hideDel = $("hideDel").checked && norm(cat) !== "smazat";
+  const pool = hideDel ? files.filter(f => norm(catOf(f) || "") !== "smazat") : files;
+  const nAkt = pool.filter(f => !archOf(f)).length, nArch = pool.length - nAkt;
   $("tabAkt").textContent = "Aktuální (" + nAkt + ")";
   $("tabArch").textContent = "Archiv (" + nArch + ")";
   $("tabAkt").setAttribute("aria-pressed", tab === "akt");
@@ -859,9 +863,9 @@ function renderList(){
   let list;
   if (words.length){
     const inclArch = $("qArch").checked;
-    list = files.filter(f => (inclArch || !archOf(f)) && words.every(w => f.index.includes(w)));
+    list = pool.filter(f => (inclArch || !archOf(f)) && words.every(w => f.index.includes(w)));
   } else {
-    list = files.filter(f => tab === "arch" ? archOf(f) : !archOf(f));
+    list = pool.filter(f => tab === "arch" ? archOf(f) : !archOf(f));
   }
   if (cat) list = list.filter(f => catOf(f) === cat);
   const tagF = $("tagFilter").value;
@@ -1706,6 +1710,8 @@ $("list").addEventListener("click", ev => {
 });
 $("q").addEventListener("input", renderList);
 $("qArch").addEventListener("change", renderList);
+$("hideDel").checked = lsGet("prepisyPlaud.hideDel") !== "0";
+$("hideDel").addEventListener("change", () => { lsSet("prepisyPlaud.hideDel", $("hideDel").checked ? "1" : "0"); renderList(); });
 $("catFilter").addEventListener("change", renderList);
 $("tagFilter").addEventListener("change", renderList);
 $("tabAkt").addEventListener("click", () => { tab = "akt"; renderList(); });
