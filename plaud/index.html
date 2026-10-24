@@ -158,6 +158,7 @@ legend{font-weight:700;padding:0 .3rem}
     <li><strong>A</strong> Archivovat nebo vrátit z archivu</li>
     <li><strong>S</strong> Sloučit s</li>
     <li><strong>V</strong> Vyčistit přepis</li>
+    <li><strong>U</strong> Připnout / odepnout</li>
     <li><strong>G</strong> Vytvořit výstup</li>
     <li><strong>D</strong> Smazat (se zeptá na potvrzení)</li>
     <li><strong>X</strong> Přepnout výběr přepisu pro hromadné operace</li>
@@ -939,7 +940,7 @@ function renderMain(focusTitle){
        '<button type="button" data-act="ren" aria-keyshortcuts="N"' + dis + ' aria-pressed="' + (panel === "ren") + '">Přejmenovat</button>' +
        '<button type="button" data-act="tags" aria-keyshortcuts="L T"' + dis + ' aria-pressed="' + (panel === "tags") + '">Tagy</button>' +
        '<button type="button" data-act="instr" aria-keyshortcuts="P"' + dis + ' aria-pressed="' + (panel === "instr") + '">Pokyny</button>' +
-       '<button type="button" data-act="pin"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
+       '<button type="button" data-act="pin" aria-keyshortcuts="U"' + dis + ' aria-pressed="' + pinOf(f) + '">📌 Připnuto</button>' +
        '<button type="button" data-act="arch" aria-keyshortcuts="A"' + dis + ">" + (arch ? "Vrátit z archivu" : "Archivovat") + "</button>" +
        (hasHeaders(f.body) ? '<button type="button" data-act="clean" aria-keyshortcuts="V"' + dis + ' aria-pressed="' + (panel === "clean") + '">Vyčistit přepis</button>' : "") +
        (files.length > 1 ? '<button type="button" data-act="merge" aria-keyshortcuts="S"' + dis + ' aria-pressed="' + (panel === "merge") + '">Sloučit s</button>' : "") +
@@ -1532,7 +1533,7 @@ function closeHelp(){
 }
 $("helpClose").addEventListener("click", closeHelp);
 $("helpDlg").addEventListener("close", () => { if (helpReturn && helpReturn.focus) helpReturn.focus(); });
-const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", t: "tags", p: "instr", a: "arch", c: "copy", s: "merge", v: "clean", d: "del" };
+const SHORTCUTS = { g: "gen", e: "edit", n: "ren", l: "tags", t: "tags", p: "instr", a: "arch", c: "copy", s: "merge", v: "clean", u: "pin", d: "del" };
 document.addEventListener("keydown", ev => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
   const t = ev.target;
